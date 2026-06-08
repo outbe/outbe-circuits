@@ -1,0 +1,80 @@
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "crates/outbe-zk-circuit-noir",
+    "crates/outbe-zk-canonical",
+    "crates/outbe-crypto-common",
+    "xtask",
+]
+resolver = "2"
+
+[workspace.dependencies]
+# Internal crates. The `version` field alongside `path` is required
+# by cargo-deny's wildcard check for publishable crates — cargo
+# prefers the path dep for local dev and the version takes effect
+# when these crates are consumed off crates.io.
+outbe-zk-circuit-noir = { version = "0.3", path = "crates/outbe-zk-circuit-noir" }
+outbe-zk-canonical    = { version = "0.3", path = "crates/outbe-zk-canonical" }
+outbe-crypto-common   = { version = "0.3", path = "crates/outbe-crypto-common" }
+
+# External
+outbe-poseidon = { git = "https://github.com/outbe/outbe-poseidon/", tag = "v0.0.2" }
+k256 = { version = "0.14.0-rc.8", features = ["std"] }
+ark-ff       = { version = "0.5", features = ["asm", "parallel"] }
+ark-bn254    = { version = "0.5", features = ["default"] }
+bs58 = "0.5"
+rand = "0.8"
+thiserror = "1.0"
+barretenberg-rs = { version = "=5.0.0-nightly.20260512", default-features = false, features = ["ffi"] }
+
+# noir-lang/noir crates consumed by the vendored noir_rs proving
+# glue in `outbe-zk-circuit-noir/src/vendor/noir_rs/`. Pinned to the
+# same `v1.0.0-beta.20` git rev that upstream noir_rs used, so the
+# dependency graph is identical to pre-vendoring. Bump these
+# together when chasing a new noir release. The `version` next to
+# the git ref satisfies cargo-deny's wildcard check for any
+# downstream consumer that flips to a [patch.crates-io] override.
+acvm                  = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "acvm" }
+acvm_blackbox_solver  = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "acvm_blackbox_solver" }
+bn254_blackbox_solver = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "bn254_blackbox_solver" }
+nargo                 = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "nargo" }
+
+# Direct deps required by the vendored noir_rs proving glue.
+# Versions match what upstream noir_rs/Cargo.toml declared.
+base64  = "0.22"
+flate2  = "1.0"
+bincode = "1.3"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+generic-array = "0.14"
+clap = { version = "4", features = ["derive"] }
+hex = "0.4"
+
+# Dev / testing mode. We make opt-level = 3 to improve proving times
+# (otherwise it is really slow).
+[profile.dev]
+opt-level = 3
+debug = 2
+overflow-checks = true
+incremental = true
+
+[profile.local]
+inherits = "dev"
+opt-level = 3
+debug = 2
+debug-assertions = false
+panic = 'unwind'
+incremental = true
+lto = "thin"
+codegen-units = 16
+
+[profile.release]
+opt-level = 3
+overflow-checks = false
+debug = false

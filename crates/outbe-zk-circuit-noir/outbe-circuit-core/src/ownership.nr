@@ -1,0 +1,113 @@
+// Ownership proof helpers, per the privacy-preserving L2 architecture
+// (PDF sec.2.2.3, sec.2.2.4, sec.4.2).
+//
+// Two layers:
+//
+//   1. Building blocks -- `compute_ownership`, `verify_schnorr_grumpkin`.
+//      Pure helpers; reusable from any circuit.
+//
+//   2. `verify_ownership_per_su` -- the sec.4.2 ownership-proof
+//      constraint set, factored out so the standalone
+//      `outbe-ownership-circuit`, the full-proof circuit, and every flat
+//      aggregation tier (`outbe-flat-aggregation-circuit-n*`) can call
+//      it without duplication.
+//
+// ## Curve choice
+//
+// The public-key curve for in-circuit ownership is **Grumpkin** (Noir's
+// "embedded curve" when the proving curve is BN254). Native arithmetic
+// via the `multi_scalar_mul` foreign call -- no field emulation.
+// Replaces the previous secp256k1 ECDSA flow, which cost ~42k
+// constraints per signature verify due to non-native EC arithmetic.
+// Grumpkin Schnorr is ~5-6k constraints per verify -- a ~7x reduction.
+//
+// The user's `sk_consent` stays on secp256k1 (unchanged user key
+// material). ECDH off-chain is still secp256k1 between `sk_consent`
+// and the SRA's ephemeral `sk_cu`. The HKDF output is then
+// interpreted as a Grumpkin scalar (`shared_sk` mod `q_Grumpkin`)
+// for in-circuit signing. See Appendix A of the spec.
+
+use poseidon::poseidon;
+use std::embedded_curve_ops::EmbeddedCurvePoint;
+
+/// Compute the Poseidon3 owner commitment from a Grumpkin public key
+/// and a nonce -- `Poseidon3(pk.x, pk.y, nonce)`. See PDF sec.2.2.3.
+///
+/// Grumpkin coordinates fit in a single Fr each (the base field is
+/// BN254's scalar field), so the legacy 128-bit-limb decomposition
+/// from the secp256k1 variant is gone.
+pub fn compute_ownership(pk: EmbeddedCurvePoint, nonce: Field) -> Field {
+    poseidon::bn254::hash_3([pk.x, pk.y, nonce])
+}
+
+/// Verify a Grumpkin Schnorr signature over `message`. Thin wrapper
+/// around the `noir-lang/schnorr` crate (the same scheme Aztec uses
+/// for its Schnorr account contracts).
+///
+/// The signature is 64 bytes: `s` (32-byte BE scalar) followed by
+/// `e` (32-byte blake2s digest). Off-chain the wallet produces this
+/// via `barretenberg-rs::api::schnorr_construct_signature`, which
+/// uses the same Pedersen + blake2s challenge as the in-circuit
+/// verifier here.
+pub fn verify_schnorr_grumpkin(
+    pk: EmbeddedCurvePoint,
+    signature: [u8; 64],
+    message: [u8; 32],
+) -> bool {
+    schnorr::verify_signature(pk, signature, message)
+}
+
+/// `verify_ownership_per_su` -- single-shot ownership-proof constraint
+/// per sec.4.2 of the privacy-preserving L2 architecture.
+///
+/// ## Constraints
+///
+/// 1. `owner == Poseidon3(pk.x, pk.y, nonce)` -- proves the prover
+///    knows a Grumpkin `(pk, nonce)` pair whose Poseidon commitment
+///    equals the claimed `owner`.
+/// 2. `Schnorr-verify(pk, signature, Poseidon2(nft_hash, nonce).to_be_bytes())`
+///    -- proves the prover knows the Grumpkin secret key matching
+///    `pk` and has signed a per-NFT message that binds the proof to a
+///    specific `(nft_hash, nonce)` pair.
+///
+/// ## Inputs
+///
+/// All private to the prover except `owner` and `nft_hash`, which are
+/// public so the verifier (on-chain or otherwise) can supply the
+/// expected values:
+///
+/// - `pk`: Grumpkin public key. For SUs this is the wallet's per-SU
+///   `shared_pk` derived via App. A; for TDs this is a fresh per-TD
+///   Grumpkin public key.
+/// - `signature`: 64-byte Grumpkin Schnorr signature (`s || e`).
+/// - `nonce`: per-NFT nonce.
+/// - `owner` (public): claimed Poseidon3 commitment from the NFT's
+///   on-chain `derivedOwner` field.
+/// - `nft_hash` (public): per-NFT entity hash.
+pub fn verify_ownership_per_su(
+    pk: EmbeddedCurvePoint,
+    signature: [u8; 64],
+    nonce: Field,
+    owner: Field,
+    nft_hash: Field,
+) {
+    // (1) Owner commitment.
+    let computed_owner = compute_ownership(pk, nonce);
+    assert(
+        computed_owner == owner,
+        "owner mismatch: Poseidon3(pk, nonce) != public owner",
+    );
+
+    // (2) Signature binding: Schnorr/Grumpkin over Poseidon2(nft_hash,
+    //     nonce).to_be_bytes(). The pre-hash binds the proof to BOTH
+    //     the NFT data AND the per-NFT nonce; a replay across NFTs
+    //     would produce a different pre-hash and fail verification.
+    let pre_hash_fr: Field = poseidon::bn254::hash_2([nft_hash, nonce]);
+    let pre_hash_bytes: [u8; 32] = pre_hash_fr.to_be_bytes();
+
+    let signature_ok = verify_schnorr_grumpkin(pk, signature, pre_hash_bytes);
+    assert(
+        signature_ok,
+        "signature mismatch: Schnorr/Grumpkin over Poseidon2(nft_hash, nonce) failed",
+    );
+}

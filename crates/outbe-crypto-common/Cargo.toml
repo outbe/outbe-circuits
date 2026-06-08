@@ -1,0 +1,21 @@
+[package]
+name        = "outbe-crypto-common"
+version.workspace = true
+edition     = "2021"
+license     = "MIT"
+description = "Shared outbe crypto primitives — Poseidon hash formulas, Merkle path semantics, ownership commitment, and ZK witness layouts. Consensus-binding across wallet, chain precompiles, and Noir circuits."
+repository  = "https://github.com/outbe/outbe-circuits"
+
+[features]
+default = ["std"]
+std = [
+    "thiserror/std",
+    "ark-ff/std",
+    "ark-bn254/std",
+]
+
+[dependencies]
+ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
+ark-ff    = { version = "0.5", default-features = false }
+outbe-poseidon = { workspace = true }
+thiserror = { version = "2", default-features = false }

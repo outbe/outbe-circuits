@@ -1,0 +1,7 @@
+# VK bytes get written here by `xtask regenerate-canonical`.
+# Each circuit produces one file: `<circuit_label>.vk` containing
+# the raw UltraHonkKeccak verification key bytes.
+#
+# Files in this directory are committed (binary) so consumers of
+# `outbe-zk-canonical` can read the canonical VK at compile time via
+# `include_bytes!("../res/vks/<name>.vk")`.

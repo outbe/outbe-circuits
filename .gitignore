@@ -1,0 +1,10 @@
+/target
+params
+.idea
+.work
+.serena
+.DS_Store
+
+# cargo-ndk output directory used by Android mobile builds.
+# Per-ABI subdirs hold liboutbe_zk_circuit_noir.so artifacts.
+jniLibs
