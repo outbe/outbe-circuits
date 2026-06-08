@@ -1,0 +1,103 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+
+jobs:
+  # --------------------------------------------------------------
+  # Runs cargo-deny on the host (not the EmbarkStudios container
+  # action) so cargo-metadata can use the host's git config. Both
+  # remaining git deps (noir-lang/noir, outbe/outbe-poseidon) are
+  # public — no PAT or credential helper needed.
+  # --------------------------------------------------------------
+  cargo-deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: cargo
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: cargo deny check all
+        run: cargo deny check all
+
+  # --------------------------------------------------------------
+  # Format + clippy + cargo test on stable & beta. Runs on PR +
+  # push:main. `[skip ci]` in the head-commit subject opts out.
+  # --------------------------------------------------------------
+  check:
+    name: cargo fmt + clippy + test (${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, beta]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+
+      # barretenberg-rs links a C++ static lib whose build.rs invokes
+      # cmake + clang against libstdc++/libc++. Without these the
+      # first `cargo` invocation that touches outbe-zk-circuit-noir
+      # fails in build.rs, not in rustc.
+      - name: Install C++ toolchain (barretenberg-rs build)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake clang \
+            libstdc++-12-dev \
+            libc++-dev libc++abi-dev \
+            pkg-config libssl-dev
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Distinct cache slot per toolchain so stable + beta don't
+          # clobber each other.
+          key: ${{ matrix.rust }}
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: |
+          cargo clippy --all-targets --all-features -- \
+            -D warnings \
+            -D clippy::dbg_macro \
+            -D clippy::print_stdout \
+            -D clippy::print_stderr \
+            -D clippy::todo \
+            -D clippy::unimplemented \
+            -A clippy::module_name_repetitions \
+            -A clippy::must_use_candidate \
+            -A clippy::missing_errors_doc \
+            -A clippy::missing_panics_doc
+
+      - name: cargo test --workspace
+        run: cargo test --workspace

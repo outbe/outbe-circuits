@@ -135,10 +135,7 @@ mod tests {
             .absorb(xs[2])
             .unwrap()
             .finalize();
-        let slice = OutbeHasher::new(seed)
-            .absorb_many(&xs)
-            .unwrap()
-            .finalize();
+        let slice = OutbeHasher::new(seed).absorb_many(&xs).unwrap().finalize();
         assert_eq!(chained, slice);
     }
 

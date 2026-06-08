@@ -2,14 +2,13 @@
 //!
 //! Usage:
 //!   cargo xtask compile-circuits         # Compile Noir circuits and copy bytecodes
-//!   cargo xtask build-mobile <target>    # Compile circuits + build mobile crate
+//!   cargo xtask regenerate-canonical     # Regenerate VKs + circuit hashes in outbe-zk-canonical
 
 #![allow(
     clippy::print_stdout,
     clippy::print_stderr,
     reason = "xtask is a developer CLI tool that prints progress / status to stdout"
 )]
-//!   cargo xtask build-kotlin [--targets] # Build Kotlin JAR with native libs + UniFFI bindings
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -31,27 +30,6 @@ struct Cli {
 enum Tasks {
     /// Compile Noir circuits and copy bytecodes to data/.
     CompileCircuits,
-
-    /// Compile circuits, then build the mobile crate for a target.
-    BuildMobile {
-        /// Rust target triple (e.g., aarch64-apple-ios).
-        target: String,
-
-        /// Enable dev-tools feature.
-        #[arg(long)]
-        dev_tools: bool,
-    },
-
-    /// Build Kotlin JAR with native libraries and UniFFI bindings.
-    ///
-    /// Produces a JAR containing compiled Kotlin bindings, a NativeLoader,
-    /// and native libraries for each specified target platform.
-    BuildKotlin {
-        /// Rust target triples to build (can be specified multiple times).
-        /// Defaults to the current host target.
-        #[arg(long, short)]
-        targets: Vec<String>,
-    },
 
     /// Regenerate the `outbe-zk-canonical` crate from currently-compiled
     /// circuits: derive UltraHonkKeccak VKs, compute circuit_hash +
@@ -78,6 +56,16 @@ enum Tasks {
     },
 }
 
+// -- Toolchain version pin --
+
+/// Required nargo CLI version. Must match the `v1.0.0-beta.XX` git
+/// tag pinned for the `acvm` / `acvm_blackbox_solver` /
+/// `bn254_blackbox_solver` / `nargo` deps in the workspace Cargo.toml.
+/// Bump both together when chasing a noir release — otherwise the
+/// installed CLI binary silently drifts from the FFI proving stack,
+/// embedding a mismatched version in compiled artifacts.
+const EXPECTED_NARGO_VERSION: &str = "1.0.0-beta.20";
+
 // -- Circuit definitions --
 
 struct CircuitDef {
@@ -99,46 +87,6 @@ const CIRCUITS: &[CircuitDef] = &[
         name: "ownership proof",
         dir: "outbe-ownership-circuit",
         output_file: "ownership_proof.json",
-    },
-    // Flat aggregation tiers. Each verifies N copies of
-    // `outbe_circuit_core::ownership::verify_ownership_per_su` inline
-    // (no recursive proof verification). Same source body, different
-    // compile-time `N`. Used by the on-chain TributeDraft submission
-    // gate (sec. 5.2 of the privacy-preserving L2 architecture).
-    CircuitDef {
-        name: "flat aggregation N=1",
-        dir: "outbe-flat-aggregation-circuit-n1",
-        output_file: "flat_aggregation_n1.json",
-    },
-    CircuitDef {
-        name: "flat aggregation N=2",
-        dir: "outbe-flat-aggregation-circuit-n2",
-        output_file: "flat_aggregation_n2.json",
-    },
-    CircuitDef {
-        name: "flat aggregation N=4",
-        dir: "outbe-flat-aggregation-circuit-n4",
-        output_file: "flat_aggregation_n4.json",
-    },
-    CircuitDef {
-        name: "flat aggregation N=8",
-        dir: "outbe-flat-aggregation-circuit-n8",
-        output_file: "flat_aggregation_n8.json",
-    },
-    CircuitDef {
-        name: "flat aggregation N=16",
-        dir: "outbe-flat-aggregation-circuit-n16",
-        output_file: "flat_aggregation_n16.json",
-    },
-    CircuitDef {
-        name: "flat aggregation N=32",
-        dir: "outbe-flat-aggregation-circuit-n32",
-        output_file: "flat_aggregation_n32.json",
-    },
-    CircuitDef {
-        name: "flat aggregation N=64",
-        dir: "outbe-flat-aggregation-circuit-n64",
-        output_file: "flat_aggregation_n64.json",
     },
 ];
 
@@ -229,262 +177,37 @@ fn compile_circuits() -> Result<()> {
     Ok(())
 }
 
-fn build_mobile(target: &str, dev_tools: bool) -> Result<()> {
-    // Step 1: Compile circuits.
-    compile_circuits()?;
-
-    // Step 2: Build the mobile crate.
-    let root = project_root()?;
-    println!("\n--- Building outbe-mobile-integration for {} ---", target);
-
-    let mut cmd = Command::new("cargo");
-    cmd.arg("build")
-        .arg("--release")
-        .arg("--target")
-        .arg(target)
-        .arg("-p")
-        .arg("outbe-mobile-integration")
-        .current_dir(&root);
-
-    if dev_tools {
-        cmd.arg("--features").arg("dev-tools");
-    }
-
-    let status = cmd
-        .status()
-        .context("failed to run cargo build for outbe-mobile-integration")?;
-
-    if !status.success() {
-        bail!("cargo build failed (exit code: {:?})", status.code());
-    }
-
-    println!("\nMobile build complete.");
-    Ok(())
-}
-
-fn build_kotlin(targets: &[String]) -> Result<()> {
-    let root = project_root()?;
-    let og_dir = root.join("integrations/outbe-sra-integration");
-    let kotlin_dir = og_dir.join("kotlin");
-
-    // Determine targets — default to host platform.
-    // Use -t to specify targets explicitly, e.g. for CI cross-compilation.
-    let targets = if targets.is_empty() {
-        vec![host_target()?]
-    } else {
-        targets.to_vec()
-    };
-
-    // Step 1: Build native library for each target.
-    // Use `cargo zigbuild` for cross-compilation, `cargo build` for native.
-    let host = host_target()?;
-    for target in &targets {
-        let is_cross = target != &host;
-        let cargo_cmd = if is_cross { "zigbuild" } else { "build" };
-        println!(
-            "\n--- Building native library for {} ({}) ---",
-            target,
-            if is_cross { "cross via zig" } else { "native" }
-        );
-
-        if is_cross {
-            // Verify cargo-zigbuild is available.
-            which_in_path("cargo-zigbuild").context(
-                "cargo-zigbuild not found. Install it: cargo install cargo-zigbuild\n\
-                 Also requires zig: brew install zig",
-            )?;
-        }
-
-        run_cmd(
-            Command::new("cargo")
-                .args([
-                    cargo_cmd,
-                    "-p",
-                    "outbe-sra-integration",
-                    "--release",
-                    "--target",
-                    target,
-                ])
-                .current_dir(&root),
-            &format!("cargo {cargo_cmd} for {target}"),
-        )?;
-    }
-
-    // Step 2: Build uniffi-bindgen binary (for host).
-    println!("\n--- Building uniffi-bindgen ---");
-    run_cmd(
-        Command::new("cargo")
-            .args([
-                "build",
-                "-p",
-                "outbe-sra-integration",
-                "--bin",
-                "uniffi-bindgen-sra",
-            ])
-            .current_dir(&root),
-        "cargo build uniffi-bindgen-sra",
-    )?;
-
-    // Step 3: Generate Kotlin bindings.
-    // Use the host-built library for metadata extraction.
-    let host_lib = root
-        .join("target")
-        .join(&host)
-        .join("release")
-        .join(native_lib_filename(&host));
-
-    // Build for host if not already in the target list.
-    if !host_lib.exists() {
-        println!("\n--- Building host library for binding generation ---");
-        run_cmd(
-            Command::new("cargo")
-                .args([
-                    "build",
-                    "-p",
-                    "outbe-sra-integration",
-                    "--release",
-                    "--target",
-                    &host,
-                ])
-                .current_dir(&root),
-            "cargo build (host)",
-        )?;
-    }
-
-    let gen_dir = kotlin_dir.join("src/main/kotlin");
-    fs::create_dir_all(&gen_dir)?;
-
-    println!("\n--- Generating Kotlin bindings ---");
-    let uniffi_bindgen = root.join("target/debug/uniffi-bindgen-sra");
-    let uniffi_config = kotlin_dir.join("uniffi.toml");
-    run_cmd(
-        Command::new(&uniffi_bindgen)
-            .args([
-                "generate",
-                "--library",
-                &host_lib.to_string_lossy(),
-                "--language",
-                "kotlin",
-                "--out-dir",
-                &gen_dir.to_string_lossy(),
-                "--config",
-                &uniffi_config.to_string_lossy(),
-            ])
-            .current_dir(&root),
-        "uniffi-bindgen generate",
-    )?;
-
-    // Step 4: Copy native libraries into Gradle resources.
-    // JNA-compatible paths: {os}-{arch}/ at the resource root.
-    for target in &targets {
-        let (res_dir, lib_filename) = target_resource_dir(target)?;
-        let src = root
-            .join("target")
-            .join(target)
-            .join("release")
-            .join(&lib_filename);
-        let dst_dir = kotlin_dir.join("src/main/resources/native").join(&res_dir);
-        fs::create_dir_all(&dst_dir)?;
-        let dst = dst_dir.join(&lib_filename);
-        fs::copy(&src, &dst)
-            .with_context(|| format!("copy {} → {}", src.display(), dst.display()))?;
-        println!("  Copied {} → {}", src.display(), dst.display());
-    }
-
-    // Step 5: Build JAR with Gradle.
-    println!("\n--- Building JAR ---");
-    let gradle = find_gradle()?;
-    run_cmd(
-        Command::new(&gradle).arg("jar").current_dir(&kotlin_dir),
-        "gradle jar",
-    )?;
-
-    let jar_path = kotlin_dir.join("build/libs/outbe-sra-integration-0.1.0.jar");
-    if jar_path.exists() {
-        let size = fs::metadata(&jar_path).map(|m| m.len()).unwrap_or(0);
-        println!(
-            "\nKotlin JAR built: {} ({} KB)",
-            jar_path.display(),
-            size / 1024
-        );
-    } else {
-        println!(
-            "\nJAR built. Check {}/build/libs/ for output.",
-            kotlin_dir.display()
-        );
-    }
-
-    Ok(())
-}
-
 // -- Helpers --
-
-fn run_cmd(cmd: &mut Command, description: &str) -> Result<()> {
-    let status = cmd
-        .status()
-        .with_context(|| format!("failed to run: {description}"))?;
-    if !status.success() {
-        bail!("{description} failed (exit code: {:?})", status.code());
-    }
-    Ok(())
-}
-
-fn host_target() -> Result<String> {
-    let output = Command::new("rustc")
-        .args(["--version", "--verbose"])
-        .output()
-        .context("failed to run rustc")?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
-        if let Some(target) = line.strip_prefix("host: ") {
-            return Ok(target.trim().to_string());
-        }
-    }
-    bail!("could not determine host target from rustc output")
-}
-
-fn native_lib_filename(target: &str) -> String {
-    if target.contains("apple") || target.contains("darwin") {
-        "liboutbe_sra_integration.dylib".to_string()
-    } else {
-        "liboutbe_sra_integration.so".to_string()
-    }
-}
-
-fn target_resource_dir(target: &str) -> Result<(String, String)> {
-    match target {
-        "aarch64-apple-darwin" => Ok((
-            "darwin-aarch64".to_string(),
-            "liboutbe_sra_integration.dylib".to_string(),
-        )),
-        "x86_64-unknown-linux-gnu" => Ok((
-            "linux-x86-64".to_string(),
-            "liboutbe_sra_integration.so".to_string(),
-        )),
-        other => bail!(
-            "unsupported target: {other}. Supported: aarch64-apple-darwin, x86_64-unknown-linux-gnu"
-        ),
-    }
-}
 
 fn find_nargo() -> Result<PathBuf> {
     // Check common locations.
     let home = env::var("HOME").unwrap_or_default();
     let nargo_home = Path::new(&home).join(".nargo/bin/nargo");
 
-    if nargo_home.exists() {
-        return Ok(nargo_home);
-    }
+    let path = if nargo_home.exists() {
+        nargo_home
+    } else {
+        which_in_path("nargo")?
+    };
 
-    // Fall back to PATH.
-    which_in_path("nargo")
+    check_nargo_version(&path)?;
+    Ok(path)
 }
 
-fn find_gradle() -> Result<PathBuf> {
-    which_in_path("gradle").context(
-        "gradle not found. Install it: https://gradle.org/install/ \
-         or use SDKMAN: sdk install gradle",
-    )
+fn check_nargo_version(nargo: &Path) -> Result<()> {
+    let out = Command::new(nargo)
+        .arg("--version")
+        .output()
+        .with_context(|| format!("failed to run {} --version", nargo.display()))?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    if !stdout.contains(EXPECTED_NARGO_VERSION) && !stderr.contains(EXPECTED_NARGO_VERSION) {
+        bail!(
+            "nargo {EXPECTED_NARGO_VERSION} required, found:\n{stdout}{stderr}\n\
+             Install the matching version: noirup -v {EXPECTED_NARGO_VERSION}"
+        );
+    }
+    Ok(())
 }
 
 fn which_in_path(binary: &str) -> Result<PathBuf> {
@@ -509,8 +232,6 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
         Tasks::CompileCircuits => compile_circuits(),
-        Tasks::BuildMobile { target, dev_tools } => build_mobile(&target, dev_tools),
-        Tasks::BuildKotlin { targets } => build_kotlin(&targets),
         Tasks::RegenerateCanonical { check } => regenerate_canonical(check),
     }
 }

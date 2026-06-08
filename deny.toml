@@ -1,0 +1,143 @@
+# cargo-deny configuration.
+#
+# Runs in CI on every PR + nightly at 04:00 UTC.
+#
+# outbe-circuits consumes Noir's Rust FFI surface, so it pulls in
+# git deps (the noir-lang upstream) on top of a heavy transitive
+# tree. The noir_rs proving glue itself is vendored under
+# `crates/outbe-zk-circuit-noir/src/vendor/noir_rs/`, so the
+# remaining git sources are `noir-lang/noir` and the in-house
+# `outbe/outbe-poseidon`. That tree forces (a) two extra licenses,
+# (b) a sizeable [bans.skip] list, and (c) the workspace-path
+# wildcard carve-out. None of these are individually fixable in
+# this repo; each one is annotated with the upstream chain that
+# drives it.
+#
+# When a violation surfaces, prefer the upstream fix:
+#   - multiple-versions  -> bump the dep pulling in the older
+#                           one, or add a [patch.crates-io] until
+#                           upstream catches up; only [bans.skip]
+#                           with a rationale if upstream-blocked.
+#   - advisory           -> upgrade the affected crate; only add
+#                           to [advisories.ignore] with the
+#                           RUSTSEC id and a written-out reason.
+
+[graph]
+all-features = true
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = [
+    # paste 1.0.x is unmaintained but still depended on by ark-ff's
+    # proc-macro layer, which the noir → acir_field chain pulls in.
+    # No safe upgrade exists in the 0.5.x ark-* line; ark-* has
+    # not cut a release that drops paste.
+    "RUSTSEC-2024-0436",
+    # bincode 1.x is unmaintained (upstream points at 2.x). Pulled
+    # in transitively via noir_rs; we can't unilaterally migrate
+    # the noir-lang side. Track upstream and remove this ignore
+    # once noir_rs adopts bincode 2.
+    "RUSTSEC-2025-0141",
+]
+
+[licenses]
+version = 2
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    # `Unicode-3.0` is the current license of `unicode-ident` (pulled
+    # in transitively via every proc-macro crate). `Unicode-DFS-2016`
+    # is the predecessor; we keep both to span old + new releases of
+    # any transitive ark-* / proc-macro crate.
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+    # Weak copyleft / public-domain dedications driven by noir-lang's
+    # transitive tree.
+    #   - MPL-2.0  : `im`, `bitmaps`, `sized-chunks` (noirc_*)
+    #   - CC0-1.0  : `tiny-keccak` (used directly by xtask for the
+    #                canonical VK derivation key + transitively by
+    #                cryptographic deps)
+    #   - CDLA-Permissive-2.0 : `webpki-roots` (TLS cert bundle via
+    #                           reqwest in noir_rs)
+    "MPL-2.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.93
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# `xtask` depends on the in-workspace `outbe-zk-circuit-noir` via
+# `{ workspace = true }`, which cargo-deny interprets as a wildcard.
+# This carve-out only exempts path-based workspace deps; external
+# wildcard requirements still fail.
+allow-wildcard-paths = true
+deny = []
+# Every entry below is a duplicate-version forced by an upstream
+# transitive dep tree we don't own. The shared rationale: noir-lang
+# pins different versions than the k256 0.14-rc line and the older
+# ark-* lines, and there's no single bump on our side that
+# consolidates them. Each entry will become removable once the
+# corresponding upstream catches up; revisit on every noir_rs /
+# k256 / ark-* version bump.
+skip = [
+    # rand 0.8 (noir, ark-*, older crypto) vs 0.9 (k256 0.14-rc) vs 0.10 (k256 build).
+    { crate = "rand" },
+    { crate = "rand_chacha" },
+    { crate = "rand_core" },
+    { crate = "rand_xorshift" },
+    # OS RNG split: 0.2 (older noir tree) vs 0.3 (newer rand 0.9+ tree).
+    { crate = "getrandom" },
+    # k256 0.14-rc adopted the 0.11-pre line of the RustCrypto stack;
+    # older crates remain on 0.10.
+    { crate = "sha2" },
+    { crate = "digest" },
+    { crate = "crypto-common" },
+    { crate = "block-buffer" },
+    { crate = "cpufeatures" },
+    # thiserror 1.x (noir, some older deps) vs 2.x (rest of the tree).
+    { crate = "thiserror" },
+    { crate = "thiserror-impl" },
+    # toml / winnow ecosystem: cargo-metadata and noirc_* pulled
+    # different generations.
+    { crate = "toml_edit" },
+    { crate = "toml_datetime" },
+    { crate = "winnow" },
+    # General-purpose collections / utilities split across the tree.
+    { crate = "hashbrown" },
+    { crate = "itertools" },
+    { crate = "unicode-width" },
+    { crate = "codespan-reporting" },
+    # Windows / Apple platform shims pulled at differing versions by
+    # native-tls / rustls / windows-rs.
+    { crate = "windows-sys" },
+    # UEFI guard pulled in by getrandom 0.3 alongside the older copy.
+    { crate = "r-efi" },
+    # WASI bindings split between noir-lang and reqwest's TLS stack.
+    { crate = "wit-bindgen" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-git = [
+    # noir-lang upstream — acvm / acvm_blackbox_solver /
+    # bn254_blackbox_solver / nargo are all consumed via this single
+    # git origin (pinned per-rev in Cargo.lock). These four crates
+    # moved from transitive (via noir_rs) to direct deps when the
+    # noir_rs proving glue was vendored into
+    # `outbe-zk-circuit-noir/src/vendor/noir_rs/` — the git origin is
+    # unchanged.
+    "https://github.com/noir-lang/noir",
+    # outbe-poseidon is consumed as a git dep (tagged release) while
+    # the crate stabilises; flips to a crates.io version once
+    # outbe-poseidon is published.
+    "https://github.com/outbe/outbe-poseidon",
+]

@@ -20,8 +20,11 @@ outbe-zk-circuit-noir = { version = "0.3", path = "crates/outbe-zk-circuit-noir"
 outbe-zk-canonical    = { version = "0.3", path = "crates/outbe-zk-canonical" }
 outbe-crypto-common   = { version = "0.3", path = "crates/outbe-crypto-common" }
 
-# External
-outbe-poseidon = { git = "https://github.com/outbe/outbe-poseidon/", tag = "v0.0.2" }
+# External. The `version` next to the git ref satisfies cargo-deny's
+# wildcard check for the publishable downstream crates (outbe-crypto-common
+# etc.); cargo itself resolves to the tagged git rev. Tag is v0.0.2 but
+# the Cargo.toml inside that rev declares version 0.0.1.
+outbe-poseidon = { version = "0.0.1", git = "https://github.com/outbe/outbe-poseidon/", tag = "v0.0.2" }
 k256 = { version = "0.14.0-rc.8", features = ["std"] }
 ark-ff       = { version = "0.5", features = ["asm", "parallel"] }
 ark-bn254    = { version = "0.5", features = ["default"] }
