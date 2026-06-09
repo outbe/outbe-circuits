@@ -8,30 +8,30 @@
 //   3. The disclosed `nullifier_hash` is the canonical derivation of
 //      the witness `nullifier_secret` (domain-tagged Poseidon-2).
 //
-// The fourth public input `receiver_binding` is carried through
-// unconstrained inside the circuit; consumers (the calling runtime)
-// recompute it from the surrounding call context and assert equality
-// off-circuit. This keeps the public-input surface fixed at four
-// fields while still binding the proof to a particular action shape
-// and receiver.
+// The `receiver_binding` public input is carried through unconstrained
+// inside the circuit; consumers (the calling runtime) recompute it
+// from the surrounding call context and assert equality off-circuit.
+// This binds the proof to a particular action shape and receiver.
+//
+// Domain-separation tags (`tag_commit`, `tag_nullifier`, `tag_merkle`)
+// are passed as public inputs rather than hardcoded so the verifier
+// pins them to the expected ceremony values per call site, and the
+// circuit can be reused across deployments without recompiling.
 
 use poseidon::poseidon::bn254::hash_2;
 use poseidon::poseidon::bn254::hash_4;
 
 global MERKLE_DEPTH: u32 = 20;
 
-global TAG_COMMIT: Field = 0x6E0001;
-global TAG_NULLIFIER: Field = 0x6E0002;
-global TAG_MERKLE: Field = 0x6E0003;
-
-fn merkle_node(left: Field, right: Field) -> Field {
+fn merkle_node(tag_merkle: Field, left: Field, right: Field) -> Field {
     // Domain-tagged inner-node hash. The on-chain helper folds in
-    // TAG_MERKLE as the first input as well, so the tree shape
+    // tag_merkle as the first input as well, so the tree shape
     // matches byte-for-byte.
-    hash_2([TAG_MERKLE + left, right])
+    hash_2([tag_merkle + left, right])
 }
 
 fn merkle_root_from_path(
+    tag_merkle: Field,
     leaf: Field,
     path: [Field; MERKLE_DEPTH],
     index: Field,
@@ -47,7 +47,7 @@ fn merkle_root_from_path(
         } else {
             (current, sibling)
         };
-        current = merkle_node(left, right);
+        current = merkle_node(tag_merkle, left, right);
     }
     current
 }
@@ -58,6 +58,9 @@ fn main(
     nullifier_hash: pub Field,
     denom_id: pub Field,
     receiver_binding: pub Field,
+    tag_commit: pub Field,
+    tag_nullifier: pub Field,
+    tag_merkle: pub Field,
     // private witness
     secret: Field,
     nullifier_secret: Field,
@@ -66,18 +69,18 @@ fn main(
 ) {
     // commitment well-formedness
     let commitment = hash_4([
-        TAG_COMMIT,
+        tag_commit,
         secret,
         nullifier_secret,
         denom_id,
     ]);
 
     // commitment membership in the disclosed root
-    let recomputed_root = merkle_root_from_path(commitment, merkle_path, merkle_index);
+    let recomputed_root = merkle_root_from_path(tag_merkle, commitment, merkle_path, merkle_index);
     assert(recomputed_root == merkle_root);
 
     // nullifier derivation
-    assert(nullifier_hash == hash_2([TAG_NULLIFIER, nullifier_secret]));
+    assert(nullifier_hash == hash_2([tag_nullifier, nullifier_secret]));
 
     // receiver_binding is intentionally unconstrained in-circuit; the
     // consumer asserts on-chain that it equals the canonical hash of
