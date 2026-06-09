@@ -12,8 +12,8 @@ See `vendor/noir_rs/LICENSE` for the original license terms.
 
 The vendored code is byte-identical to the upstream source at
 `v1.0.0-beta.20` (commit `d2bb6e5`); the surrounding noir-lang crate
-deps are pinned to `v1.0.0-beta.22`, which the vendored glue still
+deps are pinned to `v1.0.0-beta.21`, which the vendored glue still
 compiles against unmodified. The only project-local override is the
-`barretenberg-rs` version pin (`=5.0.0-nightly.20260522`), which is
+`barretenberg-rs` version pin (`=5.0.0-nightly.20260324`), which is
 declared in this crate's `Cargo.toml` rather than carried as a source
 modification.

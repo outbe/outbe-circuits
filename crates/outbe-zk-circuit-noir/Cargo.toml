@@ -25,7 +25,7 @@ outbe-crypto-common = { workspace = true }
 # `vendor/noir_rs/LICENSE`). The four noir-lang/noir crates plus
 # `barretenberg-rs` below are the direct deps the vendored code
 # consumes; they were previously transitive via noir_rs and remain
-# pinned to the same `v1.0.0-beta.22` git rev so the resulting dep
+# pinned to the same `v1.0.0-beta.21` git rev so the resulting dep
 # graph (and therefore proof output) is identical to pre-vendoring.
 acvm                  = { workspace = true }
 acvm_blackbox_solver  = { workspace = true }

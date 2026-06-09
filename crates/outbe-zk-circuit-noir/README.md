@@ -129,4 +129,4 @@ The `split_proof()` function in `src/lib.rs` parses this format and splits the c
 cargo test -p outbe-zk-circuit-noir
 ```
 
-Note: Full integration tests (test_full_proof_round_trip, test_ownership_proof_round_trip) require circuit artifacts compiled with Nargo v1.0.0-beta.22 — `xtask` enforces this pin and refuses to compile circuits with any other version. Install via `noirup -v 1.0.0-beta.22`. See the project root CLAUDE.md for the circuit-change workflow.
+Note: Full integration tests (test_full_proof_round_trip, test_ownership_proof_round_trip) require circuit artifacts compiled with Nargo v1.0.0-beta.21 — `xtask` enforces this pin and refuses to compile circuits with any other version. Install via `noirup -v 1.0.0-beta.22`. See the project root CLAUDE.md for the circuit-change workflow.
