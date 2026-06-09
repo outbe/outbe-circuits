@@ -268,7 +268,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "paste",
- "rayon",
  "zeroize",
 ]
 
@@ -286,6 +285,7 @@ dependencies = [
  "educe",
  "num-bigint",
  "num-traits",
+ "rayon",
  "zeroize",
 ]
 
@@ -417,7 +417,6 @@ dependencies = [
  "arrayvec",
  "digest 0.10.7",
  "num-bigint",
- "rayon",
 ]
 
 [[package]]
@@ -430,6 +429,8 @@ dependencies = [
  "ark-std 0.6.0",
  "digest 0.10.7",
  "num-bigint",
+ "rayon",
+ "serde_with",
 ]
 
 [[package]]
@@ -462,7 +463,6 @@ checksum = "246a225cc6131e9ee4f24619af0f19d67761fff15d7ccc22e42b80846e69449a"
 dependencies = [
  "num-traits",
  "rand 0.8.6",
- "rayon",
 ]
 
 [[package]]
@@ -473,6 +473,7 @@ checksum = "367c9c827ed431bff6868b7aa926e05b16eb46603cc8b6e768e4a5553fa1d155"
 dependencies = [
  "num-traits",
  "rand 0.8.6",
+ "rayon",
 ]
 
 [[package]]
@@ -2294,7 +2295,7 @@ checksum = "d6790f58c7ff633d8771f42965289203411a5e5c68388703c06e14f24770b41e"
 
 [[package]]
 name = "outbe-crypto-common"
-version = "0.3.0"
+version = "0.10.0"
 dependencies = [
  "ark-bn254 0.5.0",
  "ark-ff 0.5.0",
@@ -2314,20 +2315,20 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-canonical"
-version = "0.3.0"
+version = "0.10.0"
 dependencies = [
  "hex-literal",
 ]
 
 [[package]]
 name = "outbe-zk-circuit-noir"
-version = "0.3.0"
+version = "0.10.0"
 dependencies = [
  "acvm",
  "acvm_blackbox_solver",
  "anyhow",
- "ark-bn254 0.5.0",
- "ark-ff 0.5.0",
+ "ark-bn254 0.6.0",
+ "ark-ff 0.6.0",
  "barretenberg-rs",
  "base64",
  "bincode",
@@ -2339,7 +2340,7 @@ dependencies = [
  "nargo",
  "outbe-crypto-common",
  "outbe-zk-canonical",
- "rand 0.8.6",
+ "rand 0.10.1",
  "reqwest",
  "serde",
  "serde_json",
@@ -2629,7 +2630,6 @@ version = "0.8.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
 dependencies = [
- "libc",
  "rand_chacha 0.3.1",
  "rand_core 0.6.4",
 ]
@@ -2680,9 +2680,6 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
-dependencies = [
- "getrandom 0.2.17",
-]
 
 [[package]]
 name = "rand_core"
