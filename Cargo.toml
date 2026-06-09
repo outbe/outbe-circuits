@@ -31,19 +31,19 @@ ark-bn254    = { version = "0.5", features = ["default"] }
 bs58 = "0.5"
 rand = "0.8"
 thiserror = "1.0"
-barretenberg-rs = { version = "=5.0.0-nightly.20260512", default-features = false, features = ["ffi"] }
+barretenberg-rs = { version = "=5.0.0-nightly.20260522", default-features = false, features = ["ffi"] }
 
 # noir-lang/noir crates consumed by the vendored noir_rs proving
 # glue in `outbe-zk-circuit-noir/src/vendor/noir_rs/`. Pinned to the
-# same `v1.0.0-beta.20` git rev that upstream noir_rs used, so the
+# same `v1.0.0-beta.22` git rev that upstream noir_rs used, so the
 # dependency graph is identical to pre-vendoring. Bump these
 # together when chasing a new noir release. The `version` next to
 # the git ref satisfies cargo-deny's wildcard check for any
 # downstream consumer that flips to a [patch.crates-io] override.
-acvm                  = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "acvm" }
-acvm_blackbox_solver  = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "acvm_blackbox_solver" }
-bn254_blackbox_solver = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "bn254_blackbox_solver" }
-nargo                 = { version = "1.0.0-beta.20", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.20", package = "nargo" }
+acvm                  = { version = "1.0.0-beta.22", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "acvm" }
+acvm_blackbox_solver  = { version = "1.0.0-beta.22", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "acvm_blackbox_solver" }
+bn254_blackbox_solver = { version = "1.0.0-beta.22", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "bn254_blackbox_solver" }
+nargo                 = { version = "1.0.0-beta.22", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "nargo" }
 
 # Direct deps required by the vendored noir_rs proving glue.
 # Versions match what upstream noir_rs/Cargo.toml declared.
