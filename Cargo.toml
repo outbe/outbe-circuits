@@ -24,7 +24,7 @@ outbe-poseidon = { version = "0.10.0", git = "https://github.com/outbe/outbe-pos
 ark-ff       = { version = "0.6", features = ["asm", "parallel"] }
 ark-bn254    = { version = "0.6", features = ["default"] }
 bs58 = "0.5"
-rand = "0.10.1"
+rand = "0.8"
 thiserror = "2.0.18"
 barretenberg-rs = { version = "=5.0.0-nightly.20260522", default-features = false, features = ["ffi"] }
 
