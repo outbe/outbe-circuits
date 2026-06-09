@@ -18,16 +18,16 @@ resolver = "2"
 # resolves to the workspace path; the version is just the manifest
 # requirement that satisfies crates.io's no-path-deps rule downstream.
 outbe-zk-circuit-noir = { version = "0.10.0", path = "crates/outbe-zk-circuit-noir" }
-outbe-zk-canonical    = { version = "0.10.0", path = "crates/outbe-zk-canonical" }
-outbe-crypto-common   = { version = "0.10.0", path = "crates/outbe-crypto-common" }
+outbe-zk-canonical = { version = "0.10.0", path = "crates/outbe-zk-canonical" }
+outbe-crypto-common = { version = "0.10.0", path = "crates/outbe-crypto-common" }
 
 # External. The `version` next to the git ref satisfies cargo-deny's
 # wildcard check for the publishable downstream crates (outbe-crypto-common
 # etc.); cargo itself resolves to the tagged git rev. Tag is v0.0.2 but
 # the Cargo.toml inside that rev declares version 0.0.1.
 outbe-poseidon = { version = "0.10.0", git = "https://github.com/outbe/outbe-poseidon/", tag = "v0.10.0" }
-ark-ff       = { version = "0.6", features = ["asm", "parallel"] }
-ark-bn254    = { version = "0.6", features = ["default"] }
+ark-ff = { version = "0.6", features = ["asm", "parallel"] }
+ark-bn254 = { version = "0.6", features = ["default"] }
 bs58 = "0.5"
 rand = "0.8"
 thiserror = "2.0.18"
@@ -40,15 +40,15 @@ barretenberg-rs = { version = "=5.0.0-nightly.20260324", default-features = fals
 # together when chasing a new noir release. The `version` next to
 # the git ref satisfies cargo-deny's wildcard check for any
 # downstream consumer that flips to a [patch.crates-io] override.
-acvm                  = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "acvm" }
-acvm_blackbox_solver  = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "acvm_blackbox_solver" }
+acvm = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "acvm" }
+acvm_blackbox_solver = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "acvm_blackbox_solver" }
 bn254_blackbox_solver = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "bn254_blackbox_solver" }
-nargo                 = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "nargo" }
+nargo = { version = "1.0.0-beta.21", git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.21", package = "nargo" }
 
 # Direct deps required by the vendored noir_rs proving glue.
 # Versions match what upstream noir_rs/Cargo.toml declared.
-base64  = "0.22.1"
-flate2  = "1.0.24"
+base64 = "0.22.1"
+flate2 = "1.0.24"
 bincode = "1.3"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 

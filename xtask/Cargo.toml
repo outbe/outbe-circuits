@@ -19,6 +19,6 @@ clap.workspace = true
 # multi-minute C++ build of the barretenberg FFI on first xtask
 # compile.
 outbe-zk-circuit-noir = { workspace = true }
-tiny-keccak  = { version = "2.0", features = ["keccak"] }
+tiny-keccak = { version = "2.0", features = ["keccak"] }
 base64.workspace = true
 serde_json.workspace = true
