@@ -18,4 +18,4 @@ std = [
 ark-bn254 = { version = "0.5", default-features = false, features = ["curve"] }
 ark-ff    = { version = "0.5", default-features = false }
 outbe-poseidon = { workspace = true }
-thiserror = { version = "2", default-features = false }
+thiserror = { workspace = true, default-features = false }
