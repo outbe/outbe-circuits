@@ -21,10 +21,10 @@ lib forces a recompile of both bins and a regen of `outbe-zk-canonical`.
 
 ## Noir toolchain
 
-`nargo` is pinned to **1.0.0-beta.20**. Install via:
+`nargo` is pinned to **1.0.0-beta.21**. Install via:
 
 ```bash
-noirup -v 1.0.0-beta.20
+noirup -v 1.0.0-beta.21
 ```
 
 `xtask` refuses to compile under any other version because the

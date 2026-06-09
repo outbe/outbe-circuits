@@ -25,21 +25,21 @@ outbe-crypto-common = { workspace = true }
 # `vendor/noir_rs/LICENSE`). The four noir-lang/noir crates plus
 # `barretenberg-rs` below are the direct deps the vendored code
 # consumes; they were previously transitive via noir_rs and remain
-# pinned to the same `v1.0.0-beta.20` git rev so the resulting dep
+# pinned to the same `v1.0.0-beta.21` git rev so the resulting dep
 # graph (and therefore proof output) is identical to pre-vendoring.
-acvm                  = { workspace = true }
-acvm_blackbox_solver  = { workspace = true }
+acvm = { workspace = true }
+acvm_blackbox_solver = { workspace = true }
 bn254_blackbox_solver = { workspace = true }
-nargo                 = { workspace = true }
-barretenberg-rs       = { workspace = true }
+nargo = { workspace = true }
+barretenberg-rs = { workspace = true }
 
 # Direct deps required by the vendored noir_rs proving glue. Same
 # versions upstream noir_rs declared.
-base64  = { workspace = true }
-flate2  = { workspace = true }
+base64 = { workspace = true }
+flate2 = { workspace = true }
 bincode = { workspace = true }
 reqwest = { workspace = true }
-serde   = { workspace = true }
+serde = { workspace = true }
 
 anyhow.workspace = true
 # Hex encoding for bytecode
@@ -52,9 +52,9 @@ serde_json.workspace = true
 # tests and benches in this crate use it and Cargo doesn't offer a
 # clean way to expose a `cfg(test)` module to `tests/*.rs`. Runtime
 # cost is negligible next to barretenberg-rs.
-ark-ff     = { workspace = true }
-ark-bn254  = { workspace = true }
-rand       = { workspace = true }
+ark-ff = { workspace = true }
+ark-bn254 = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

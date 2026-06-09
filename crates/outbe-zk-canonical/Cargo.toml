@@ -1,10 +1,10 @@
 [package]
-name             = "outbe-zk-canonical"
+name = "outbe-zk-canonical"
 version.workspace = true
-edition          = "2021"
+edition = "2021"
 description = "Canonical outbe Noir circuit descriptors — circuit_hash, VK bytes, vk_hash, label. Authoritative on-chain identity source for the privacy-preserving L2 zk_verify precompile."
-license     = "Apache-2.0"
-repository  = "https://github.com/outbe/outbe-circuits"
+license = "Apache-2.0"
+repository = "https://github.com/outbe/outbe-circuits"
 
 [dependencies]
 hex-literal = "0.4"

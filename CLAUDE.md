@@ -23,7 +23,7 @@ Three sibling Nargo packages (each with its own `Nargo.toml`), not a single `cir
 
 Both bin crates pull the ownership/inclusion logic from `outbe_circuit_core` via a relative path dep — there is **one** ownership implementation (`outbe_circuit_core::ownership::verify_ownership_per_su`) shared across both circuits, so editing the lib forces a recompile of both bins and (per the canonical workflow) a regen of `outbe-zk-canonical`.
 
-Compiled bytecodes land in `crates/outbe-zk-circuit-noir/data/` as `full_proof.json` and `ownership_proof.json`. `nargo` itself is pinned to **1.0.0-beta.20** (install via `noirup -v 1.0.0-beta.20`); `xtask` refuses to compile under any other version because the canonical VKs are tied to that compiler's output.
+Compiled bytecodes land in `crates/outbe-zk-circuit-noir/data/` as `full_proof.json` and `ownership_proof.json`. `nargo` itself is pinned to **1.0.0-beta.21** (install via `noirup -v 1.0.0-beta.21`); `xtask` refuses to compile under any other version because the canonical VKs are tied to that compiler's output.
 
 ## Build commands — always go through xtask
 

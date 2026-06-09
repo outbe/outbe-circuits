@@ -64,7 +64,7 @@ enum Tasks {
 /// Bump both together when chasing a noir release — otherwise the
 /// installed CLI binary silently drifts from the FFI proving stack,
 /// embedding a mismatched version in compiled artifacts.
-const EXPECTED_NARGO_VERSION: &str = "1.0.0-beta.20";
+const EXPECTED_NARGO_VERSION: &str = "1.0.0-beta.21";
 
 // -- Circuit definitions --
 
