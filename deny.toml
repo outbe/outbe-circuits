@@ -29,11 +29,6 @@ all-features = true
 version = 2
 yanked = "deny"
 ignore = [
-    # paste 1.0.x is unmaintained but still depended on by ark-ff's
-    # proc-macro layer, which the noir → acir_field chain pulls in.
-    # No safe upgrade exists in the 0.5.x ark-* line; ark-* has
-    # not cut a release that drops paste.
-    "RUSTSEC-2024-0436",
     # bincode 1.x is unmaintained (upstream points at 2.x). Pulled
     # in transitively via noir_rs; we can't unilaterally migrate
     # the noir-lang side. Track upstream and remove this ignore
@@ -51,11 +46,8 @@ allow = [
     "BSD-3-Clause",
     "ISC",
     # `Unicode-3.0` is the current license of `unicode-ident` (pulled
-    # in transitively via every proc-macro crate). `Unicode-DFS-2016`
-    # is the predecessor; we keep both to span old + new releases of
-    # any transitive ark-* / proc-macro crate.
+    # in transitively via every proc-macro crate).
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "Zlib",
     # Weak copyleft / public-domain dedications driven by noir-lang's
     # transitive tree.
@@ -112,9 +104,10 @@ skip = [
     { crate = "winnow" },
     # General-purpose collections / utilities split across the tree.
     { crate = "hashbrown" },
-    { crate = "itertools" },
-    { crate = "unicode-width" },
-    { crate = "codespan-reporting" },
+    # bit-vec 0.8 (proptest, via noir_greybox_fuzzer) vs 0.9 (noirc_evaluator) —
+    # both reach us via nargo. Single nargo bump should unify them; revisit on
+    # the next noir release.
+    { crate = "bit-vec" },
     # Windows / Apple platform shims pulled at differing versions by
     # native-tls / rustls / windows-rs.
     { crate = "windows-sys" },

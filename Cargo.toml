@@ -12,9 +12,14 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
-outbe-zk-circuit-noir = { path = "crates/outbe-zk-circuit-noir" }
-outbe-zk-canonical    = { path = "crates/outbe-zk-canonical" }
-outbe-crypto-common   = { path = "crates/outbe-crypto-common" }
+# `version` next to `path` lets cargo-deny's wildcard check pass —
+# `allow-wildcard-paths` is set but does not apply to publishable
+# crates (these three are all publishable; xtask is not). cargo itself
+# resolves to the workspace path; the version is just the manifest
+# requirement that satisfies crates.io's no-path-deps rule downstream.
+outbe-zk-circuit-noir = { version = "0.10.0", path = "crates/outbe-zk-circuit-noir" }
+outbe-zk-canonical    = { version = "0.10.0", path = "crates/outbe-zk-canonical" }
+outbe-crypto-common   = { version = "0.10.0", path = "crates/outbe-crypto-common" }
 
 # External. The `version` next to the git ref satisfies cargo-deny's
 # wildcard check for the publishable downstream crates (outbe-crypto-common
