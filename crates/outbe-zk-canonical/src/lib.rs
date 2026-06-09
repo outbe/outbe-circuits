@@ -97,12 +97,12 @@ pub const OWNERSHIP: CircuitDescriptor = CircuitDescriptor {
 
 pub const COMMITMENT_NULLIFIER: CircuitDescriptor = CircuitDescriptor {
     circuit_hash: hex_literal::hex!(
-        "b8bd52615b0697695d9e9c5f80dc7b50574c97e75e8277277c715bf26c276f28"
+        "c5560df1d4ab89d30c3e9141bd0dc680966abb36bc25ecc01912ff65b6f86563"
     ),
     label: "outbe.commitment_nullifier",
     version: "1.0.0",
     vk_bytes: include_bytes!("../res/vks/commitment_nullifier.vk"),
-    vk_hash: hex_literal::hex!("7f5dedd7498553bd1e3fed207249bc81b6ac1d8a7312b1042030f1681a45dd10"),
+    vk_hash: hex_literal::hex!("8f5736325a77fe69cbe3bf8e5fb6a835f81827066ae392991c2b04d3a717d2dd"),
 };
 
 pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[&FULL_PROOF, &OWNERSHIP, &COMMITMENT_NULLIFIER];
