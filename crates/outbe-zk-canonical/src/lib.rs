@@ -95,7 +95,17 @@ pub const OWNERSHIP: CircuitDescriptor = CircuitDescriptor {
     vk_hash: hex_literal::hex!("8b0dbc83792074e488b0b63ce62c1ddd08020ffa6fe980917a53ea63c8c08ccf"),
 };
 
-pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[&FULL_PROOF, &OWNERSHIP];
+pub const COMMITMENT_NULLIFIER: CircuitDescriptor = CircuitDescriptor {
+    circuit_hash: hex_literal::hex!(
+        "b8bd52615b0697695d9e9c5f80dc7b50574c97e75e8277277c715bf26c276f28"
+    ),
+    label: "outbe.commitment_nullifier",
+    version: "1.0.0",
+    vk_bytes: include_bytes!("../res/vks/commitment_nullifier.vk"),
+    vk_hash: hex_literal::hex!("7f5dedd7498553bd1e3fed207249bc81b6ac1d8a7312b1042030f1681a45dd10"),
+};
+
+pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[&FULL_PROOF, &OWNERSHIP, &COMMITMENT_NULLIFIER];
 // === END GENERATED ===
 
 /// Look up a descriptor by its ACIR `circuit_hash`. `O(n)` over a

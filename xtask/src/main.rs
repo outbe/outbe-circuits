@@ -88,6 +88,11 @@ const CIRCUITS: &[CircuitDef] = &[
         dir: "outbe-ownership-circuit",
         output_file: "ownership_proof.json",
     },
+    CircuitDef {
+        name: "commitment-nullifier proof",
+        dir: "outbe-commitment-nullifier-circuit",
+        output_file: "commitment_nullifier_proof.json",
+    },
 ];
 
 /// If `dir` matches the flat-aggregation tier pattern, return the
@@ -385,6 +390,7 @@ fn circuit_short_name(c: &CircuitDef) -> String {
     match c.dir {
         "outbe-ownership-circuit" => "ownership".to_string(),
         "outbe-full-circuit" => "full_proof".to_string(),
+        "outbe-commitment-nullifier-circuit" => "commitment_nullifier".to_string(),
         other => {
             if let Some(n) = aggregation_tier_n(other) {
                 format!("flat_aggregation_n{n}")
@@ -399,6 +405,7 @@ fn circuit_const_ident(c: &CircuitDef) -> String {
     match c.dir {
         "outbe-ownership-circuit" => "OWNERSHIP".to_string(),
         "outbe-full-circuit" => "FULL_PROOF".to_string(),
+        "outbe-commitment-nullifier-circuit" => "COMMITMENT_NULLIFIER".to_string(),
         other => {
             if let Some(n) = aggregation_tier_n(other) {
                 format!("FLAT_AGGREGATION_N{n}")
@@ -413,6 +420,7 @@ fn circuit_label(c: &CircuitDef) -> String {
     match c.dir {
         "outbe-ownership-circuit" => "outbe.ownership".to_string(),
         "outbe-full-circuit" => "outbe.full_proof".to_string(),
+        "outbe-commitment-nullifier-circuit" => "outbe.commitment_nullifier".to_string(),
         other => {
             if let Some(n) = aggregation_tier_n(other) {
                 format!("outbe.flat_aggregation.n{n}")
