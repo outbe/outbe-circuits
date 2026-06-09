@@ -76,25 +76,26 @@ pub struct CircuitDescriptor {
 // === BEGIN GENERATED — do not edit (run `cargo xtask regenerate-canonical`) ===
 
 pub const FULL_PROOF: CircuitDescriptor = CircuitDescriptor {
-    circuit_hash: hex_literal::hex!("d3d2f1289b6c17a1172a263024f9e115072fd355a80ea1c0e84040407c49b125"),
-    label:        "outbe.full_proof",
-    version:      "1.0.0",
-    vk_bytes:     include_bytes!("../res/vks/full_proof.vk"),
-    vk_hash:      hex_literal::hex!("fd393d8a0d138c990a76e82d6dca14304ee4a7854e7d34c19e2b04e64d023ad7"),
+    circuit_hash: hex_literal::hex!(
+        "d3d2f1289b6c17a1172a263024f9e115072fd355a80ea1c0e84040407c49b125"
+    ),
+    label: "outbe.full_proof",
+    version: "1.0.0",
+    vk_bytes: include_bytes!("../res/vks/full_proof.vk"),
+    vk_hash: hex_literal::hex!("fd393d8a0d138c990a76e82d6dca14304ee4a7854e7d34c19e2b04e64d023ad7"),
 };
 
 pub const OWNERSHIP: CircuitDescriptor = CircuitDescriptor {
-    circuit_hash: hex_literal::hex!("18db006ac6304a0ff2f4b624a1e31961223184f3638ce421161196a6e1b19c57"),
-    label:        "outbe.ownership",
-    version:      "1.0.0",
-    vk_bytes:     include_bytes!("../res/vks/ownership.vk"),
-    vk_hash:      hex_literal::hex!("8b0dbc83792074e488b0b63ce62c1ddd08020ffa6fe980917a53ea63c8c08ccf"),
+    circuit_hash: hex_literal::hex!(
+        "18db006ac6304a0ff2f4b624a1e31961223184f3638ce421161196a6e1b19c57"
+    ),
+    label: "outbe.ownership",
+    version: "1.0.0",
+    vk_bytes: include_bytes!("../res/vks/ownership.vk"),
+    vk_hash: hex_literal::hex!("8b0dbc83792074e488b0b63ce62c1ddd08020ffa6fe980917a53ea63c8c08ccf"),
 };
 
-pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[
-    &FULL_PROOF,
-    &OWNERSHIP,
-];
+pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[&FULL_PROOF, &OWNERSHIP];
 // === END GENERATED ===
 
 /// Look up a descriptor by its ACIR `circuit_hash`. `O(n)` over a

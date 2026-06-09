@@ -329,10 +329,16 @@ fn regenerate_canonical(check: bool) -> Result<()> {
     }
 
     // Phase 2: regenerate lib.rs (between BEGIN/END GENERATED markers).
+    // Pipe the spliced result through `rustfmt` so the committed file
+    // is always in the canonical `cargo fmt --check` shape — keeps CI
+    // honest without us having to mirror rustfmt's layout rules in
+    // `splice_generated_block`.
     let lib_path = canonical_dir.join("src/lib.rs");
     let existing =
         fs::read_to_string(&lib_path).with_context(|| format!("read {}", lib_path.display()))?;
     let regenerated = splice_generated_block(&existing, &descriptors)?;
+    let regenerated = rustfmt_stdin(&regenerated)
+        .context("rustfmt the regenerated outbe-zk-canonical/src/lib.rs")?;
 
     if check {
         if existing != regenerated {
@@ -442,6 +448,46 @@ fn hex64(b: &[u8; 32]) -> String {
         s.push_str(&format!("{:02x}", byte));
     }
     s
+}
+
+/// Pipe `content` through `rustfmt --edition 2021` via stdin and return
+/// the formatted source. Used by `regenerate_canonical` so the lib.rs
+/// it writes always matches `cargo fmt --check` — without it, the
+/// hand-aligned columns the emitter produces would diverge from
+/// rustfmt's canonical layout and break CI's fmt gate.
+fn rustfmt_stdin(content: &str) -> Result<String> {
+    use std::io::Write as _;
+    use std::process::Stdio;
+
+    let mut child = Command::new("rustfmt")
+        .arg("--edition")
+        .arg("2021")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("spawn rustfmt — install with `rustup component add rustfmt`")?;
+
+    child
+        .stdin
+        .as_mut()
+        .context("rustfmt stdin unavailable")?
+        .write_all(content.as_bytes())
+        .context("write to rustfmt stdin")?;
+
+    let out = child
+        .wait_with_output()
+        .context("wait for rustfmt to finish")?;
+
+    if !out.status.success() {
+        bail!(
+            "rustfmt failed (exit {:?}):\n{}",
+            out.status.code(),
+            String::from_utf8_lossy(&out.stderr),
+        );
+    }
+
+    String::from_utf8(out.stdout).context("rustfmt stdout was not valid UTF-8")
 }
 
 fn check_bytes_match(path: &Path, expected: &[u8]) -> Result<()> {
