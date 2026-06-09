@@ -569,9 +569,20 @@ pub fn derive_canonical_keccak_vk(bytecode: &str) -> anyhow::Result<Vec<u8>> {
     // many points in MemBn254CrsFactory`. 2^21 = 2,097,152 points
     // covers our largest circuit (N=64 acir ~5.5 MB) with headroom
     // and the SRS download is cached locally after the first run.
+    //
+    // `OUTBE_SRS_DAT` opts into a pre-downloaded `g1.dat` slice
+    // (Aztec CRS raw layout): the canonical-regen network path
+    // streams ~128 MiB from `crs.aztec.network` through
+    // `reqwest::blocking`, which intermittently aborts with a
+    // `Decode { source: TimedOut }` mid-body on slow or transcoded
+    // links. Setting the env var to a curl-prefetched `g1.dat`
+    // sidesteps the download entirely; the resulting SRS bytes
+    // (and therefore the canonical VK) are identical because the
+    // file is a prefix of the same universal SRS.
     use crate::barretenberg::srs::setup_srs;
     const SRS_POINTS: u32 = 1 << 21;
-    let _ = setup_srs(SRS_POINTS, None).map_err(Error::msg)?;
+    let srs_path = std::env::var("OUTBE_SRS_DAT").ok();
+    let _ = setup_srs(SRS_POINTS, srs_path.as_deref()).map_err(Error::msg)?;
     let vk =
         get_ultra_honk_keccak_verification_key(bytecode, false, false, None).map_err(Error::msg)?;
     Ok(vk)

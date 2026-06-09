@@ -77,32 +77,32 @@ pub struct CircuitDescriptor {
 
 pub const FULL_PROOF: CircuitDescriptor = CircuitDescriptor {
     circuit_hash: hex_literal::hex!(
-        "5b9957a364209c906b6c24ad5ef0a3a8837d89cbd9e78300b297f39ba962ca9d"
+        "1151cdafb8f9aa7be48b122df02fd8e66c338f19cbd65aa380b4cd85569c5dab"
     ),
     label: "outbe.full_proof",
     version: "1.0.0",
     vk_bytes: include_bytes!("../res/vks/full_proof.vk"),
-    vk_hash: hex_literal::hex!("bd185d6da7965c136ab4c154f65c02a477e113b5663a2e07710621322d8721ae"),
+    vk_hash: hex_literal::hex!("02ca53e6576b929a1dcca43547ff23db902f850eb91befef16e3c2dc3668f222"),
 };
 
 pub const OWNERSHIP: CircuitDescriptor = CircuitDescriptor {
     circuit_hash: hex_literal::hex!(
-        "2639e591261841e5e92e7a970f3e201897bf1fdf04bb45ac01973027fb3dbd6a"
+        "4cc9bd48308f642d2967ecb8cefb352aab1212dbc682e3fba14d0c8d9a3cdf37"
     ),
     label: "outbe.ownership",
     version: "1.0.0",
     vk_bytes: include_bytes!("../res/vks/ownership.vk"),
-    vk_hash: hex_literal::hex!("4d9f4bba177bbe555cafaf0ac786717f1ef14829ee4ef2bc6d2e26a849064cf8"),
+    vk_hash: hex_literal::hex!("d4bec4ea87764f09de2b6a2101c8288f98e3097eb1ea8bacf61c4e18ebe230e4"),
 };
 
 pub const COMMITMENT_NULLIFIER: CircuitDescriptor = CircuitDescriptor {
     circuit_hash: hex_literal::hex!(
-        "7bbba35502d9a78699316096d1955c720b52e04e0be5e0d3aa6a24d022029c08"
+        "42b0eca6c493683e6ed436f31fe40237c20ba976d67ab84b481eb5a727514772"
     ),
     label: "outbe.commitment_nullifier",
     version: "1.0.0",
     vk_bytes: include_bytes!("../res/vks/commitment_nullifier.vk"),
-    vk_hash: hex_literal::hex!("8f5736325a77fe69cbe3bf8e5fb6a835f81827066ae392991c2b04d3a717d2dd"),
+    vk_hash: hex_literal::hex!("a76d1db7a0763c4835efe15e499a9b0f41f17fbb4ef90a3afd1be0ef6c5206ab"),
 };
 
 pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[&FULL_PROOF, &OWNERSHIP, &COMMITMENT_NULLIFIER];
