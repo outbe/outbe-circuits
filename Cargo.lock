@@ -2168,8 +2168,8 @@ dependencies = [
 
 [[package]]
 name = "outbe-poseidon"
-version = "0.10.0"
-source = "git+https://github.com/outbe/outbe-poseidon/?tag=v0.10.0#c0ab603e962dad974dcba65135091499a7a8f3a2"
+version = "0.11.0"
+source = "git+https://github.com/outbe/outbe-poseidon/?tag=v0.11.0#a6066cede0bb95672b194dc69c89946131794396"
 dependencies = [
  "ark-bn254",
  "ark-ff",
