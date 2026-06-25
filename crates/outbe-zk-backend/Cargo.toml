@@ -1,0 +1,55 @@
+[package]
+name = "outbe-zk-backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Noir proving backend for the canonical Outbe circuits: a shared ACVM witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Depends on the noir toolchain via git + native libs, so it is not published to crates.io."
+publish = false
+
+[dependencies]
+outbe-protocol = { workspace = true }
+ark-ff = { workspace = true }
+ark-bn254 = { workspace = true }
+base64 = { workspace = true }
+# Bytecode + witness reach barretenberg gunzipped (the committed artifacts and
+# WitnessStack::serialize() are gzip-compressed; bb's FFI wants raw msgpack).
+flate2 = { workspace = true }
+
+# noir ACIR/ACVM core — pinned to the release the circuits are compiled with.
+# Git deps (not on crates.io) stay inline with their tag, by design.
+acir = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "acir" }
+acvm = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "acvm" }
+bn254_blackbox_solver = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "bn254_blackbox_solver" }
+
+# barretenberg via FFI (static libbb-external, on-device capable).
+barretenberg-rs = { workspace = true }
+# SRS download fallback (Aztec CRS), used only when no local SRS is cached.
+# Optional: pulled only by the `with-network-srs` feature, so a
+# `default-features = false` build (mobile/offline) drops reqwest + its whole
+# tokio runtime from the graph entirely.
+reqwest = { workspace = true, optional = true }
+# Integrity-check the SRS G1 prefix against a pinned hash before trusting it.
+sha2 = { workspace = true }
+
+[features]
+default = ["with-network-srs"]
+# The SRS network-download fallback (Aztec CRS). ON by default (servers / CLIs).
+# Build with `default-features = false` for mobile / offline provers: this drops
+# `reqwest` + its tokio runtime from the build, compiles out `net_g1`/`cache_g1`
+# + the Aztec endpoint, and makes a missing local SRS a hard error instead of a
+# (on mobile, panicking) `reqwest::blocking` fetch. The SRS must then come from
+# `barretenberg::set_srs_path()` before proving.
+with-network-srs = ["dep:reqwest"]
+
+[dev-dependencies]
+# The concrete canonical circuits — only the tests/benches need them; the
+# library is generic over any circuit implementing the core seams.
+outbe-zk-canonical = { path = "../outbe-zk-canonical" }
+ark-std = { workspace = true }
+criterion = { workspace = true }
+
+# Cross-circuit proving/verification cost. Run with: cargo bench -p outbe-zk-backend
+[[bench]]
+name = "proving"
+harness = false

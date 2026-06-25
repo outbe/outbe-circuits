@@ -1,567 +1,337 @@
-//! Build orchestration for the Outbe ZK proof workspace.
+//! `cargo xtask` — canonical-circuit release tooling.
 //!
-//! Usage:
-//!   cargo xtask compile-circuits         # Compile Noir circuits and copy bytecodes
-//!   cargo xtask regenerate-canonical     # Regenerate VKs + circuit hashes in outbe-zk-canonical
+//! `freeze-circuits` is the **only** step that runs `nargo`/`bb`. It compiles
+//! the head noir sources under `outbe-zk-canonical/noir/` and, for each
+//! circuit whose ACIR changed, mints a new frozen version under
+//! `outbe-zk-canonical/resources/circuits/<module>/<version>/` and records
+//! it (status `active`) in `circuits/manifest.toml`.
+//!
+//! When a new version supersedes the previously-active one, the old entry is set
+//! to `deprecated`, its `circuit_hash` is written into the manifest (preserving
+//! its identity), and its `bytecode.b64` + `abi.json` are deleted — keeping only
+//! `circuit.vk`, since verification needs only the VK (a retired prover ships its
+//! own bytecode).
+//!
+//! Version bump: an unchanged ACIR is skipped; a changed ACIR with the same ABI
+//! is a patch bump; an ABI change requires `--abi-change` (minor) or `--semantic`
+//! (major) so the layout/DOMAIN decision is explicit. `cargo build` never runs
+//! this — it reads the frozen artifacts read-only.
 
-#![allow(
-    clippy::print_stdout,
-    clippy::print_stderr,
-    reason = "xtask is a developer CLI tool that prints progress / status to stdout"
-)]
+// `xtask` is a CLI binary; stdout/stderr is its interface.
+#![allow(clippy::print_stdout, clippy::print_stderr)]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::{env, fs};
 
-use anyhow::{bail, Context, Result};
-use clap::{Parser, Subcommand};
+use base64::Engine;
+use tiny_keccak::{Hasher, Keccak};
+use toml_edit::{value, DocumentMut, Table};
 
-// -- CLI --
-
-#[derive(Parser)]
-#[command(name = "xtask", about = "Outbe ZK proof workspace tasks")]
-struct Cli {
-    #[command(subcommand)]
-    command: Tasks,
-}
-
-#[derive(Subcommand)]
-enum Tasks {
-    /// Compile Noir circuits and copy bytecodes to data/.
-    CompileCircuits,
-
-    /// Regenerate the `outbe-zk-canonical` crate from currently-compiled
-    /// circuits: derive UltraHonkKeccak VKs, compute circuit_hash +
-    /// vk_hash, write VK byte files, and emit the const declarations
-    /// in `crates/outbe-zk-canonical/src/lib.rs`.
-    ///
-    /// Prerequisites (install via the official toolchain installers,
-    /// no need to build C++ from source):
-    ///
-    ///   curl -L noirup.dev | bash        # then: `noirup`
-    ///   curl -L bbup.dev   | bash        # then: `bbup`
-    ///
-    /// The xtask shells out to `nargo` (already used by compile-circuits)
-    /// and `bb` (Barretenberg CLI) — no FFI link required.
-    ///
-    /// See outbe-chain/docs/issues/zk-circuit-table-and-rollout.md for
-    /// the consumer-side spec.
-    RegenerateCanonical {
-        /// If set, regenerate to a tempfile and compare against the
-        /// committed state instead of writing in place. Fails on any
-        /// diff. For CI gating.
-        #[arg(long)]
-        check: bool,
-    },
-}
-
-// -- Toolchain version pin --
-
-/// Required nargo CLI version. Must match the `v1.0.0-beta.XX` git
-/// tag pinned for the `acvm` / `acvm_blackbox_solver` /
-/// `bn254_blackbox_solver` / `nargo` deps in the workspace Cargo.toml.
-/// Bump both together when chasing a noir release — otherwise the
-/// installed CLI binary silently drifts from the FFI proving stack,
-/// embedding a mismatched version in compiled artifacts.
-const EXPECTED_NARGO_VERSION: &str = "1.0.0-beta.21";
-
-// -- Circuit definitions --
-
-struct CircuitDef {
-    /// Human-readable name for logging.
-    name: &'static str,
-    /// Directory containing Nargo.toml (relative to circuit_base).
-    dir: &'static str,
-    /// Output filename produced by nargo compile (matches package name in Nargo.toml).
-    output_file: &'static str,
-}
-
-const CIRCUITS: &[CircuitDef] = &[
-    CircuitDef {
-        name: "full proof",
-        dir: "outbe-full-circuit",
-        output_file: "full_proof.json",
-    },
-    CircuitDef {
-        name: "ownership proof",
-        dir: "outbe-ownership-circuit",
-        output_file: "ownership_proof.json",
-    },
-    CircuitDef {
-        name: "commitment-nullifier proof",
-        dir: "outbe-commitment-nullifier-circuit",
-        output_file: "commitment_nullifier_proof.json",
-    },
+/// Vendored noir bin circuits: (package dir under `noir/`, nargo package name).
+const CIRCUITS: &[(&str, &str)] = &[
+    ("outbe-ownership-circuit", "ownership_proof"),
+    ("outbe-flat-aggregation-circuit-n1", "flat_aggregation_n1"),
+    ("outbe-flat-aggregation-circuit-n2", "flat_aggregation_n2"),
+    ("outbe-flat-aggregation-circuit-n4", "flat_aggregation_n4"),
+    ("outbe-flat-aggregation-circuit-n8", "flat_aggregation_n8"),
+    ("outbe-flat-aggregation-circuit-n16", "flat_aggregation_n16"),
+    ("outbe-flat-aggregation-circuit-n32", "flat_aggregation_n32"),
+    ("outbe-flat-aggregation-circuit-n64", "flat_aggregation_n64"),
+    ("outbe-full-circuit", "full_proof"),
 ];
 
-/// If `dir` matches the flat-aggregation tier pattern, return the
-/// tier `N`. Used by `circuit_short_name` / `circuit_const_ident` /
-/// `circuit_label` so we don't repeat the 7 mappings three times.
-fn aggregation_tier_n(dir: &str) -> Option<u32> {
-    dir.strip_prefix("outbe-flat-aggregation-circuit-n")
-        .and_then(|s| s.parse::<u32>().ok())
+fn main() {
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        Some("freeze-circuits") => freeze(&args.collect::<Vec<_>>()),
+        other => {
+            eprintln!("unknown command {other:?}");
+            eprintln!("usage: cargo xtask freeze-circuits [--abi-change | --semantic]");
+            std::process::exit(2);
+        }
+    }
 }
 
-// -- Paths --
+fn freeze(flags: &[String]) {
+    let semantic = flags.iter().any(|f| f == "--semantic");
+    let abi_change = flags.iter().any(|f| f == "--abi-change");
 
-fn project_root() -> Result<PathBuf> {
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
-        .context("CARGO_MANIFEST_DIR not set — run via `cargo xtask`")?;
-    let root = Path::new(&manifest_dir)
-        .parent()
-        .context("xtask must be at <root>/xtask")?
-        .to_path_buf();
-    Ok(root)
-}
+    let root = workspace_root();
+    let canonical = root.join("crates").join("outbe-zk-canonical");
+    let noir = canonical.join("noir");
+    let resources = canonical.join("resources/circuits");
+    let manifest_path = canonical.join("circuits/manifest.toml");
 
-fn circuit_base(root: &Path) -> PathBuf {
-    root.join("crates/outbe-zk-circuit-noir")
-}
+    let nargo = locate("NARGO", ".nargo/bin/nargo", "nargo").expect("nargo not found (set $NARGO)");
+    let bb = locate("BB", ".bb/bb", "bb").expect("bb not found (set $BB)");
 
-fn data_dir(root: &Path) -> PathBuf {
-    circuit_base(root).join("data")
-}
+    let mut doc: DocumentMut = std::fs::read_to_string(&manifest_path)
+        .expect("read manifest.toml")
+        .parse()
+        .expect("parse manifest.toml");
 
-// -- Commands --
-
-fn compile_circuits() -> Result<()> {
-    let root = project_root()?;
-    let base = circuit_base(&root);
-    let data = data_dir(&root);
-
-    // Ensure data directory exists.
-    fs::create_dir_all(&data).with_context(|| format!("failed to create {}", data.display()))?;
-
-    // Verify nargo is available.
-    let nargo = find_nargo()?;
-    println!("Using nargo: {}", nargo.display());
-
-    for circuit in CIRCUITS {
-        let circuit_dir = base.join(circuit.dir);
-        println!("\n--- Compiling {} ---", circuit.name);
-
-        let status = Command::new(&nargo)
+    let mut minted = 0usize;
+    for (dir, module) in CIRCUITS {
+        let pkg = noir.join(dir);
+        let st = Command::new(&nargo)
             .arg("compile")
-            .current_dir(&circuit_dir)
+            .current_dir(&pkg)
             .status()
-            .with_context(|| format!("failed to run nargo compile in {}", circuit_dir.display()))?;
+            .unwrap_or_else(|e| panic!("spawn nargo for {dir}: {e}"));
+        assert!(st.success(), "nargo compile failed for {dir}");
 
-        if !status.success() {
-            bail!(
-                "nargo compile failed for {} (exit code: {:?})",
-                circuit.name,
-                status.code()
-            );
-        }
+        let json_path = pkg.join("target").join(format!("{module}.json"));
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&json_path).expect("read circuit json"))
+                .expect("parse circuit json");
+        let bytecode = json["bytecode"].as_str().expect("bytecode").to_string();
+        let abi_str = serde_json::to_string(&json["abi"]).expect("serialize abi");
+        let acir = base64::engine::general_purpose::STANDARD
+            .decode(&bytecode)
+            .expect("base64");
+        let new_hash = keccak_hex(&acir);
 
-        // Copy compiled output to data/.
-        let src = circuit_dir.join("target").join(circuit.output_file);
-        let dst = data.join(circuit.output_file);
-
-        if !src.exists() {
-            bail!(
-                "expected compiled output at {} but file does not exist",
-                src.display()
-            );
-        }
-
-        fs::copy(&src, &dst)
-            .with_context(|| format!("failed to copy {} → {}", src.display(), dst.display()))?;
-
-        let size = fs::metadata(&dst).map(|m| m.len()).unwrap_or(0);
-        println!(
-            "  Copied {} → {} ({} KB)",
-            src.display(),
-            dst.display(),
-            size / 1024
-        );
-    }
-
-    println!("\nAll circuits compiled successfully.");
-    Ok(())
-}
-
-// -- Helpers --
-
-fn find_nargo() -> Result<PathBuf> {
-    // Check common locations.
-    let home = env::var("HOME").unwrap_or_default();
-    let nargo_home = Path::new(&home).join(".nargo/bin/nargo");
-
-    let path = if nargo_home.exists() {
-        nargo_home
-    } else {
-        which_in_path("nargo")?
-    };
-
-    check_nargo_version(&path)?;
-    Ok(path)
-}
-
-fn check_nargo_version(nargo: &Path) -> Result<()> {
-    let out = Command::new(nargo)
-        .arg("--version")
-        .output()
-        .with_context(|| format!("failed to run {} --version", nargo.display()))?;
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    if !stdout.contains(EXPECTED_NARGO_VERSION) && !stderr.contains(EXPECTED_NARGO_VERSION) {
-        bail!(
-            "nargo {EXPECTED_NARGO_VERSION} required, found:\n{stdout}{stderr}\n\
-             Install the matching version: noirup -v {EXPECTED_NARGO_VERSION}"
-        );
-    }
-    Ok(())
-}
-
-fn which_in_path(binary: &str) -> Result<PathBuf> {
-    let output = Command::new("which")
-        .arg(binary)
-        .output()
-        .with_context(|| format!("failed to locate {binary}"))?;
-
-    if !output.status.success() {
-        bail!(
-            "{binary} not found. Install it from https://noir-lang.org/docs/getting_started/installation"
-        );
-    }
-
-    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    Ok(PathBuf::from(path))
-}
-
-// -- Entry point --
-
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-    match cli.command {
-        Tasks::CompileCircuits => compile_circuits(),
-        Tasks::RegenerateCanonical { check } => regenerate_canonical(check),
-    }
-}
-
-// -- outbe-zk-canonical regeneration --
-//
-// Two phases:
-// 1. `nargo compile` — pure subprocess against the installed nargo
-//    binary; produces ACIR JSON per circuit.
-// 2. VK derivation — via `outbe_zk_circuit_noir::derive_canonical_keccak_vk`,
-//    which goes through the noir_rs FFI (and thus pulls the
-//    barretenberg static library at xtask build time). This is the
-//    same FFI the prover uses, guaranteeing the VK we ship as canonical
-//    accepts proofs that wallets produce in the field.
-//
-// Build-time cost: first compile of xtask drags in the barretenberg
-// C++ static lib (~minutes). Subsequent compiles are incremental.
-
-fn regenerate_canonical(check: bool) -> Result<()> {
-    use base64::Engine;
-
-    println!("=== regenerate-canonical (check={check}) ===\n");
-
-    // Phase 0: compile every circuit (no-op if up-to-date).
-    compile_circuits()?;
-
-    let root = project_root()?;
-    let data = data_dir(&root);
-    let canonical_dir = root.join("crates/outbe-zk-canonical");
-    let vks_dir = canonical_dir.join("res/vks");
-    fs::create_dir_all(&vks_dir)
-        .with_context(|| format!("failed to create {}", vks_dir.display()))?;
-
-    let mut descriptors: Vec<GeneratedDescriptor> = Vec::new();
-
-    for circuit in CIRCUITS {
-        let json_path = data.join(circuit.output_file);
-        println!("\n--- {} ({}) ---", circuit.name, json_path.display());
-
-        // Extract base64 ACIR bytecode from the compiled JSON.
-        let raw = fs::read_to_string(&json_path)
-            .with_context(|| format!("read {}", json_path.display()))?;
-        let json: serde_json::Value = serde_json::from_str(&raw)
-            .with_context(|| format!("parse JSON: {}", json_path.display()))?;
-        let bytecode_b64 = json
-            .get("bytecode")
-            .and_then(|v| v.as_str())
-            .ok_or_else(|| anyhow::anyhow!("missing 'bytecode' in {}", json_path.display()))?
-            .trim()
-            .to_string();
-
-        // circuit_hash = keccak256(base64_decode(bytecode)).
-        // Content-addressed identifier — different source → different hash.
-        let acir_bytes = base64::engine::general_purpose::STANDARD
-            .decode(&bytecode_b64)
-            .with_context(|| format!("base64 decode bytecode for {}", circuit.name))?;
-        let circuit_hash = keccak256(&acir_bytes);
-
-        // Derive VK via the noir_rs FFI through outbe-zk-circuit-noir.
-        // This must be the same path the prover uses (verifier side
-        // calls `verify_ultra_honk_keccak` and provers call
-        // `prove_ultra_honk_keccak`, both via the same FFI). The
-        // previous bb-CLI path produced bytes that didn't verify
-        // against real proofs — see `docs/issues/zk-circuit-table-and-rollout.md`.
-        let short_name = circuit_short_name(circuit);
-        let vk_bytes = outbe_zk_circuit_noir::derive_canonical_keccak_vk(&bytecode_b64)
-            .with_context(|| format!("derive VK for {}", circuit.name))?;
-        let vk_hash = keccak256(&vk_bytes);
-        let vk_path = vks_dir.join(format!("{short_name}.vk"));
-
-        if check {
-            check_bytes_match(&vk_path, &vk_bytes)
-                .with_context(|| format!("VK drift for {}", circuit.name))?;
-        } else {
-            fs::write(&vk_path, &vk_bytes)
-                .with_context(|| format!("write {}", vk_path.display()))?;
-        }
-
-        println!(
-            "  acir={} B  circuit_hash={}  vk={} B  vk_hash={}",
-            acir_bytes.len(),
-            hex32(&circuit_hash),
-            vk_bytes.len(),
-            hex32(&vk_hash),
-        );
-
-        descriptors.push(GeneratedDescriptor {
-            const_ident: circuit_const_ident(circuit),
-            label: circuit_label(circuit),
-            version: "1.0.0", // TODO: source from per-circuit manifest
-            short_name: short_name.clone(),
-            circuit_hash,
-            vk_hash,
+        // The module's current active version, if any.
+        let aot = doc["circuit"]
+            .as_array_of_tables()
+            .expect("[[circuit]] array");
+        let active = (0..aot.len()).find_map(|i| {
+            let t = aot.get(i).unwrap();
+            (t["module"].as_str() == Some(*module) && t["status"].as_str() == Some("active"))
+                .then(|| (i, t["version"].as_str().unwrap().to_string()))
         });
-    }
 
-    // Phase 2: regenerate lib.rs (between BEGIN/END GENERATED markers).
-    // Pipe the spliced result through `rustfmt` so the committed file
-    // is always in the canonical `cargo fmt --check` shape — keeps CI
-    // honest without us having to mirror rustfmt's layout rules in
-    // `splice_generated_block`.
-    let lib_path = canonical_dir.join("src/lib.rs");
-    let existing =
-        fs::read_to_string(&lib_path).with_context(|| format!("read {}", lib_path.display()))?;
-    let regenerated = splice_generated_block(&existing, &descriptors)?;
-    let regenerated = rustfmt_stdin(&regenerated)
-        .context("rustfmt the regenerated outbe-zk-canonical/src/lib.rs")?;
+        let (new_version, supersede) = match &active {
+            Some((idx, ver)) => {
+                let dir_v = resources.join(module).join(ver);
+                let cur_b64 =
+                    std::fs::read_to_string(dir_v.join("bytecode.b64")).expect("active bytecode");
+                let cur_acir = base64::engine::general_purpose::STANDARD
+                    .decode(cur_b64.trim())
+                    .expect("active base64");
+                let cur_hash = keccak_hex(&cur_acir);
+                if cur_hash == new_hash {
+                    println!("  unchanged  {module} @ {ver}");
+                    continue;
+                }
+                // Semantic ABI compare (structural, key-order/format-insensitive)
+                // — a raw-string compare would false-positive on serializer
+                // differences (jq vs serde_json).
+                let cur_abi: Option<serde_json::Value> =
+                    std::fs::read_to_string(dir_v.join("abi.json"))
+                        .ok()
+                        .and_then(|s| serde_json::from_str(&s).ok());
+                let abi_differs = cur_abi.as_ref() != Some(&json["abi"]);
+                let nv = if abi_differs {
+                    if semantic {
+                        bump(ver, 0)
+                    } else if abi_change {
+                        bump(ver, 1)
+                    } else {
+                        panic!("{module}: ABI changed — pass --abi-change (minor) or --semantic (major)");
+                    }
+                } else {
+                    bump(ver, 2)
+                };
+                (nv, Some((*idx, ver.clone(), cur_hash)))
+            }
+            None => ("1.0.0".to_string(), None),
+        };
 
-    if check {
-        if existing != regenerated {
-            bail!(
-                "outbe-zk-canonical/src/lib.rs is stale.\n\
-                 Run `cargo run -p xtask -- regenerate-canonical` (no --check) to \
-                 update, then commit the result."
-            );
-        }
-    } else {
-        fs::write(&lib_path, &regenerated)
-            .with_context(|| format!("write {}", lib_path.display()))?;
-    }
-
-    println!("\n{} circuit(s) processed.", descriptors.len());
-    if check {
-        println!("--check passed: committed state matches regeneration.");
-    } else {
-        println!(
-            "Wrote {} VK file(s) + regenerated lib.rs.",
-            descriptors.len()
+        write_version(
+            &resources,
+            module,
+            &new_version,
+            &bytecode,
+            &abi_str,
+            &bb,
+            &json_path,
         );
+
+        // Append the new active entry (bytecode present -> build.rs derives the hash).
+        let mut t = Table::new();
+        t["module"] = value(*module);
+        t["label"] = value(label(module));
+        t["version"] = value(new_version.clone());
+        t["status"] = value("active");
+        doc["circuit"].as_array_of_tables_mut().unwrap().push(t);
+
+        match supersede {
+            Some((idx, ver, hash)) => {
+                // Deprecate the old version + preserve its identity. The artifact
+                // drop happens in the reconcile pass below.
+                let old = doc["circuit"]
+                    .as_array_of_tables_mut()
+                    .unwrap()
+                    .get_mut(idx)
+                    .unwrap();
+                old["status"] = value("deprecated");
+                old["circuit_hash"] = value(hash);
+                println!("  minted     {module} {ver} -> {new_version}  (old -> deprecated)");
+            }
+            None => println!("  minted     {module} @ {new_version}  (new)"),
+        }
+        minted += 1;
     }
-    Ok(())
+
+    reconcile_artifacts(&mut doc, &resources);
+
+    std::fs::write(&manifest_path, doc.to_string()).expect("write manifest.toml");
+    println!("\n{minted} circuit(s) minted.");
 }
 
-struct GeneratedDescriptor {
-    /// Rust identifier for the const, e.g. "OWNERSHIP" or "FULL_PROOF".
-    const_ident: String,
-    /// Human-readable label, e.g. "outbe.ownership" or "outbe.full_proof".
-    label: String,
-    /// Semver-style version string. Constant for now; later sourced from
-    /// a per-circuit manifest.
-    version: &'static str,
-    /// Filename stem under res/vks/.
-    short_name: String,
-    circuit_hash: [u8; 32],
-    vk_hash: [u8; 32],
-}
+/// Enforce the on-disk artifacts of every entry to match its status (idempotent;
+/// also applies to statuses hand-edited into the manifest):
+///   * `active`     — bytecode + abi + vk (kept);
+///   * `deprecated` — vk only (bytecode + abi dropped; still verifies);
+///   * `revoked`    — nothing (vk dropped too; the version dir removed).
+///
+/// Before deleting anything it preserves the binary identity in the manifest
+/// (`circuit_hash`) if not already recorded — covering a direct active→revoked
+/// edit where the bytecode is still present.
+fn reconcile_artifacts(doc: &mut DocumentMut, resources: &Path) {
+    let n = doc["circuit"].as_array_of_tables().unwrap().len();
+    for i in 0..n {
+        let (module, version, status, has_hash) = {
+            let t = doc["circuit"].as_array_of_tables().unwrap().get(i).unwrap();
+            (
+                t["module"].as_str().unwrap().to_string(),
+                t["version"].as_str().unwrap().to_string(),
+                t["status"].as_str().unwrap().to_string(),
+                t.get("circuit_hash").is_some(),
+            )
+        };
+        if status == "active" {
+            continue;
+        }
+        let dir = resources.join(&module).join(&version);
 
-fn circuit_short_name(c: &CircuitDef) -> String {
-    // Map CIRCUITS entries to filesystem-safe short names. Explicit so
-    // the mapping is auditable.
-    match c.dir {
-        "outbe-ownership-circuit" => "ownership".to_string(),
-        "outbe-full-circuit" => "full_proof".to_string(),
-        "outbe-commitment-nullifier-circuit" => "commitment_nullifier".to_string(),
-        other => {
-            if let Some(n) = aggregation_tier_n(other) {
-                format!("flat_aggregation_n{n}")
-            } else {
-                panic!("unmapped circuit dir: {other}")
+        if !has_hash {
+            if let Ok(b64) = std::fs::read_to_string(dir.join("bytecode.b64")) {
+                if let Ok(acir) = base64::engine::general_purpose::STANDARD.decode(b64.trim()) {
+                    let hash = keccak_hex(&acir);
+                    doc["circuit"]
+                        .as_array_of_tables_mut()
+                        .unwrap()
+                        .get_mut(i)
+                        .unwrap()["circuit_hash"] = value(hash);
+                }
             }
         }
-    }
-}
 
-fn circuit_const_ident(c: &CircuitDef) -> String {
-    match c.dir {
-        "outbe-ownership-circuit" => "OWNERSHIP".to_string(),
-        "outbe-full-circuit" => "FULL_PROOF".to_string(),
-        "outbe-commitment-nullifier-circuit" => "COMMITMENT_NULLIFIER".to_string(),
-        other => {
-            if let Some(n) = aggregation_tier_n(other) {
-                format!("FLAT_AGGREGATION_N{n}")
-            } else {
-                panic!("unmapped circuit dir: {other}")
-            }
+        let _ = std::fs::remove_file(dir.join("bytecode.b64"));
+        let _ = std::fs::remove_file(dir.join("abi.json"));
+        if status == "revoked" {
+            let _ = std::fs::remove_file(dir.join("circuit.vk"));
+            let _ = std::fs::remove_dir(&dir); // succeeds only if now empty
         }
     }
 }
 
-fn circuit_label(c: &CircuitDef) -> String {
-    match c.dir {
-        "outbe-ownership-circuit" => "outbe.ownership".to_string(),
-        "outbe-full-circuit" => "outbe.full_proof".to_string(),
-        "outbe-commitment-nullifier-circuit" => "outbe.commitment_nullifier".to_string(),
-        other => {
-            if let Some(n) = aggregation_tier_n(other) {
-                format!("outbe.flat_aggregation.n{n}")
-            } else {
-                panic!("unmapped circuit dir: {other}")
-            }
+/// Write a frozen version dir: `bytecode.b64`, `abi.json`, and `circuit.vk`
+/// (derived via `bb write_vk -t evm-no-zk`).
+fn write_version(
+    resources: &Path,
+    module: &str,
+    version: &str,
+    bytecode_b64: &str,
+    abi_str: &str,
+    bb: &Path,
+    json_path: &Path,
+) {
+    let dir = resources.join(module).join(version);
+    std::fs::create_dir_all(&dir).expect("mkdir version dir");
+    std::fs::write(dir.join("bytecode.b64"), bytecode_b64).expect("write bytecode.b64");
+    std::fs::write(dir.join("abi.json"), abi_str).expect("write abi.json");
+
+    let tmp = dir.join(".bb");
+    std::fs::create_dir_all(&tmp).expect("mkdir bb tmp");
+    let st = Command::new(bb)
+        .arg("write_vk")
+        .arg("-b")
+        .arg(json_path)
+        .arg("-o")
+        .arg(&tmp)
+        .args(["-t", "evm-no-zk"])
+        .status()
+        .unwrap_or_else(|e| panic!("spawn bb for {module}: {e}"));
+    assert!(st.success(), "bb write_vk failed for {module}");
+    let produced = tmp.join("vk");
+    assert!(produced.exists(), "bb produced no vk for {module}");
+    std::fs::rename(&produced, dir.join("circuit.vk")).expect("install circuit.vk");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+/// keccak256 -> lower-case hex (no `0x`).
+fn keccak_hex(bytes: &[u8]) -> String {
+    let mut h = Keccak::v256();
+    h.update(bytes);
+    let mut o = [0u8; 32];
+    h.finalize(&mut o);
+    o.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Bump a `"a.b.c"` semver: level 0 = major, 1 = minor, 2 = patch.
+fn bump(ver: &str, level: u8) -> String {
+    let mut p: Vec<u64> = ver.split('.').map(|x| x.parse().unwrap_or(0)).collect();
+    while p.len() < 3 {
+        p.push(0);
+    }
+    match level {
+        0 => {
+            p[0] += 1;
+            p[1] = 0;
+            p[2] = 0;
+        }
+        1 => {
+            p[1] += 1;
+            p[2] = 0;
+        }
+        _ => p[2] += 1,
+    }
+    format!("{}.{}.{}", p[0], p[1], p[2])
+}
+
+/// Canonical dotted label for a module.
+fn label(module: &str) -> String {
+    match module {
+        "ownership_proof" => "outbe.ownership".to_string(),
+        "full_proof" => "outbe.full_proof".to_string(),
+        m => {
+            let n = m
+                .strip_prefix("flat_aggregation_n")
+                .expect("unknown module");
+            format!("outbe.flat_aggregation.n{n}")
         }
     }
 }
 
-fn keccak256(input: &[u8]) -> [u8; 32] {
-    use tiny_keccak::{Hasher, Keccak};
-    let mut hasher = Keccak::v256();
-    hasher.update(input);
-    let mut out = [0u8; 32];
-    hasher.finalize(&mut out);
-    out
+/// Workspace root = the xtask crate's parent directory.
+fn workspace_root() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
 }
 
-fn hex32(b: &[u8; 32]) -> String {
-    let mut s = String::with_capacity(2 + 64);
-    s.push_str("0x");
-    for byte in b {
-        s.push_str(&format!("{:02x}", byte));
+/// Locate a tool via `$ENV`, then `$HOME/<home_rel>`, then PATH.
+fn locate(env_var: &str, home_rel: &str, bin: &str) -> Option<PathBuf> {
+    if let Ok(p) = std::env::var(env_var) {
+        let p = PathBuf::from(p);
+        if p.exists() {
+            return Some(p);
+        }
     }
-    s
-}
-
-fn hex64(b: &[u8; 32]) -> String {
-    // 64 hex chars, no 0x prefix (matches what hex_literal::hex! expects).
-    let mut s = String::with_capacity(64);
-    for byte in b {
-        s.push_str(&format!("{:02x}", byte));
+    if let Ok(home) = std::env::var("HOME") {
+        let p = Path::new(&home).join(home_rel);
+        if p.exists() {
+            return Some(p);
+        }
     }
-    s
-}
-
-/// Pipe `content` through `rustfmt --edition 2021` via stdin and return
-/// the formatted source. Used by `regenerate_canonical` so the lib.rs
-/// it writes always matches `cargo fmt --check` — without it, the
-/// hand-aligned columns the emitter produces would diverge from
-/// rustfmt's canonical layout and break CI's fmt gate.
-fn rustfmt_stdin(content: &str) -> Result<String> {
-    use std::io::Write as _;
-    use std::process::Stdio;
-
-    let mut child = Command::new("rustfmt")
-        .arg("--edition")
-        .arg("2021")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("spawn rustfmt — install with `rustup component add rustfmt`")?;
-
-    child
-        .stdin
-        .as_mut()
-        .context("rustfmt stdin unavailable")?
-        .write_all(content.as_bytes())
-        .context("write to rustfmt stdin")?;
-
-    let out = child
-        .wait_with_output()
-        .context("wait for rustfmt to finish")?;
-
-    if !out.status.success() {
-        bail!(
-            "rustfmt failed (exit {:?}):\n{}",
-            out.status.code(),
-            String::from_utf8_lossy(&out.stderr),
-        );
-    }
-
-    String::from_utf8(out.stdout).context("rustfmt stdout was not valid UTF-8")
-}
-
-fn check_bytes_match(path: &Path, expected: &[u8]) -> Result<()> {
-    if !path.exists() {
-        bail!("{} missing — run without --check first", path.display());
-    }
-    let on_disk = fs::read(path).with_context(|| format!("read {}", path.display()))?;
-    if on_disk != expected {
-        bail!(
-            "{} differs from regeneration ({} vs {} bytes). Run \
-             regenerate-canonical without --check and commit.",
-            path.display(),
-            on_disk.len(),
-            expected.len(),
-        );
-    }
-    Ok(())
-}
-
-const GEN_BEGIN: &str =
-    "// === BEGIN GENERATED — do not edit (run `cargo xtask regenerate-canonical`) ===";
-const GEN_END: &str = "// === END GENERATED ===";
-
-fn splice_generated_block(existing: &str, descs: &[GeneratedDescriptor]) -> Result<String> {
-    let begin_idx = existing
-        .find(GEN_BEGIN)
-        .context("BEGIN GENERATED marker missing from src/lib.rs")?;
-    let end_idx = existing
-        .find(GEN_END)
-        .context("END GENERATED marker missing from src/lib.rs")?;
-    if end_idx <= begin_idx {
-        bail!("END GENERATED appears before BEGIN GENERATED in src/lib.rs");
-    }
-
-    let mut out = String::with_capacity(existing.len() + 1024);
-    out.push_str(&existing[..begin_idx]);
-    out.push_str(GEN_BEGIN);
-    out.push('\n');
-
-    // Per-circuit const declarations.
-    for d in descs {
-        out.push_str(&format!(
-            "\npub const {ident}: CircuitDescriptor = CircuitDescriptor {{\n    \
-                circuit_hash: hex_literal::hex!(\"{ch}\"),\n    \
-                label:        \"{label}\",\n    \
-                version:      \"{version}\",\n    \
-                vk_bytes:     include_bytes!(\"../res/vks/{short}.vk\"),\n    \
-                vk_hash:      hex_literal::hex!(\"{vh}\"),\n}};\n",
-            ident = d.const_ident,
-            ch = hex64(&d.circuit_hash),
-            label = d.label,
-            version = d.version,
-            short = d.short_name,
-            vh = hex64(&d.vk_hash),
-        ));
-    }
-
-    // ALL_CIRCUITS table.
-    out.push_str("\npub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[\n");
-    for d in descs {
-        out.push_str(&format!("    &{},\n", d.const_ident));
-    }
-    out.push_str("];\n");
-
-    out.push_str(GEN_END);
-    out.push_str(&existing[end_idx + GEN_END.len()..]);
-
-    Ok(out)
+    Command::new(bin)
+        .arg("--version")
+        .status()
+        .ok()
+        .filter(|s| s.success())
+        .map(|_| PathBuf::from(bin))
 }

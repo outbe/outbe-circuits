@@ -65,7 +65,7 @@ jobs:
 
       # barretenberg-rs links a C++ static lib whose build.rs invokes
       # cmake + clang against libstdc++/libc++. Without these the
-      # first `cargo` invocation that touches outbe-zk-circuit-noir
+      # first `cargo` invocation that touches outbe-zk-backend
       # fails in build.rs, not in rustc.
       - name: Install C++ toolchain (barretenberg-rs build)
         run: |

@@ -4,60 +4,63 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project shape
 
-Rust workspace producing zero-knowledge circuits (Noir) and a barretenberg-rs FFI prover. Three library crates plus an `xtask` build orchestrator:
+Rust workspace (version `0.11.0`, edition 2021) for the Outbe zero-knowledge protocol: pluggable consensus primitives, a Noir/barretenberg proving backend, and a frozen, versioned canonical circuit registry. Members:
 
-- `crates/outbe-zk-circuit-noir` — Noir circuits + FFI prover. Crate-type is `[staticlib, cdylib, rlib]` (serves iOS, Android, and desktop Rust callers simultaneously).
-- `crates/outbe-zk-canonical` — Pure-static canonical VK + circuit-hash data. Zero deps beyond `hex-literal`. **Generated**, not hand-written.
-- `crates/outbe-crypto-common` — Witness types, Poseidon formulas, consensus-binding primitives.
-- `xtask/` — Build orchestration. Single file (`xtask/src/main.rs`).
+- `crates/outbe-protocol` — Generic, pluggable consensus primitives. The curve / hash / signature / KDF are swappable `Suite` parameters; `OutbeV1` is the production selection (BN254 / Grumpkin / Poseidon2 / Schnorr, `DOMAIN = 1`). Hashing routes through **`outbe-poseidon`** (git dep, tag `v0.11.0`). `rlib`. Optional `alloy` feature adds field-encoding impls for alloy ABI scalars.
+- `crates/outbe-protocol-derive` — `#[derive(Entity)]` proc-macro. Per-field `#[outbe(...)]` roles (`id_seed` / `id_body` / `body` / `owner` / `skip` / `limbed` / `pos = N`) generate the canonical entity-hash preimage. Exercised by the protocol crate's tests.
+- `crates/outbe-zk-backend` — Noir proving backend: a shared ACVM witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Generic over any circuit implementing the `outbe-protocol` zk seams (`Circuit` / `CircuitId` / `CircuitSuite`). `publish = false` (consumes noir git deps + native libs). Feature `with-network-srs` (on by default) pulls `reqwest` for the Aztec SRS download fallback; `default-features = false` is the offline/mobile build.
+- `crates/outbe-zk-canonical` — Concrete canonical circuit/witness types **and** the in-code, append-only, versioned circuit registry. Builds from committed frozen artifacts (no git/noir deps), so it ships to crates.io and `cargo build` is deterministic with or without the noir toolchain. `INCLUSION_DEPTH = 32`.
+- `xtask/` — Release tooling. Single command: `cargo xtask freeze-circuits` — the **only** step that runs `nargo`/`bb`.
 
-### Noir sub-projects under `crates/outbe-zk-circuit-noir/`
+### How the canonical registry works (`outbe-zk-canonical`)
 
-Three sibling Nargo packages (each with its own `Nargo.toml`), not a single `circuits/` directory:
+`build.rs` is **read-only** — it does **not** run `nargo`/`bb`. It reads:
 
-| Directory                  | Nargo name            | Type | Role                                                                              |
-|----------------------------|-----------------------|------|-----------------------------------------------------------------------------------|
-| `outbe-circuit-core/`      | `outbe_circuit_core`  | lib  | Shared modules `ownership` + `inclusion`. Depends on `noir-lang/poseidon` v0.3.0 and `noir-lang/schnorr` v0.2.0. |
-| `outbe-ownership-circuit/` | `ownership_proof`     | bin  | sec.4.2 single-NFT ownership proof. Public inputs: `[owner, nft_hash]`.           |
-| `outbe-full-circuit/`      | `full_proof`          | bin  | Ownership + depth-8 Merkle inclusion. Public inputs: `[owner, nft_hash, expected_merkle_root]`. |
+- `circuits/manifest.toml` — append-only registry index: a global `proof_system` (the bb pin, `bb-keccak-v1`) plus one `[[circuit]]` per `(module, version)` with `label`, `status` (`active` / `deprecated` / `revoked`), and a preserved `circuit_hash` once bytecode is dropped.
+- `resources/circuits/<module>/<version>/` — frozen, immutable artifacts: `bytecode.b64` (ACIR, active only), `abi.json` (drives the Rust witness types, active only), `circuit.vk` (kept while not revoked).
 
-Both bin crates pull the ownership/inclusion logic from `outbe_circuit_core` via a relative path dep — there is **one** ownership implementation (`outbe_circuit_core::ownership::verify_ownership_per_su`) shared across both circuits, so editing the lib forces a recompile of both bins and (per the canonical workflow) a regen of `outbe-zk-canonical`.
+and emits into `outbe_zk_canonical::noir`: a `pub mod <module>` for the latest **active** version of each circuit (Witness / PublicInputs types + `Circuit<S>`/`CircuitId` impls + identity consts) and `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** non-revoked version (VK-only verification view). Identity is cryptographic: `circuit_hash = keccak256(decode(bytecode.b64))`, `vk_hash = keccak256(circuit.vk)` — **labels do not affect either hash**.
 
-Compiled bytecodes land in `crates/outbe-zk-circuit-noir/data/` as `full_proof.json` and `ownership_proof.json`. `nargo` itself is pinned to **1.0.0-beta.21** (install via `noirup -v 1.0.0-beta.21`); `xtask` refuses to compile under any other version because the canonical VKs are tied to that compiler's output.
+### Noir sub-projects under `crates/outbe-zk-canonical/noir/`
 
-## Build commands — always go through xtask
+Sibling Nargo packages (each its own `Nargo.toml`):
 
-`cargo xtask` is aliased in `.cargo/config.toml`. Use these, not raw `cargo build` / `nargo compile`, for anything circuit-related:
+| Directory | Nargo name | Type | Role |
+|-----------|-----------|------|------|
+| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership` + `inclusion` + `hash2` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation (no external poseidon dep). |
+| `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
+| `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
+| `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
 
-- `cargo xtask compile-circuits` — Compile all Noir circuits via nargo, write bytecodes to `data/`.
-- `cargo xtask regenerate-canonical` — Derive UltraHonkKeccak VKs + circuit hashes via the noir_rs FFI path and write them into `outbe-zk-canonical`.
-- `cargo xtask regenerate-canonical --check` — Verify canonical data is in sync without writing. Use this to detect drift before committing.
+All bins pull the shared logic from `outbe_circuit_core` via a relative path dep — there is one shared implementation, so editing the lib forces a recompile of every bin at freeze time. `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
 
-Standard `cargo test` / `cargo check` / `cargo fmt` work normally for everything else.
+## Build commands
+
+Plain cargo works for everything and needs **no** Noir toolchain — `outbe-zk-canonical` builds from its committed frozen artifacts:
+
+- `cargo build --workspace` / `cargo test --workspace` / `cargo fmt` / `cargo clippy` — standard.
+- First build compiles the bundled barretenberg C++ FFI (several minutes; not hung). Subsequent builds cache it.
+
+The Noir toolchain is needed **only** to evolve circuits. Install the pinned versions via `mise run install:zk-toolchain` (nargo + bb). `cargo xtask` is aliased in `.cargo/config.toml`.
 
 ## Circuit-change workflow
 
-When Noir circuits change, the canonical commit must contain all three artifacts together:
+Released circuit versions are frozen; editing the `.nr` sources changes nothing by itself. To mint a new version:
 
-1. `cargo xtask compile-circuits` — regenerate `data/` bytecodes
-2. `cargo xtask regenerate-canonical` — regenerate VKs + circuit hashes in `outbe-zk-canonical`
-3. Commit `data/` **and** the modified `crates/outbe-zk-canonical/` files in the **same** commit as the circuit change
+1. `cargo xtask freeze-circuits` — compiles the head noir sources via `nargo`, derives VKs via `bb`, and for each circuit whose **ACIR changed** mints a new frozen version under `resources/circuits/` and records it `active` in `manifest.toml` (superseded version → `deprecated`, its `circuit_hash` preserved, bytecode/abi dropped, VK kept).
+   - unchanged ACIR → skipped; changed ACIR + same ABI → patch bump; ABI change → pass `--abi-change` (minor) or `--semantic` (major + new `DOMAIN` decision).
+2. Review and commit the minted `resources/circuits/` artifacts **and** the modified `circuits/manifest.toml` **together** — the PR review is the audit gate for admitting a circuit. Status transitions (active → deprecated → revoked) are manifest edits reconciled by the next freeze.
 
-The `--check` variant catches drift. Run it before pushing if unsure.
+## Dependency pinning
 
-## Vendored noir_rs — read-only
-
-`crates/outbe-zk-circuit-noir/src/vendor/noir_rs/` is ~821 LOC of vendored upstream noir_rs proving glue (Apache-2.0; see `NOTICE.md`). **Do not modify these files.** Diverging breaks FFI proof compatibility with the canonical VKs. If you think a change is needed there, escalate to the human — don't edit.
-
-The pinned `acvm` / `acvm_blackbox_solver` / `bn254_blackbox_solver` / `nargo` / `barretenberg-rs` deps in the workspace `Cargo.toml` exist specifically to satisfy this vendored code. Bump them together when chasing a noir release, not individually.
+The noir git deps (`acir` / `acvm` / `bn254_blackbox_solver`, tag `v1.0.0-beta.22`) stay **inline** in `outbe-zk-backend`, not in `[workspace.dependencies]`. `barretenberg-rs` is exact-pinned (`=5.0.0-nightly.20260522`). `outbe-poseidon` is a tagged git dep until published. Bump the noir tag, the bb pin, and the mise `NOIR_VERSION`/`BB_VERSION` together. `deny.toml` allows exactly two git origins: `noir-lang/noir` and `outbe/outbe-poseidon`.
 
 ## Profiles and test gotchas
 
-- `[profile.dev]` is set to `opt-level = 3` deliberately — proving is unusably slow otherwise. Don't "fix" this.
-- The `aggregation-full-tiers` feature on `outbe-zk-circuit-noir` gates expensive tier prove+verify tests. Each tier takes tens of seconds; N=64 takes several minutes. Off by default; only enable when explicitly exercising tier proving.
-- First `cargo xtask` build triggers the barretenberg-rs C++ FFI build, which takes several minutes. It is not hung — let it finish. Subsequent builds cache it.
+- `[profile.dev]` is `opt-level = 3` deliberately — proving is unusably slow otherwise. Don't "fix" this.
+- `outbe-zk-backend`'s proving roundtrip tests (`tests/barretenberg.rs`) and benches (`benches/proving.rs`, the n1–n64 tiers) build the barretenberg FFI and download/cache the SRS; each tier proof takes tens of seconds. The fast suites — `outbe-protocol` and `outbe-zk-canonical` tests — read frozen artifacts and need neither the toolchain nor the network.
 
 ## Style
 
 - Standard `rustfmt` (no custom `rustfmt.toml`).
-- Follow existing module patterns in each crate — `outbe-zk-canonical` in particular is generated; do not hand-edit it (use `regenerate-canonical`).
+- `outbe-zk-canonical`'s `noir` registry is generated/frozen — never hand-edit `resources/circuits/` or the `build.rs` codegen output; mint via `cargo xtask freeze-circuits`.

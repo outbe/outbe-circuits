@@ -1,0 +1,67 @@
+# Circuit registry — append-only.
+#
+# Each [[circuit]] is a frozen, released circuit version; its artifacts live at
+# `resources/circuits/<module>/<version>/{bytecode.b64, circuit.vk, abi.json}`
+# and are immutable once committed. `build.rs` reads this file and emits the
+# in-code registry (`CIRCUIT_REGISTRY`) plus the per-circuit types for the latest
+# active version of each module. Mint new versions with
+# `cargo xtask freeze-circuits` (the only step that runs nargo/bb); status
+# transitions (active → deprecated → revoked) are edits here, reviewed in a PR.
+
+# Logical proof system these VKs verify under (the bb pin). A bb bump that
+# changes the wire format gets a new proof_system + re-frozen circuits.
+proof_system = "bb-keccak-v1"
+
+[[circuit]]
+module = "ownership_proof"
+label = "outbe.ownership"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "full_proof"
+label = "outbe.full_proof"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n1"
+label = "outbe.flat_aggregation.n1"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n2"
+label = "outbe.flat_aggregation.n2"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n4"
+label = "outbe.flat_aggregation.n4"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n8"
+label = "outbe.flat_aggregation.n8"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n16"
+label = "outbe.flat_aggregation.n16"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n32"
+label = "outbe.flat_aggregation.n32"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "flat_aggregation_n64"
+label = "outbe.flat_aggregation.n64"
+version = "1.0.0"
+status = "active"
