@@ -20,3 +20,9 @@ ark-std = { workspace = true }
 ark-bn254 = { workspace = true }
 # Compile-time `hex!("..")` -> `[u8; N]` for the generated circuit/vk hashes.
 hex-literal = { workspace = true }
+
+# `hex-literal` is consumed only by `build.rs`-generated code (emitted into
+# OUT_DIR as `::hex_literal::hex!(..)`), which source-scanning tools can't see —
+# tell cargo-machete it's intentional, not dead.
+[package.metadata.cargo-machete]
+ignored = ["hex-literal"]

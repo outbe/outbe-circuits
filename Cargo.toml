@@ -45,7 +45,6 @@ thiserror     = { version = "2", default-features = false }
 # Floor (not exact pin) so the noir acvm toolchain — which pulls
 # `der 0.8 -> zeroize ^1.8` — can coexist in one workspace resolution.
 zeroize        = { version = "1.7", default-features = false }
-zeroize_derive = { version = "1.4", default-features = false }
 # outbe-protocol-derive proc-macro stack.
 syn         = { version = "2", features = ["full"] }
 quote       = "1"

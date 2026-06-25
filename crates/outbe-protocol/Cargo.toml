@@ -29,7 +29,6 @@ blake2        = { workspace = true }
 alloy-primitives = { workspace = true, optional = true }
 thiserror     = { workspace = true }
 zeroize        = { workspace = true }
-zeroize_derive = { workspace = true }
 
 [dev-dependencies]
 ark-std = { workspace = true, features = ["parallel"] }
