@@ -1,148 +1,93 @@
-//! Canonical outbe Noir circuit descriptors.
+//! Concrete canonical circuit and witness types for the Outbe protocol.
 //!
-//! Authoritative on-chain identity source for the outbe L2 `zk_verify`
-//! precompile. Consumed by the chain binary (the L2 execution layer)
-//! which wraps each descriptor with chain-policy timing
-//! (`activated_at_block` / `deprecated_at_block`) to form its
-//! `CanonicalCircuit` table.
+//! The generic core (`outbe-protocol`) defines only the seams — the
+//! [`Circuit`](outbe_protocol::protocol::zk::Circuit),
+//! [`ProofGenerator`](outbe_protocol::protocol::zk::ProofGenerator), and
+//! [`ProofVerifier`](outbe_protocol::protocol::zk::ProofVerifier) traits plus
+//! the `Suite` formulas. This crate supplies the *concrete* statements built
+//! on top of them, generated from the vendored noir circuits.
 //!
-//! Pure static data — no FFI, `no_std`. The heavy work of running
-//! `nargo compile` + deriving VKs via Barretenberg + computing
-//! `circuit_hash` happens in this workspace's
-//! `xtask regenerate-canonical` command; the output is committed
-//! straight into this file and `res/vks/*.vk`.
+//! The noir circuits fix the proving field to BN254, so the witness types are
+//! `ark_bn254::Fr`-based. Rather than hardcode `OutbeV1`, the circuit layer is
+//! generic over [`CircuitSuite`] — any suite on the BN254/Grumpkin cycle that
+//! signs with the in-circuit 64-byte Grumpkin Schnorr. `OutbeV1` satisfies it;
+//! a future same-cycle `OutbeV2` would reuse the same circuits.
 //!
-//! ## Append-only
+//! The [`noir`] module is **build-generated** at compile time from the
+//! vendored noir circuits in `noir/*.nr` via `nargo`. Per circuit it derives
+//! the Rust `Witness` / `PublicInputs` types, a marker type with a generic
+//! [`Circuit<S>`](outbe_protocol::protocol::zk::Circuit) impl + a (suite-
+//! independent) [`CircuitId`] identity impl, and the canonical descriptor
+//! constants (`LABEL` / `VERSION` / `CIRCUIT_HASH` / `BYTECODE_B64` /
+//! `VK_BYTES` / `VK_HASH`).
 //!
-//! Existing entries are **never modified**. New circuit revisions
-//! (different source ⇒ different `circuit_hash`) get appended as
-//! new descriptors. Deprecation of old descriptors is the chain's
-//! concern (via `deprecated_at_block`); this crate just records what
-//! exists.
-//!
-//! ## Regenerate
-//!
-//! After modifying a circuit under `crates/outbe-zk-circuit-noir/`:
-//!
-//! ```bash
-//! cargo run --package xtask -- regenerate-canonical
-//! ```
-//!
-//! That command:
-//! 1. Compiles every circuit via `nargo`
-//! 2. Computes `circuit_hash = keccak256(acir_bytes)` per circuit
-//! 3. Derives `vk_bytes` via `noir_rs::barretenberg::verify::
-//!    get_ultra_honk_keccak_verification_key`
-//! 4. Computes `vk_hash = keccak256(vk_bytes)`
-//! 5. Writes `vk_bytes` to `res/vks/<circuit_label>.vk`
-//! 6. Regenerates this file's const declarations
-//!
-//! CI gates a `--check` invocation: regen + diff = fail on stale state.
+//! The `.nr` circuits remain the source of truth.
 
-#![no_std]
+pub mod aggregation;
+pub mod full;
+pub mod ownership;
 
-/// A canonical Noir circuit descriptor. All fields are content-derived
-/// from the compiled ACIR + the chosen proving SRS (UltraHonkKeccak).
-#[derive(Debug)]
-pub struct CircuitDescriptor {
-    /// ACIR bytecode hash: `keccak256(base64_decode(acir_bytecode))`.
-    /// Stable identifier for this circuit at this source revision —
-    /// this is what the chain's `zk_verify` precompile matches
-    /// against to dispatch to the right VK.
-    pub circuit_hash: [u8; 32],
+/// The circuit seams live in the core (`outbe-protocol`), so a noir backend can be
+/// generic over circuits without depending on this crate. Re-exported here for
+/// convenience — `outbe_zk_canonical::{CircuitSuite, CircuitId}` and the
+/// build-generated `crate::{…}` impls keep resolving.
+pub use outbe_protocol::protocol::zk::{CircuitId, CircuitSuite};
 
-    /// Human-readable label (e.g. "outbe.spending_unit.ownership").
-    /// For logs / audit / `circuit_info` precompile output. NOT
-    /// authoritative — the `circuit_hash` is.
+/// Depth of the perpetual TributeDraft commitment tree — the chain's
+/// `CommitmentWindowBase.TREE_DEPTH` and the `full_proof` circuit's Merkle path
+/// length. The generic [`outbe_protocol::protocol::imt::Imt`] is depth-agnostic;
+/// this pins the canonical depth the full-proof circuit is built for.
+pub const INCLUSION_DEPTH: usize = 32;
+
+/// Lifecycle status of a registered circuit version (see `circuits/manifest.toml`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CircuitStatus {
+    /// Accepts new proofs.
+    Active,
+    /// Still verifies in-flight proofs; no new adoption. Keeps its VK; the
+    /// freeze step drops its bytecode (a proving artifact).
+    Deprecated,
+    /// Obsolete: no longer verifies (normal sunset or emergency kill-switch).
+    /// The freeze step drops its VK too, and it is absent from
+    /// [`CIRCUIT_REGISTRY`](noir::CIRCUIT_REGISTRY) — the manifest keeps the
+    /// record (`circuit_hash`).
+    Revoked,
+}
+
+/// One frozen, released circuit version in the in-code registry
+/// ([`noir::CIRCUIT_REGISTRY`]). Append-only: new versions are added and old
+/// ones kept until revoked, so a verifier can accept old + new concurrently.
+///
+/// This is the **verification** view — it carries only the VK, since
+/// verification needs only the VK (+ public inputs + proof). The ACIR bytecode
+/// is a *proving* artifact and is kept only for the **active** version, on its
+/// `noir::<module>::BYTECODE_B64` const; old versions drop their bytecode (a
+/// retired prover ships its own).
+#[derive(Clone, Copy, Debug)]
+pub struct RegistryEntry {
+    /// Canonical dotted label (the logical statement), e.g. `outbe.ownership`.
     pub label: &'static str,
-
-    /// Semver-style version string for human reading ("1.0.0").
-    /// NOT authoritative; circuit_hash is the only identity that
-    /// matters for verification.
+    /// Semver version of this artifact.
     pub version: &'static str,
-
-    /// Canonical UltraHonkKeccak verification key bytes, derived from
-    /// this circuit + the production SRS. Used by the chain's
-    /// `zk_verify` precompile (Noir + Barretenberg FFI) to verify
-    /// proofs claimed against this circuit.
-    pub vk_bytes: &'static [u8],
-
-    /// Pre-computed `keccak256(vk_bytes)`. Lets contracts /
-    /// `circuit_info` consumers cross-check VK provenance without
-    /// re-hashing the (potentially tens-of-KB) VK bytes.
+    /// Lifecycle status.
+    pub status: CircuitStatus,
+    /// Proof system these bytes verify under (the bb pin / verifier routing key).
+    pub proof_system: &'static str,
+    /// `keccak256(acir bytecode)` — the binary identity (preserved in the
+    /// manifest after the bytecode itself is dropped).
+    pub circuit_hash: [u8; 32],
+    /// `keccak256(vk_bytes)`.
     pub vk_hash: [u8; 32],
+    /// UltraHonkKeccak verification key — all that verification needs.
+    pub vk_bytes: &'static [u8],
 }
 
-// === BEGIN GENERATED — do not edit (run `cargo xtask regenerate-canonical`) ===
-
-pub const FULL_PROOF: CircuitDescriptor = CircuitDescriptor {
-    circuit_hash: hex_literal::hex!(
-        "1151cdafb8f9aa7be48b122df02fd8e66c338f19cbd65aa380b4cd85569c5dab"
-    ),
-    label: "outbe.full_proof",
-    version: "1.0.0",
-    vk_bytes: include_bytes!("../res/vks/full_proof.vk"),
-    vk_hash: hex_literal::hex!("02ca53e6576b929a1dcca43547ff23db902f850eb91befef16e3c2dc3668f222"),
-};
-
-pub const OWNERSHIP: CircuitDescriptor = CircuitDescriptor {
-    circuit_hash: hex_literal::hex!(
-        "4cc9bd48308f642d2967ecb8cefb352aab1212dbc682e3fba14d0c8d9a3cdf37"
-    ),
-    label: "outbe.ownership",
-    version: "1.0.0",
-    vk_bytes: include_bytes!("../res/vks/ownership.vk"),
-    vk_hash: hex_literal::hex!("d4bec4ea87764f09de2b6a2101c8288f98e3097eb1ea8bacf61c4e18ebe230e4"),
-};
-
-pub const COMMITMENT_NULLIFIER: CircuitDescriptor = CircuitDescriptor {
-    circuit_hash: hex_literal::hex!(
-        "42b0eca6c493683e6ed436f31fe40237c20ba976d67ab84b481eb5a727514772"
-    ),
-    label: "outbe.commitment_nullifier",
-    version: "1.0.0",
-    vk_bytes: include_bytes!("../res/vks/commitment_nullifier.vk"),
-    vk_hash: hex_literal::hex!("a76d1db7a0763c4835efe15e499a9b0f41f17fbb4ef90a3afd1be0ef6c5206ab"),
-};
-
-pub const ALL_CIRCUITS: &[&CircuitDescriptor] = &[&FULL_PROOF, &OWNERSHIP, &COMMITMENT_NULLIFIER];
-// === END GENERATED ===
-
-/// Look up a descriptor by its ACIR `circuit_hash`. `O(n)` over a
-/// small table — fine for the precompile path (n in single digits).
-pub fn find_by_hash(circuit_hash: &[u8; 32]) -> Option<&'static CircuitDescriptor> {
-    let mut i = 0;
-    while i < ALL_CIRCUITS.len() {
-        if &ALL_CIRCUITS[i].circuit_hash == circuit_hash {
-            return Some(ALL_CIRCUITS[i]);
-        }
-        i += 1;
-    }
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn unknown_hash_returns_none() {
-        // An all-zero hash can't appear in ALL_CIRCUITS — keccak256 of
-        // any non-empty ACIR is overwhelmingly unlikely to be zero — so
-        // lookup must miss. Mirror of the "chain rejects unknown
-        // circuits" safety guarantee from the consumer side.
-        assert!(find_by_hash(&[0u8; 32]).is_none());
-    }
-
-    #[test]
-    fn descriptor_size_invariants() {
-        // After regeneration, every descriptor must have:
-        //   - non-empty label
-        //   - non-empty vk_bytes
-        //   - keccak256(vk_bytes) == vk_hash (checked by xtask, not here)
-        for d in ALL_CIRCUITS {
-            assert!(!d.label.is_empty(), "label is empty");
-            assert!(!d.vk_bytes.is_empty(), "vk_bytes is empty for {}", d.label);
-        }
-    }
+/// Rust types generated at build time from the **frozen** circuit artifacts
+/// listed in `circuits/manifest.toml` (witness + public-input shapes + canonical
+/// identity for the latest active version of each circuit, plus the full
+/// append-only [`CIRCUIT_REGISTRY`](noir::CIRCUIT_REGISTRY) over every version).
+#[allow(dead_code)]
+#[allow(clippy::all)] // machine-generated by build.rs from the noir ABIs; not hand-linted
+pub mod noir {
+    include!(concat!(env!("OUT_DIR"), "/noir_generated.rs"));
 }

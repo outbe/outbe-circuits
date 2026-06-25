@@ -1,91 +1,102 @@
-# `outbe-zk-canonical`
+# outbe-zk-canonical
 
-Authoritative source-of-truth for Outbe L2 canonical Noir circuit
-descriptors. Pure static data; **no FFI, `no_std`-compatible**.
+[![crates.io](https://img.shields.io/crates/v/outbe-zk-canonical.svg)](https://crates.io/crates/outbe-zk-canonical)
+[![release](https://img.shields.io/github/v/release/outbe/outbe-circuits.svg)](https://github.com/outbe/outbe-circuits/releases)
+[![CI](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-Consumers:
-- `outbe-chain` — wraps each `CircuitDescriptor` with chain-policy
-  timing (`activated_at_block` / `deprecated_at_block`) and uses
-  this to gate proof acceptance in the `zk_verify` precompile.
-- Solidity test fixtures / audit tooling — can link this to get
-  the canonical VK bytes and circuit hashes without any FFI.
+Concrete canonical circuit + witness types for the Outbe protocol (ownership, the
+flat-aggregation tiers n1–n64, full proof, and the shielded commitment-nullifier),
+built on the generic seams in
+`outbe-protocol` (`Circuit` / `CircuitId` / `CircuitSuite`). It is also the **in-code,
+versioned circuit registry**: the authoritative, append-only record of every
+released circuit version and its on-chain identity.
 
-## Versioning model
+## What the build produces
 
-**Append-only.** Existing descriptors are never modified — that
-would break consensus on what bytes are canonical. New circuit
-revisions (different source code ⇒ different ACIR ⇒ different
-`circuit_hash`) get appended as new descriptors.
+`cargo build` runs `build.rs`, which is **read-only** — it does **not** run
+`nargo`/`bb`. It reads the committed frozen artifacts and emits, into
+`outbe_zk_canonical::noir`:
 
-Crate version bumps follow:
-- **Patch** (0.1.x → 0.1.y) for bug fixes, label/version-string
-  tweaks, doc changes — no descriptor changes
-- **Minor** (0.x.y → 0.(x+1).0) for appended descriptors
-- **Major** (x.y.z → (x+1).0.0) is reserved for breaking changes
-  to `CircuitDescriptor` shape (would require coordinated
-  `outbe-chain` migration)
+- `pub mod <module> { … }` for the **latest active** version of each circuit —
+  `Witness` / `PublicInputs` types, the `Circuit<S>` + `CircuitId` impls on a
+  marker, and identity consts (`LABEL`, `VERSION`, `CIRCUIT_HASH`, `BYTECODE_B64`,
+  `VK_BYTES`, `VK_HASH`). This is the prover-facing API.
+- `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** version (the
+  verification view — VK + hashes, no bytecode). A verifier dispatches on this:
+  match a submission's `circuit_id` (`vk_hash` / `label@version`), check `status`,
+  verify against `vk_bytes`. Old + new versions coexist here, so a chain can accept
+  both during a rollout.
 
-## Regenerate
+So: **registry = all versions; codegen = latest active**.
 
-After modifying a circuit under `crates/outbe-zk-circuit-noir/`:
+## Layout
 
-```bash
-cargo run --package xtask -- regenerate-canonical
+```
+circuits/manifest.toml                       # append-only registry index
+resources/circuits/<module>/<version>/       # frozen, immutable artifacts
+    bytecode.b64   # ACIR — proving artifact (active only)
+    abi.json       # drives the Rust witness types (active only)
+    circuit.vk     # UltraHonkKeccak VK — verification (kept while not revoked)
+noir/                                        # the .nr sources = the "head" (next version)
 ```
 
-That command:
-1. Runs `nargo compile` on every entry in `xtask::CIRCUITS`
-2. Reads the compiled `<name>.json` artifact (base64 ACIR)
-3. Computes `circuit_hash = keccak256(base64_decode(acir))`
-4. Calls `noir_rs::barretenberg::verify::get_ultra_honk_keccak_verification_key`
-   to derive the UltraHonkKeccak VK
-5. Writes `vk_bytes` to `res/vks/<circuit_label>.vk`
-6. Computes `vk_hash = keccak256(vk_bytes)`
-7. Regenerates `src/lib.rs` const declarations + appends to
-   `ALL_CIRCUITS`
+`manifest.toml` is the source of truth: a global `proof_system` (the bb pin) plus
+one `[[circuit]]` per `(module, version)` with `label`, `status`, and — once the
+bytecode is dropped — the preserved `circuit_hash`.
 
-### CI gate
+## Lifecycle & storage policy
 
-```bash
-cargo run --package xtask -- regenerate-canonical --check
+| status | accepts proofs? | bytecode + abi | vk | in `CIRCUIT_REGISTRY`? |
+|---|---|---|---|---|
+| `active` | yes | kept (provable) | kept | yes (+ head `pub mod`) |
+| `deprecated` | verifies in-flight only | **dropped** | kept | yes (VK-only) |
+| `revoked` | no | dropped | **dropped** | **no** (manifest keeps the record) |
+
+Rationale: bytecode is a *proving* artifact (a retired prover ships its own);
+verification needs only the VK. So a superseded version keeps its VK to keep
+verifying in-flight proofs, and a fully-obsolete one drops everything. The
+chain-side versioning/rollout design is in
+[`../docs/circuit-versioning.md`](../docs/circuit-versioning.md).
+
+## Evolving a circuit
+
+Editing the `.nr` sources does **not** change anything by itself — released
+versions are frozen. Minting a new version is a deliberate step:
+
+```sh
+cargo xtask freeze-circuits          # the only step that runs nargo/bb
 ```
 
-Fails if regeneration would produce a diff vs committed state.
-Catches:
-- Circuit source changed without regenerating
-- Manually-edited `.vk` files or hash constants
-- SRS drift
+For each circuit whose ACIR changed it mints a new frozen version:
 
-## Consuming from `outbe-chain`
+- **unchanged ACIR** → skipped (the freeze detects true ACIR equivalence — even a
+  source edit that the noir optimizer removes is a no-op here).
+- **changed ACIR, same ABI** → patch bump (e.g. `1.0.0 → 1.0.1`).
+- **ABI changed** → pass `--abi-change` (minor) or `--semantic` (major + a new
+  `DOMAIN` decision) to make the public-input-layout change explicit.
 
-```toml
-# outbe-chain/Cargo.toml
-[dependencies]
-outbe-zk-canonical = "0.2"
+On a supersede it sets the previous version `deprecated`, then a reconcile pass
+enforces the storage policy above (preserving `circuit_hash` before any deletion).
+The new artifacts + manifest land in a **PR** — that review is the audit gate for
+admitting a circuit. Status transitions (active → deprecated → revoked) are edits
+to `manifest.toml`; the next `freeze-circuits` reconciles the on-disk artifacts.
+
+Example — bumping the n2 tier:
+
+```
+$ cargo xtask freeze-circuits
+  unchanged  flat_aggregation_n1 @ 1.0.0
+  minted     flat_aggregation_n2 1.0.0 -> 1.0.1  (old -> deprecated)
+  ...
+# manifest: n2 v1.0.0 deprecated (+circuit_hash), v1.0.1 active
+# resources: n2/1.0.0/ -> circuit.vk only;  n2/1.0.1/ -> bytecode+abi+vk
+# CIRCUIT_REGISTRY: both n2 entries;  pub mod flat_aggregation_n2 -> v1.0.1
 ```
 
-```rust
-// outbe-chain/src/zk/circuits.rs
-use outbe_zk_canonical::{CircuitDescriptor, SU_OWNERSHIP, TD_OWNERSHIP};
+## Publishability
 
-pub struct CanonicalCircuit {
-    pub descriptor: &'static CircuitDescriptor,
-    pub activated_at_block:  u64,
-    pub deprecated_at_block: Option<u64>,
-}
-
-pub const CANONICAL_CIRCUITS: &[CanonicalCircuit] = &[
-    CanonicalCircuit {
-        descriptor:          &SU_OWNERSHIP,
-        activated_at_block:  0,
-        deprecated_at_block: None,
-    },
-    // ...
-];
-```
-
-## Design
-
-See the internal `outbe-chain` design docs for the full spec
-(rolling-upgrade procedure, emergency response, precompile ABIs,
-etc.).
+This crate stays acir-free (no git/noir deps) and ships to crates.io — `nargo`/`bb`
+are invoked only by the `xtask` at freeze time, never on a normal build. The
+committed frozen artifacts make `cargo build` deterministic with or without the
+noir toolchain installed.

@@ -18,5 +18,5 @@ Do not modify `deny.toml` or any other file in this skill unless the user explic
 ## Don'ts
 
 - Do not silence a real violation by skipping or ignoring without a written rationale — that defeats the policy.
-- Do not edit the vendored `crates/outbe-zk-circuit-noir/src/vendor/noir_rs/` to dodge a transitive warning.
+- Most duplicate-version / git-source entries are forced by the noir-lang acvm tree (`acir` / `acvm` / `bn254_blackbox_solver`, git-pinned inline in `outbe-zk-backend`). Prefer an upstream noir-tag bump over widening `deny.toml`.
 - Do not run individual checks (`cargo deny check bans` etc.) instead of `check all` — CI runs `check all`; mismatched scopes hide regressions.

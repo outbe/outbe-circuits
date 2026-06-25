@@ -1,0 +1,73 @@
+# Install mise once (https://mise.jdx.dev),
+# then `mise tasks ls` to list or `mise run <task>` to invoke. Every task
+# documents the equivalent raw command so non-mise users can copy-paste.
+#
+# The only steps that need the Noir toolchain are the canonical
+# circuit-freeze tasks (`xtask freeze-circuits` shells out to `nargo` + `bb`).
+# Plain `cargo build`/`test` need neither — `outbe-zk-canonical`
+# builds from its committed frozen artifacts.
+
+[env]
+# Pinned to the release the circuits are compiled against (the
+# `v1.0.0-beta.22` git tag on the noir deps in outbe-zk-backend).
+NOIR_VERSION = "1.0.0-beta.22"
+# Must equal the `barretenberg-rs` version in
+# crates/outbe-zk-backend/Cargo.toml so freeze-derived VKs match the FFI verifier.
+BB_VERSION = "5.0.0-nightly.20260522"
+
+# ---------------------------------------------------------------
+# Toolchain install for `freeze-circuits`. Idempotent.
+# ---------------------------------------------------------------
+[tasks."install:noir"]
+description = "Install nargo $NOIR_VERSION via noirup → ~/.nargo/bin"
+run = '''
+set -euo pipefail
+[ -x "$HOME/.nargo/bin/noirup" ] || curl -fsSL https://raw.githubusercontent.com/noir-lang/noirup/main/install | bash
+"$HOME/.nargo/bin/noirup" --version "$NOIR_VERSION"
+'''
+
+[tasks."install:bb"]
+description = "Install Barretenberg bb $BB_VERSION via bbup → ~/.bb (must match barretenberg-rs)"
+run = '''
+set -euo pipefail
+[ -x "$HOME/.bb/bbup" ] || curl -fsSL https://raw.githubusercontent.com/AztecProtocol/aztec-packages/master/barretenberg/bbup/install | bash
+"$HOME/.bb/bbup" --version "$BB_VERSION"
+'''
+
+[tasks."install:zk-toolchain"]
+description = "Install nargo + bb at the pinned versions (prereq for freeze-circuits)"
+depends = ["install:noir", "install:bb"]
+
+# ---------------------------------------------------------------
+# Canonical circuit management. `freeze-circuits` recompiles the Noir
+# circuits, refreshes the committed bytecode/VKs, and updates the
+# manifest. Needs `install:zk-toolchain` (nargo + bb on PATH / ~/.nargo,
+# ~/.bb — the xtask also honours $NARGO / $BB overrides).
+# ---------------------------------------------------------------
+[tasks."freeze-circuits"]
+description = "Recompile circuits + refresh frozen artifacts: cargo run -p xtask -- freeze-circuits"
+run = "cargo run -p xtask -- freeze-circuits"
+
+[tasks."freeze-circuits:abi-change"]
+description = "freeze-circuits minting a new circuit version on an ABI change (--abi-change)"
+run = "cargo run -p xtask -- freeze-circuits --abi-change"
+
+# ---------------------------------------------------------------
+# Convenience: the CI gate locally.
+# ---------------------------------------------------------------
+[tasks.check]
+description = "fmt + clippy + test across the workspace (mirrors CI)"
+run = '''
+set -euo pipefail
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace
+'''
+
+[tasks.fmt]
+description = "format code"
+run = "cargo fmt --all"
+
+[tasks.build]
+description = "format code"
+run = "cargo build --workspace"
