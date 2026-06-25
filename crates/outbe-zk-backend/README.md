@@ -20,8 +20,9 @@ concrete `outbe-zk-canonical` (only the tests/benches pull that in). A single
 - [`ProofVerifier<S, C>`](https://docs.rs/outbe-protocol) — `verify(public, proof) -> bool`
 
 So the same backend proves/verifies ownership, every flat-aggregation tier
-(n1–n64), the full proof, **or any circuit you define** that implements the
-seams — you pick the circuit type at the call site via the `C` type parameter.
+(n1–n64), the full proof, the commitment-nullifier, **or any circuit you define**
+that implements the seams — you pick the circuit type at the call site via the
+`C` type parameter.
 
 ```rust
 use outbe_protocol::{OutbeV1, Suite};

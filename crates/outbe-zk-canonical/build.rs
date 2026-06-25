@@ -287,7 +287,12 @@ fn gen_module(l: &Loaded) -> String {
 
     let mut m = String::new();
     m.push_str(&format!("pub mod {module} {{\n"));
-    m.push_str("    use super::EmbeddedCurvePoint;\n");
+    // Only circuits with an embedded-curve-point param (e.g. `pk`) reference the
+    // type — a Field-only circuit (commitment-nullifier) would warn on the import.
+    if witness_fields.contains("EmbeddedCurvePoint") || public_fields.contains("EmbeddedCurvePoint")
+    {
+        m.push_str("    use super::EmbeddedCurvePoint;\n");
+    }
     m.push_str("    use ark_bn254::Fr;\n\n");
 
     m.push_str("    /// Private (witness) inputs, in ABI order.\n");

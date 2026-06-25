@@ -465,3 +465,64 @@ fn witness_inputs_layout_is_canonical() {
         "public tail == public_inputs"
     );
 }
+
+/// The restored shielded commitment-nullifier circuit is registered with its
+/// canonical identity, and its build-generated ABI matches the statement:
+/// 7 public inputs (merkle_root, nullifier_hash, denom_id, receiver_binding,
+/// and the three domain tags) over a depth-20 Merkle path.
+#[test]
+fn commitment_nullifier_descriptor() {
+    use outbe_zk_canonical::noir::commitment_nullifier_proof as cn;
+
+    // Canonical descriptor identity.
+    assert_eq!(
+        cn::CommitmentNullifierProof::LABEL,
+        "outbe.commitment_nullifier"
+    );
+    assert_eq!(cn::CommitmentNullifierProof::VERSION, "1.0.0");
+    assert!(!cn::CommitmentNullifierProof::BYTECODE_B64.is_empty());
+    assert_ne!(cn::CommitmentNullifierProof::CIRCUIT_HASH, [0u8; 32]);
+    assert!(!cn::CommitmentNullifierProof::VK_BYTES.is_empty());
+    assert_ne!(cn::CommitmentNullifierProof::VK_HASH, [0u8; 32]);
+
+    let public = cn::PublicInputs {
+        merkle_root: Fr::from(1u64),
+        nullifier_hash: Fr::from(2u64),
+        denom_id: Fr::from(3u64),
+        receiver_binding: Fr::from(4u64),
+        tag_commit: Fr::from(5u64),
+        tag_nullifier: Fr::from(6u64),
+        tag_merkle: Fr::from(7u64),
+    };
+    let flat = <cn::CommitmentNullifierProof as Circuit<OutbeV1>>::public_inputs(&public);
+    assert_eq!(
+        flat.len(),
+        7,
+        "commitment-nullifier exposes 7 public inputs"
+    );
+    assert_eq!(flat[0], Fr::from(1u64), "merkle_root is first public input");
+    assert_eq!(flat[6], Fr::from(7u64), "tag_merkle is last public input");
+
+    // witness_inputs flattens every ABI param in order: 7 public + the private
+    // (secret, nullifier_secret, merkle_path[20], merkle_index) = 30 leaves.
+    let witness = cn::Witness {
+        secret: Fr::from(11u64),
+        nullifier_secret: Fr::from(12u64),
+        merkle_path: [Fr::from(0u64); 20],
+        merkle_index: Fr::from(0u64),
+    };
+    let w = <cn::CommitmentNullifierProof as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
+    assert_eq!(
+        w.len(),
+        7 + 2 + 20 + 1,
+        "commitment-nullifier witness arity"
+    );
+
+    // It is present in the append-only registry under its label.
+    assert!(
+        outbe_zk_canonical::noir::CIRCUIT_REGISTRY
+            .iter()
+            .any(|e| e.label == "outbe.commitment_nullifier"),
+        "commitment-nullifier missing from CIRCUIT_REGISTRY"
+    );
+}

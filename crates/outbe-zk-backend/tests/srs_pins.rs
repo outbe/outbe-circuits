@@ -17,6 +17,7 @@ use base64::Engine;
 use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
 
+use outbe_zk_canonical::noir::commitment_nullifier_proof::CommitmentNullifierProof;
 use outbe_zk_canonical::noir::flat_aggregation_n1::FlatAggregationN1;
 use outbe_zk_canonical::noir::flat_aggregation_n16::FlatAggregationN16;
 use outbe_zk_canonical::noir::flat_aggregation_n2::FlatAggregationN2;
@@ -94,6 +95,10 @@ fn print_srs_pins() {
     let mut api = BarretenbergApi::new(backend);
     let circuits: &[(&str, &str)] = &[
         ("ownership", OwnershipProof::BYTECODE_B64),
+        (
+            "commitment_nullifier",
+            CommitmentNullifierProof::BYTECODE_B64,
+        ),
         ("flat n1", FlatAggregationN1::BYTECODE_B64),
         ("flat n2", FlatAggregationN2::BYTECODE_B64),
         ("flat n4", FlatAggregationN4::BYTECODE_B64),
@@ -133,6 +138,10 @@ fn print_circuit_complexity() {
     let circuits: &[(&str, &str)] = &[
         ("ownership", OwnershipProof::BYTECODE_B64),
         ("full", FullProof::BYTECODE_B64),
+        (
+            "commitment_nullifier",
+            CommitmentNullifierProof::BYTECODE_B64,
+        ),
         ("flat n1", FlatAggregationN1::BYTECODE_B64),
         ("flat n2", FlatAggregationN2::BYTECODE_B64),
         ("flat n4", FlatAggregationN4::BYTECODE_B64),

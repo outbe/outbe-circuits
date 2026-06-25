@@ -1,0 +1,10 @@
+[package]
+name = "commitment_nullifier_proof"
+type = "bin"
+authors = ["outbe"]
+compiler_version = ">=1.0.0"
+
+[dependencies]
+# Poseidon-1 (circom-compatible) hash_2 / hash_4 — the commitment / nullifier /
+# Merkle-node hashes this shielded circuit is defined over.
+poseidon = { tag = "v0.3.0", git = "https://github.com/noir-lang/poseidon.git" }

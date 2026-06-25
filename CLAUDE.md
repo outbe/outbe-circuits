@@ -31,8 +31,9 @@ Sibling Nargo packages (each its own `Nargo.toml`):
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
+| `outbe-commitment-nullifier-circuit/` | `commitment_nullifier_proof` | bin | Shielded commitment (Poseidon-4) + depth-20 Merkle membership + nullifier derivation. Uses `noir-lang/poseidon` v0.3.0 (Poseidon-1); standalone, does **not** depend on `outbe_circuit_core`. |
 
-All bins pull the shared logic from `outbe_circuit_core` via a relative path dep — there is one shared implementation, so editing the lib forces a recompile of every bin at freeze time. `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
+The ownership / full / aggregation bins pull their shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time (the commitment-nullifier bin is standalone). `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
 
 ## Build commands
 
