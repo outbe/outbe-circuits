@@ -5,4 +5,4 @@ authors = ["outbe"]
 compiler_version = ">=1.0.0"
 
 [dependencies]
-outbe_emit_circuit_core = { path = "../outbe-emit-circuit-core" }
+outbe_circuit_core = { path = "../outbe-circuit-core" }

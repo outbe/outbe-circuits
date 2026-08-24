@@ -39,10 +39,6 @@ const CIRCUITS: &[(&str, &str)] = &[
     ("outbe-flat-aggregation-circuit-n64", "flat_aggregation_n64"),
     ("outbe-full-circuit", "full_proof"),
     ("outbe-emit-mint-circuit", "emit_mint"),
-    (
-        "outbe-commitment-nullifier-circuit",
-        "commitment_nullifier_proof",
-    ),
 ];
 
 fn main() {
@@ -302,7 +298,6 @@ fn label(module: &str) -> String {
     match module {
         "ownership_proof" => "outbe.ownership".to_string(),
         "full_proof" => "outbe.full_proof".to_string(),
-        "commitment_nullifier_proof" => "outbe.commitment_nullifier".to_string(),
         "emit_mint" => "outbe.emit.mint".to_string(),
         m => {
             let n = m

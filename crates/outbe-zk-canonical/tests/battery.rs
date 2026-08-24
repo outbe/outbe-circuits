@@ -466,82 +466,21 @@ fn witness_inputs_layout_is_canonical() {
     );
 }
 
-/// The restored shielded commitment-nullifier circuit is registered with its
-/// canonical identity, and its build-generated ABI matches the statement:
-/// 7 public inputs (merkle_root, nullifier_hash, denom_id, receiver_binding,
-/// and the three domain tags) over a depth-20 Merkle path.
-#[test]
-fn commitment_nullifier_descriptor() {
-    use outbe_zk_canonical::noir::commitment_nullifier_proof as cn;
-
-    // Canonical descriptor identity.
-    assert_eq!(
-        cn::CommitmentNullifierProof::LABEL,
-        "outbe.commitment_nullifier"
-    );
-    assert_eq!(cn::CommitmentNullifierProof::VERSION, "1.0.0");
-    assert!(!cn::CommitmentNullifierProof::BYTECODE_B64.is_empty());
-    assert_ne!(cn::CommitmentNullifierProof::CIRCUIT_HASH, [0u8; 32]);
-    assert!(!cn::CommitmentNullifierProof::VK_BYTES.is_empty());
-    assert_ne!(cn::CommitmentNullifierProof::VK_HASH, [0u8; 32]);
-
-    let public = cn::PublicInputs {
-        merkle_root: Fr::from(1u64),
-        nullifier_hash: Fr::from(2u64),
-        denom_id: Fr::from(3u64),
-        receiver_binding: Fr::from(4u64),
-        tag_commit: Fr::from(5u64),
-        tag_nullifier: Fr::from(6u64),
-        tag_merkle: Fr::from(7u64),
-    };
-    let flat = <cn::CommitmentNullifierProof as Circuit<OutbeV1>>::public_inputs(&public);
-    assert_eq!(
-        flat.len(),
-        7,
-        "commitment-nullifier exposes 7 public inputs"
-    );
-    assert_eq!(flat[0], Fr::from(1u64), "merkle_root is first public input");
-    assert_eq!(flat[6], Fr::from(7u64), "tag_merkle is last public input");
-
-    // witness_inputs flattens every ABI param in order: 7 public + the private
-    // (secret, nullifier_secret, merkle_path[20], merkle_index) = 30 leaves.
-    let witness = cn::Witness {
-        secret: Fr::from(11u64),
-        nullifier_secret: Fr::from(12u64),
-        merkle_path: [Fr::from(0u64); 20],
-        merkle_index: Fr::from(0u64),
-    };
-    let w = <cn::CommitmentNullifierProof as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
-    assert_eq!(
-        w.len(),
-        7 + 2 + 20 + 1,
-        "commitment-nullifier witness arity"
-    );
-
-    // It is present in the append-only registry under its label.
-    assert!(
-        outbe_zk_canonical::noir::CIRCUIT_REGISTRY
-            .iter()
-            .any(|e| e.label == "outbe.commitment_nullifier"),
-        "commitment-nullifier missing from CIRCUIT_REGISTRY"
-    );
-}
-
-/// The Emit mint statement carries 25 public field elements: three field
-/// scalars, a 20-byte owner address, one `u64`, and the change commitment.
+/// The Emit mint statement carries 25 public field elements: `chain_id`, two
+/// field scalars, a 20-byte owner address, `mint_units`, and change commitment.
 #[test]
 fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.0.0");
+    assert_eq!(emit::EmitMint::VERSION, "2.0.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
     assert_ne!(emit::EmitMint::VK_HASH, [0u8; 32]);
 
     let public = emit::PublicInputs {
-        pool_id: Fr::from(1u64),
+        chain_id: 1,
         root: Fr::from(2u64),
         nullifier: Fr::from(3u64),
         note_owner: [0x22; 20],
@@ -558,14 +497,16 @@ fn emit_mint_descriptor_and_abi_layout() {
     assert_eq!(flat[23], Fr::from(40u64), "mint_units follows note_owner");
     assert_eq!(flat[24], Fr::from(4u64), "change_commitment is last");
 
+    let mut path_bits = [false; 20];
+    path_bits[0] = true;
     let witness = emit::Witness {
         note_amount: 100,
         note_spend_key: Fr::from(5u64),
-        leaf_index: 6,
+        path_bits,
         auth_path: [Fr::from(7u64); 20],
     };
     let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
-    assert_eq!(all.len(), 48, "25 public + 23 private ABI leaves");
+    assert_eq!(all.len(), 67, "25 public + 42 private ABI leaves");
     assert_eq!(
         &all[..25],
         flat.as_slice(),
@@ -573,13 +514,20 @@ fn emit_mint_descriptor_and_abi_layout() {
     );
     assert_eq!(all[25], Fr::from(100u64), "note_amount");
     assert_eq!(all[26], Fr::from(5u64), "note_spend_key");
-    assert_eq!(all[27], Fr::from(6u64), "leaf_index");
-    assert_eq!(&all[28..], &[Fr::from(7u64); 20], "auth_path");
+    assert_eq!(all[27], Fr::from(1u64), "path_bits[0]");
+    assert_eq!(&all[28..47], &[Fr::from(0u64); 19], "remaining path bits");
+    assert_eq!(&all[47..], &[Fr::from(7u64); 20], "auth_path");
 
     assert!(
         outbe_zk_canonical::noir::CIRCUIT_REGISTRY
             .iter()
             .any(|e| e.label == "outbe.emit.mint"),
         "Emit mint missing from CIRCUIT_REGISTRY"
+    );
+    assert!(
+        outbe_zk_canonical::noir::CIRCUIT_REGISTRY
+            .iter()
+            .all(|e| e.label != "outbe.commitment_nullifier"),
+        "revoked commitment-nullifier must not remain in CIRCUIT_REGISTRY"
     );
 }

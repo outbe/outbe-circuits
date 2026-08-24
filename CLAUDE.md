@@ -27,16 +27,13 @@ Sibling Nargo packages (each its own `Nargo.toml`):
 
 | Directory | Nargo name | Type | Role |
 |-----------|-----------|------|------|
-| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership` + `inclusion` + `hash2` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation (no external poseidon dep). |
+| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash2` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation. |
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
-| `outbe-commitment-nullifier-circuit/` | `commitment_nullifier_proof` | bin | Shielded commitment (Poseidon-4) + depth-20 Merkle membership + nullifier derivation. Uses `noir-lang/poseidon` v0.3.0 (Poseidon-1); standalone, does **not** depend on `outbe_circuit_core`. |
-| `outbe-emit-circuit-core/` | `outbe_emit_circuit_core` | lib | Emit domain-separated Poseidon2 hashes + depth-20 Merkle helpers. |
-| `outbe-emit-mint-circuit/` | `emit_mint` | bin | Proves an Emit note mint, nullifier, membership, and optional change commitment. |
+| `outbe-emit-mint-circuit/` | `emit_mint` | bin | Contains all Emit-specific formulas plus mint, nullifier, membership, and optional change constraints. |
 
-The ownership / full / aggregation bins pull their shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time (the commitment-nullifier bin is standalone). `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
-The Emit mint bin similarly pulls its protocol formulas from `outbe_emit_circuit_core`; it is independent of `outbe_circuit_core`.
+The ownership / full / aggregation bins pull shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time. Emit owns its protocol formulas locally and imports only the generic `hash2` primitive from the core. `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
 
 ## Build commands
 

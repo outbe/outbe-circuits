@@ -281,7 +281,7 @@ fn gen_module(l: &Loaded) -> String {
     let mut m = String::new();
     m.push_str(&format!("pub mod {module} {{\n"));
     // Only circuits with an embedded-curve-point param (e.g. `pk`) reference the
-    // type — a Field-only circuit (commitment-nullifier) would warn on the import.
+    // type — a circuit with no such parameter would warn on the import.
     if witness_fields.contains("EmbeddedCurvePoint") || public_fields.contains("EmbeddedCurvePoint")
     {
         m.push_str("    use super::EmbeddedCurvePoint;\n");
@@ -395,6 +395,9 @@ fn emit_abi_leaf(ty: &Value, expr: &str, out: &mut String, indent: &str, depth: 
         Some("integer") => {
             out.push_str(&format!("{indent}v.push(S::Field::from({expr} as u64));\n"))
         }
+        Some("boolean") => {
+            out.push_str(&format!("{indent}v.push(S::Field::from({expr} as u64));\n"))
+        }
         Some("array") => {
             let var = format!("__e{depth}");
             out.push_str(&format!("{indent}for {var} in {expr}.iter().copied() {{\n"));
@@ -413,6 +416,7 @@ fn emit_abi_leaf(ty: &Value, expr: &str, out: &mut String, indent: &str, depth: 
 fn rust_type(ty: &Value, module: &str) -> String {
     match ty["kind"].as_str() {
         Some("field") => "Fr".to_string(),
+        Some("boolean") => "bool".to_string(),
         Some("integer") => {
             let sign = ty["sign"].as_str().unwrap_or("unsigned");
             let width = ty["width"].as_u64().expect("integer width");

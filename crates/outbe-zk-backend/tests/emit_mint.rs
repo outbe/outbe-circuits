@@ -34,36 +34,34 @@ fn note_serial(owner: [u8; 20], spend_key: Fr) -> Fr {
     )
 }
 
-fn note_commitment(pool: Fr, serial: Fr, amount: u64) -> Fr {
-    emit_hash("EMIT_COMMITMENT", &[pool, serial, Fr::from(amount)])
+fn note_commitment(chain_id: u64, serial: Fr, amount: u64) -> Fr {
+    emit_hash(
+        "EMIT_COMMITMENT",
+        &[Fr::from(chain_id), serial, Fr::from(amount)],
+    )
 }
 
-fn nullifier(pool: Fr, serial: Fr, spend_key: Fr) -> Fr {
-    emit_hash("EMIT_NULLIFIER", &[pool, serial, spend_key])
+fn nullifier(chain_id: u64, serial: Fr, spend_key: Fr) -> Fr {
+    emit_hash("EMIT_NULLIFIER", &[Fr::from(chain_id), serial, spend_key])
 }
 
-fn merkle_node(level: usize, left: Fr, right: Fr) -> Fr {
-    emit_hash("EMIT_NODE", &[Fr::from(level as u64), left, right])
-}
-
-fn single_leaf_path(pool: Fr) -> [Fr; 20] {
+fn single_leaf_path(chain_id: u64) -> [Fr; 20] {
     let mut path = [Fr::from(0u64); 20];
-    path[0] = emit_hash("EMIT_EMPTY", &[pool]);
+    path[0] = emit_hash("EMIT_EMPTY", &[Fr::from(chain_id)]);
     for level in 1..20 {
-        path[level] = merkle_node(level - 1, path[level - 1], path[level - 1]);
+        path[level] = h2(path[level - 1], path[level - 1]);
     }
     path
 }
 
-fn root_from_path(leaf: Fr, mut index: u32, path: &[Fr; 20]) -> Fr {
+fn root_from_path(leaf: Fr, path_bits: &[bool; 20], path: &[Fr; 20]) -> Fr {
     let mut current = leaf;
-    for (level, sibling) in path.iter().copied().enumerate() {
-        current = if index & 1 == 0 {
-            merkle_node(level, current, sibling)
+    for (is_right, sibling) in path_bits.iter().copied().zip(path.iter().copied()) {
+        current = if is_right {
+            h2(sibling, current)
         } else {
-            merkle_node(level, sibling, current)
+            h2(current, sibling)
         };
-        index >>= 1;
     }
     current
 }
@@ -72,17 +70,18 @@ fn root_from_path(leaf: Fr, mut index: u32, path: &[Fr; 20]) -> Fr {
 fn emit_partial_mint_prove_verify_round_trip() {
     let owner = [0x22; 20];
     let spend_key = Fr::from(17u64);
-    let pool = emit_hash("EMIT_POOL", &[Fr::from(31_337u64), Fr::from(19u64)]);
+    let chain_id = 31_337u64;
+    let path_bits = [false; 20];
     let serial = note_serial(owner, spend_key);
-    let commitment = note_commitment(pool, serial, 100);
-    let auth_path = single_leaf_path(pool);
-    let root = root_from_path(commitment, 0, &auth_path);
-    let spent_nullifier = nullifier(pool, serial, spend_key);
+    let commitment = note_commitment(chain_id, serial, 100);
+    let auth_path = single_leaf_path(chain_id);
+    let root = root_from_path(commitment, &path_bits, &auth_path);
+    let spent_nullifier = nullifier(chain_id, serial, spend_key);
     let next_key = emit_hash("EMIT_CHANGE_KEY", &[spend_key, spent_nullifier]);
-    let change_commitment = note_commitment(pool, note_serial(owner, next_key), 60);
+    let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
 
     let public = PublicInputs {
-        pool_id: pool,
+        chain_id,
         root,
         nullifier: spent_nullifier,
         note_owner: owner,
@@ -92,7 +91,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let witness = Witness {
         note_amount: 100,
         note_spend_key: spend_key,
-        leaf_index: 0,
+        path_bits,
         auth_path,
     };
 
