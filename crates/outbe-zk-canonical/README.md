@@ -12,6 +12,37 @@ Emit mint), built on the generic seams in
 versioned circuit registry**: the authoritative, append-only record of every
 released circuit version and its on-chain identity.
 
+## Emit mint statement
+
+`outbe.emit.mint@1.0.0` proves knowledge of a private note amount, spend key,
+leaf index, and depth-20 authentication path for a note committed under a public
+Emit pool root. Its public statement is:
+
+| Input | Meaning |
+|---|---|
+| `pool_id` | Emit pool/domain containing the note. |
+| `root` | Accepted depth-20 note-commitment root. |
+| `nullifier` | Deterministic identifier consumed to prevent a second mint. |
+| `note_owner` | 20-byte owner identity bound into the private note serial. |
+| `mint_units` | Public amount being minted from the private note. |
+| `change_commitment` | Commitment to unminted value, or zero for a full mint. |
+
+The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
+`auth_path`. The circuit checks:
+
+1. `0 < mint_units <= note_amount`, with a nonzero spend key and nullifier.
+2. The owner and spend key derive the note serial.
+3. The pool, serial, and hidden amount derive a nonzero note commitment included
+   under `root` at `leaf_index`.
+4. The pool, serial, and spend key derive the published `nullifier`.
+5. A partial mint rotates the spend key through that nullifier and publishes the
+   exact commitment for `note_amount - mint_units`; a full mint publishes zero.
+
+The circuit does **not** select or authenticate the payout recipient and does not
+mutate ledger state. The verifier/runtime must bind `pool_id` to the active pool,
+accept the supplied root, reject a previously consumed nullifier, record any
+change commitment, and authorize and execute the payout.
+
 ## What the build produces
 
 `cargo build` runs `build.rs`, which is **read-only** — it does **not** run

@@ -1,3 +1,25 @@
+// Emit private-note mint circuit.
+//
+// Proves knowledge of `(note_amount, note_spend_key, leaf_index, auth_path)`
+// for a note bound to the public `(pool_id, note_owner)` without revealing the
+// note amount or spend key.
+//
+// The circuit checks that:
+//   1. `0 < mint_units <= note_amount`, the spend key and nullifier are nonzero,
+//      and `leaf_index` fits the depth-20 tree.
+//   2. `note_owner` and `note_spend_key` derive the note serial.
+//   3. `(pool_id, serial, note_amount)` derives a nonzero commitment included
+//      under the public `root` at `leaf_index` via `auth_path`.
+//   4. `(pool_id, serial, note_spend_key)` derives the public `nullifier`.
+//   5. A partial mint publishes exactly the commitment for the remaining value,
+//      using a spend key rotated by the current nullifier; a full mint publishes
+//      the zero change sentinel.
+//
+// The verifier/runtime remains responsible for binding `pool_id` to the active
+// pool, accepting `root`, rejecting an already-spent nullifier, recording any
+// change commitment, and authorizing/routing the payout. The payout recipient
+// and ledger state transition are not circuit inputs.
+//
 use outbe_emit_circuit_core::{change_key, empty_leaf, merkle_root, node, note_commitment, note_sn, nullifier};
 
 fn main(
