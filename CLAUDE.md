@@ -32,8 +32,11 @@ Sibling Nargo packages (each its own `Nargo.toml`):
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
 | `outbe-commitment-nullifier-circuit/` | `commitment_nullifier_proof` | bin | Shielded commitment (Poseidon-4) + depth-20 Merkle membership + nullifier derivation. Uses `noir-lang/poseidon` v0.3.0 (Poseidon-1); standalone, does **not** depend on `outbe_circuit_core`. |
+| `outbe-emit-circuit-core/` | `outbe_emit_circuit_core` | lib | Emit domain-separated Poseidon2 hashes + depth-20 Merkle helpers. |
+| `outbe-emit-mint-circuit/` | `emit_mint` | bin | Proves an Emit note mint, nullifier, membership, and optional change commitment. |
 
 The ownership / full / aggregation bins pull their shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time (the commitment-nullifier bin is standalone). `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
+The Emit mint bin similarly pulls its protocol formulas from `outbe_emit_circuit_core`; it is independent of `outbe_circuit_core`.
 
 ## Build commands
 
@@ -54,7 +57,7 @@ Released circuit versions are frozen; editing the `.nr` sources changes nothing 
 
 ## Dependency pinning
 
-The noir git deps (`acir` / `acvm` / `bn254_blackbox_solver`, tag `v1.0.0-beta.22`) stay **inline** in `outbe-zk-backend`, not in `[workspace.dependencies]`. `barretenberg-rs` is exact-pinned (`=5.0.0-nightly.20260522`). `outbe-poseidon` is a tagged git dep until published. Bump the noir tag, the bb pin, and the mise `NOIR_VERSION`/`BB_VERSION` together. `deny.toml` allows exactly two git origins: `noir-lang/noir` and `outbe/outbe-poseidon`.
+The noir git deps (`acir` / `acvm` / `bn254_blackbox_solver`, tag `v1.0.0-beta.22`) stay **inline** in `outbe-zk-backend`, not in `[workspace.dependencies]`. `barretenberg-rs` is exact-pinned (`=5.0.0-nightly.20260522`). `outbe-poseidon` is a tagged git dep until published. Bump the noir tag, the bb pin, and the version in mise.toml together. `deny.toml` allows exactly two git origins: `noir-lang/noir` and `outbe/outbe-poseidon`.
 
 ## Profiles and test gotchas
 

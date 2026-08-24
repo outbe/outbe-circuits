@@ -526,3 +526,60 @@ fn commitment_nullifier_descriptor() {
         "commitment-nullifier missing from CIRCUIT_REGISTRY"
     );
 }
+
+/// The Emit mint statement carries 25 public field elements: three field
+/// scalars, a 20-byte owner address, one `u64`, and the change commitment.
+#[test]
+fn emit_mint_descriptor_and_abi_layout() {
+    use outbe_zk_canonical::noir::emit_mint as emit;
+
+    assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
+    assert_eq!(emit::EmitMint::VERSION, "1.0.0");
+    assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
+    assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
+    assert!(!emit::EmitMint::VK_BYTES.is_empty());
+    assert_ne!(emit::EmitMint::VK_HASH, [0u8; 32]);
+
+    let public = emit::PublicInputs {
+        pool_id: Fr::from(1u64),
+        root: Fr::from(2u64),
+        nullifier: Fr::from(3u64),
+        note_owner: [0x22; 20],
+        mint_units: 40,
+        change_commitment: Fr::from(4u64),
+    };
+    let flat = <emit::EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
+    assert_eq!(flat.len(), 25, "Emit mint public-input arity");
+    assert_eq!(
+        &flat[..3],
+        &[Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)]
+    );
+    assert_eq!(&flat[3..23], &[Fr::from(0x22u64); 20]);
+    assert_eq!(flat[23], Fr::from(40u64), "mint_units follows note_owner");
+    assert_eq!(flat[24], Fr::from(4u64), "change_commitment is last");
+
+    let witness = emit::Witness {
+        note_amount: 100,
+        note_spend_key: Fr::from(5u64),
+        leaf_index: 6,
+        auth_path: [Fr::from(7u64); 20],
+    };
+    let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
+    assert_eq!(all.len(), 48, "25 public + 23 private ABI leaves");
+    assert_eq!(
+        &all[..25],
+        flat.as_slice(),
+        "public inputs are the ABI prefix"
+    );
+    assert_eq!(all[25], Fr::from(100u64), "note_amount");
+    assert_eq!(all[26], Fr::from(5u64), "note_spend_key");
+    assert_eq!(all[27], Fr::from(6u64), "leaf_index");
+    assert_eq!(&all[28..], &[Fr::from(7u64); 20], "auth_path");
+
+    assert!(
+        outbe_zk_canonical::noir::CIRCUIT_REGISTRY
+            .iter()
+            .any(|e| e.label == "outbe.emit.mint"),
+        "Emit mint missing from CIRCUIT_REGISTRY"
+    );
+}

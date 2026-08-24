@@ -1,0 +1,5 @@
+[package]
+name = "outbe_emit_circuit_core"
+type = "lib"
+authors = ["outbe"]
+compiler_version = ">=1.0.0"

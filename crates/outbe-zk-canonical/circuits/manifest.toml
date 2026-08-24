@@ -71,3 +71,9 @@ module = "commitment_nullifier_proof"
 label = "outbe.commitment_nullifier"
 version = "1.0.0"
 status = "active"
+
+[[circuit]]
+module = "emit_mint"
+label = "outbe.emit.mint"
+version = "1.0.0"
+status = "active"

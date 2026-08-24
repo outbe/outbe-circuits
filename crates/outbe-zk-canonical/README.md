@@ -6,8 +6,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
 Concrete canonical circuit + witness types for the Outbe protocol (ownership, the
-flat-aggregation tiers n1–n64, full proof, and the shielded commitment-nullifier),
-built on the generic seams in
+flat-aggregation tiers n1–n64, full proof, shielded commitment-nullifier, and
+Emit mint), built on the generic seams in
 `outbe-protocol` (`Circuit` / `CircuitId` / `CircuitSuite`). It is also the **in-code,
 versioned circuit registry**: the authoritative, append-only record of every
 released circuit version and its on-chain identity.
