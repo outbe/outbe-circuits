@@ -77,11 +77,4 @@ circuit_hash = "7bbba35502d9a78699316096d1955c720b52e04e0be5e0d3aa6a24d022029c08
 module = "emit_mint"
 label = "outbe.emit.mint"
 version = "1.0.0"
-status = "deprecated"
-circuit_hash = "2e8dc0b9f2e464f2eb4d1c51126ed1ba075b10ebeeba42e4579601edcdcef355"
-
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
-version = "2.0.0"
 status = "active"
