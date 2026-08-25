@@ -66,6 +66,15 @@ const G1_POINT_SIZE: u32 = 64;
 /// closed). `(1<<20)+1` is the largest tier (n64) and the [`super::preinit_srs`]
 /// size; its digest is the canonical Aztec `g1.dat` prefix.
 const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
+    // (1<<13)+1 — Emit mint circuit.
+    (
+        (1 << 13) + 1,
+        [
+            0xec, 0x2c, 0x34, 0xc5, 0x09, 0x67, 0x9e, 0x61, 0x52, 0xde, 0xe9, 0x3f, 0x36, 0xf5,
+            0x0d, 0x93, 0xde, 0xf3, 0x18, 0x09, 0xe1, 0xbe, 0x0f, 0x05, 0x19, 0x03, 0x6d, 0xcb,
+            0xa8, 0xfd, 0xc2, 0xcb,
+        ],
+    ),
     // (1<<16)+1 — ownership circuit + aggregation tiers n1/n2/n4 (same 2^16 domain).
     (
         (1 << 16) + 1,

@@ -26,14 +26,15 @@ The first build compiles the bundled barretenberg C++ FFI (several minutes — n
 
 ## Circuits
 
-The 9 canonical circuits live as sibling Nargo packages under `crates/outbe-zk-canonical/noir/`:
+The 10 active canonical circuits live as sibling Nargo packages under `crates/outbe-zk-canonical/noir/`:
 
 | Directory | Nargo name | Type | Role |
 |-----------|-----------|------|------|
-| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership` + `inclusion` + `hash2`. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 via the stdlib permutation. |
+| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash2` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 via the stdlib permutation. |
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
+| `outbe-emit-mint-circuit/` | `emit_mint` | bin | Contains all Emit-specific formulas plus mint, nullifier, membership, and optional change constraints. |
 
 Released circuit versions are **frozen** and committed under `crates/outbe-zk-canonical/resources/circuits/`; a circuit's cryptographic identity is `circuit_hash = keccak256(ACIR)` and `vk_hash = keccak256(VK)`. Editing the `.nr` sources changes nothing by itself.
 

@@ -70,4 +70,11 @@ status = "active"
 module = "commitment_nullifier_proof"
 label = "outbe.commitment_nullifier"
 version = "1.0.0"
+status = "revoked"
+circuit_hash = "7bbba35502d9a78699316096d1955c720b52e04e0be5e0d3aa6a24d022029c08"
+
+[[circuit]]
+module = "emit_mint"
+label = "outbe.emit.mint"
+version = "1.0.0"
 status = "active"

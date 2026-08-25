@@ -5,12 +5,47 @@
 [![CI](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-Concrete canonical circuit + witness types for the Outbe protocol (ownership, the
-flat-aggregation tiers n1–n64, full proof, and the shielded commitment-nullifier),
-built on the generic seams in
+Concrete canonical circuit + witness types for the Outbe protocol (ownership,
+flat-aggregation tiers n1–n64, full proof, and Emit mint), built on the generic
+seams in
 `outbe-protocol` (`Circuit` / `CircuitId` / `CircuitSuite`). It is also the **in-code,
 versioned circuit registry**: the authoritative, append-only record of every
 released circuit version and its on-chain identity.
+
+## Emit mint statement
+
+`outbe.emit.mint@1.0.0` proves knowledge of a private note amount, spend key,
+depth-20 Merkle path bits, and authentication path for a note committed under a
+public chain root. Its public statement is:
+
+| Input | Meaning |
+|---|---|
+| `chain_id` | Chain containing the single Emit instance. |
+| `root` | Accepted depth-20 note-commitment root. |
+| `nullifier` | Deterministic identifier consumed to prevent a second mint. |
+| `note_owner` | 20-byte owner identity bound into the private note serial. |
+| `mint_units` | Public amount being minted from the private note. |
+| `change_commitment` | Commitment to unminted value, or zero for a full mint. |
+
+The private witness is `note_amount`, `note_spend_key`, `path_bits`, and
+`auth_path`. The circuit checks:
+
+1. `0 < mint_units <= note_amount`, with a nonzero spend key and nullifier.
+2. The owner and spend key derive the note serial.
+3. The chain, serial, and hidden amount derive a nonzero note commitment included
+   under `root` through the supplied depth-20 path.
+4. The chain, serial, and spend key derive the published `nullifier`.
+5. A partial mint rotates the spend key through that nullifier and publishes the
+   exact commitment for `note_amount - mint_units`; a full mint publishes zero.
+
+Merkle inner nodes use the shared untagged `Poseidon2(left, right)` hash.
+`path_bits` are little-endian: `false` places the current node on the left and
+`true` places it on the right.
+
+The circuit does **not** select or authenticate the payout recipient and does not
+mutate ledger state. The verifier/runtime must bind `chain_id`, accept the
+supplied root, reject a previously consumed nullifier, record any change
+commitment, and authorize and execute the payout.
 
 ## What the build produces
 

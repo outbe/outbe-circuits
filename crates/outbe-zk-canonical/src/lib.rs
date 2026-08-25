@@ -13,11 +13,12 @@
 //! signs with the in-circuit 64-byte Grumpkin Schnorr. `OutbeV1` satisfies it;
 //! a future same-cycle `OutbeV2` would reuse the same circuits.
 //!
-//! The [`noir`] module is **build-generated** at compile time from the
-//! vendored noir circuits in `noir/*.nr` via `nargo`. Per circuit it derives
-//! the Rust `Witness` / `PublicInputs` types, a marker type with a generic
-//! [`Circuit<S>`](outbe_protocol::protocol::zk::Circuit) impl + a (suite-
-//! independent) [`CircuitId`] identity impl, and the canonical descriptor
+//! The [`noir`] module is **build-generated** at compile time from committed
+//! frozen artifacts in `resources/circuits/`; normal builds do not invoke
+//! `nargo` or `bb`. Per circuit it derives Rust `Witness` / `PublicInputs`
+//! types, a marker type with a generic
+//! [`Circuit<S>`](outbe_protocol::protocol::zk::Circuit) impl + a suite-independent
+//! [`CircuitId`] identity impl, and the canonical descriptor
 //! constants (`LABEL` / `VERSION` / `CIRCUIT_HASH` / `BYTECODE_B64` /
 //! `VK_BYTES` / `VK_HASH`).
 //!

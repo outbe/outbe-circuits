@@ -244,7 +244,12 @@ impl RawVerifier for Barretenberg {
         let pub_bytes = combined_proof
             .get(4..pub_end)
             .ok_or_else(|| Error::Proof("combined proof truncated in public inputs".into()))?;
-        let public_inputs: Vec<Vec<u8>> = pub_bytes.chunks_exact(32).map(<[u8]>::to_vec).collect();
+        let public_inputs: Vec<Vec<u8>> = pub_bytes
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .map(|c| c.to_vec())
+            .collect();
 
         // Remainder is the proof, as 32-byte field words.
         let proof_bytes = &combined_proof[pub_end..];
@@ -253,7 +258,12 @@ impl RawVerifier for Barretenberg {
                 "combined proof: proof section not a multiple of 32 bytes".into(),
             ));
         }
-        let proof: Vec<Vec<u8>> = proof_bytes.chunks_exact(32).map(<[u8]>::to_vec).collect();
+        let proof: Vec<Vec<u8>> = proof_bytes
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .map(|c| c.to_vec())
+            .collect();
 
         let settings = settings_ultra_honk_keccak(self.disable_zk);
 

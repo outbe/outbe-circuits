@@ -265,20 +265,13 @@ fn gen_module(l: &Loaded) -> String {
 
     let mut witness_fields = String::new();
     let mut public_fields = String::new();
-    let mut public_params: Vec<(String, bool)> = Vec::new();
     for p in params {
         let name = p["name"].as_str().unwrap();
         let ty = rust_type(&p["type"], module);
         let line = format!("        pub {name}: {ty},\n");
         match p["visibility"].as_str() {
             Some("private") => witness_fields.push_str(&line),
-            Some("public") => {
-                public_fields.push_str(&line);
-                public_params.push((
-                    name.to_string(),
-                    p["type"]["kind"].as_str() == Some("array"),
-                ));
-            }
+            Some("public") => public_fields.push_str(&line),
             other => panic!("{module}: param {name} has unexpected visibility {other:?}"),
         }
     }
@@ -288,7 +281,7 @@ fn gen_module(l: &Loaded) -> String {
     let mut m = String::new();
     m.push_str(&format!("pub mod {module} {{\n"));
     // Only circuits with an embedded-curve-point param (e.g. `pk`) reference the
-    // type — a Field-only circuit (commitment-nullifier) would warn on the import.
+    // type — a circuit with no such parameter would warn on the import.
     if witness_fields.contains("EmbeddedCurvePoint") || public_fields.contains("EmbeddedCurvePoint")
     {
         m.push_str("    use super::EmbeddedCurvePoint;\n");
@@ -336,15 +329,21 @@ fn gen_module(l: &Loaded) -> String {
     ));
     m.push_str(&format!("    pub struct {marker};\n\n"));
 
-    let mut flatten = String::from("            let mut out: Vec<S::Field> = Vec::new();\n");
-    for (name, is_array) in &public_params {
-        if *is_array {
-            flatten.push_str(&format!("            out.extend_from_slice(&p.{name});\n"));
-        } else {
-            flatten.push_str(&format!("            out.push(p.{name});\n"));
+    let mut flatten = String::from("            let mut v: Vec<S::Field> = Vec::new();\n");
+    for p in params {
+        if p["visibility"].as_str() != Some("public") {
+            continue;
         }
+        let name = p["name"].as_str().unwrap();
+        emit_abi_leaf(
+            &p["type"],
+            &format!("p.{name}"),
+            &mut flatten,
+            "            ",
+            0,
+        );
     }
-    flatten.push_str("            out\n");
+    flatten.push_str("            v\n");
 
     let mut abi_flat = String::from("            let mut v: Vec<S::Field> = Vec::new();\n");
     for p in params {
@@ -389,11 +388,14 @@ fn gen_module(l: &Loaded) -> String {
     m
 }
 
-/// Flatten one ABI parameter into the running `Vec<Fr> v` in witness-index order.
+/// Flatten one ABI parameter into the running `Vec<S::Field> v` in ABI order.
 fn emit_abi_leaf(ty: &Value, expr: &str, out: &mut String, indent: &str, depth: usize) {
     match ty["kind"].as_str() {
         Some("field") => out.push_str(&format!("{indent}v.push({expr});\n")),
         Some("integer") => {
+            out.push_str(&format!("{indent}v.push(S::Field::from({expr} as u64));\n"))
+        }
+        Some("boolean") => {
             out.push_str(&format!("{indent}v.push(S::Field::from({expr} as u64));\n"))
         }
         Some("array") => {
@@ -414,6 +416,7 @@ fn emit_abi_leaf(ty: &Value, expr: &str, out: &mut String, indent: &str, depth: 
 fn rust_type(ty: &Value, module: &str) -> String {
     match ty["kind"].as_str() {
         Some("field") => "Fr".to_string(),
+        Some("boolean") => "bool".to_string(),
         Some("integer") => {
             let sign = ty["sign"].as_str().unwrap_or("unsigned");
             let width = ty["width"].as_u64().expect("integer width");
