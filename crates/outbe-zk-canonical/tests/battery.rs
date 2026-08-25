@@ -473,7 +473,7 @@ fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "2.0.0");
+    assert_eq!(emit::EmitMint::VERSION, "1.0.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
