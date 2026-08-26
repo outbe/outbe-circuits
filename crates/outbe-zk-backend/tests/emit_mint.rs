@@ -27,11 +27,8 @@ fn emit_hash(tag: &str, values: &[Fr]) -> Fr {
     state
 }
 
-fn note_serial(owner: [u8; 20], spend_key: Fr) -> Fr {
-    emit_hash(
-        "EMIT_NOTE_SN",
-        &[Fr::from_be_bytes_mod_order(&owner), spend_key],
-    )
+fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
+    emit_hash("EMIT_NOTE_SN", &[owner, spend_key])
 }
 
 fn note_commitment(chain_id: u64, serial: Fr, amount: u64) -> Fr {
@@ -68,7 +65,10 @@ fn root_from_path(leaf: Fr, path_bits: &[bool; 20], path: &[Fr; 20]) -> Fr {
 
 #[test]
 fn emit_partial_mint_prove_verify_round_trip() {
-    let owner = [0x22; 20];
+    // `note_owner` crosses the ABI as one field; the big-endian fold that
+    // `emit::address_field` used to do in-circuit now happens here, and must
+    // agree with `EthAddress::from_field` on the other side.
+    let owner = Fr::from_be_bytes_mod_order(&[0x22u8; 20]);
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
     let path_bits = [false; 20];
@@ -108,5 +108,48 @@ fn emit_partial_mint_prove_verify_round_trip() {
     assert!(
         !ProofVerifier::<OutbeV1, EmitMint>::verify(&backend, &wrong, &proof).unwrap(),
         "proof must not verify for a different mint amount"
+    );
+}
+
+/// `note_owner` crosses the ABI as an `EthAddress` struct, so `from_field` --
+/// and its range check -- never runs on it. `EthAddress::validate()` in `main`
+/// is the only thing left holding the 160-bit bound.
+///
+/// Every other constraint here is satisfied (serial, commitment, root and
+/// nullifier are all derived from the oversized owner), so `validate` is the
+/// sole reason this must fail. Delete that call and this test goes green.
+#[test]
+fn oversized_owner_is_rejected() {
+    let mut bytes = [0u8; 21];
+    bytes[0] = 1; // exactly 2^160 — one bit too wide for an address
+    let owner = Fr::from_be_bytes_mod_order(&bytes);
+
+    let spend_key = Fr::from(17u64);
+    let chain_id = 31_337u64;
+    let path_bits = [false; 20];
+    let serial = note_serial(owner, spend_key);
+    let commitment = note_commitment(chain_id, serial, 100);
+    let auth_path = single_leaf_path(chain_id);
+    let root = root_from_path(commitment, &path_bits, &auth_path);
+
+    let public = PublicInputs {
+        chain_id,
+        root,
+        nullifier: nullifier(chain_id, serial, spend_key),
+        note_owner: owner,
+        mint_units: 100,
+        change_commitment: Fr::from(0u64),
+    };
+    let witness = Witness {
+        note_amount: 100,
+        note_spend_key: spend_key,
+        path_bits,
+        auth_path,
+    };
+
+    let backend = Barretenberg::default();
+    assert!(
+        ProofGenerator::<OutbeV1, EmitMint>::generate(&backend, &witness, &public).is_err(),
+        "an owner of 2^160 must fail EthAddress::validate in-circuit"
     );
 }

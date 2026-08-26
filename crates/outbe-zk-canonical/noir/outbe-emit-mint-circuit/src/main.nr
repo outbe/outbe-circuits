@@ -24,6 +24,7 @@ mod emit;
 mod tests;
 
 use emit::{change_key, merkle_root, note_commitment, note_sn};
+use outbe_circuit_core::types::EthAddress;
 
 global MERKLE_DEPTH: u32 = 20;
 
@@ -31,7 +32,7 @@ fn main(
     chain_id: pub u64,
     root: pub Field,
     nullifier: pub Field,
-    note_owner: pub [u8; 20],
+    note_owner: pub EthAddress,
     mint_units: pub u64,
     change_commitment: pub Field,
     note_amount: u64,
@@ -43,6 +44,7 @@ fn main(
     assert(mint_units <= note_amount);
     assert(nullifier != 0);
     assert(note_spend_key != 0);
+    note_owner.validate();
 
     let serial = note_sn(note_owner, note_spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
@@ -69,4 +71,3 @@ fn main(
         assert(next_nullifier != 0);
     }
 }
-

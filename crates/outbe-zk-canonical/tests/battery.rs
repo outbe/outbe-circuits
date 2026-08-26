@@ -9,6 +9,7 @@
 //! The concrete entity types live in consumer crates, so the battery
 //! carries its own minimal entity (`TestNft`).
 
+use ark_ff::PrimeField;
 use ark_ff::Zero;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
@@ -466,14 +467,15 @@ fn witness_inputs_layout_is_canonical() {
     );
 }
 
-/// The Emit mint statement carries 25 public field elements: `chain_id`, two
-/// field scalars, a 20-byte owner address, `mint_units`, and change commitment.
+/// The Emit mint statement carries 6 public field elements: `chain_id`, two
+/// field scalars, the owner address as one `EthAddress`-packed field,
+/// `mint_units`, and change commitment.
 #[test]
 fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.0.0");
+    assert_eq!(emit::EmitMint::VERSION, "1.1.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
@@ -483,19 +485,23 @@ fn emit_mint_descriptor_and_abi_layout() {
         chain_id: 1,
         root: Fr::from(2u64),
         nullifier: Fr::from(3u64),
-        note_owner: [0x22; 20],
+        note_owner: Fr::from_be_bytes_mod_order(&[0x22; 20]),
         mint_units: 40,
         change_commitment: Fr::from(4u64),
     };
     let flat = <emit::EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
-    assert_eq!(flat.len(), 25, "Emit mint public-input arity");
+    assert_eq!(flat.len(), 6, "Emit mint public-input arity");
     assert_eq!(
         &flat[..3],
         &[Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)]
     );
-    assert_eq!(&flat[3..23], &[Fr::from(0x22u64); 20]);
-    assert_eq!(flat[23], Fr::from(40u64), "mint_units follows note_owner");
-    assert_eq!(flat[24], Fr::from(4u64), "change_commitment is last");
+    assert_eq!(
+        flat[3],
+        Fr::from_be_bytes_mod_order(&[0x22; 20]),
+        "note_owner is one big-endian-packed field, not 20 byte leaves"
+    );
+    assert_eq!(flat[4], Fr::from(40u64), "mint_units follows note_owner");
+    assert_eq!(flat[5], Fr::from(4u64), "change_commitment is last");
 
     let mut path_bits = [false; 20];
     path_bits[0] = true;
@@ -506,17 +512,17 @@ fn emit_mint_descriptor_and_abi_layout() {
         auth_path: [Fr::from(7u64); 20],
     };
     let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
-    assert_eq!(all.len(), 67, "25 public + 42 private ABI leaves");
+    assert_eq!(all.len(), 48, "6 public + 42 private ABI leaves");
     assert_eq!(
-        &all[..25],
+        &all[..6],
         flat.as_slice(),
         "public inputs are the ABI prefix"
     );
-    assert_eq!(all[25], Fr::from(100u64), "note_amount");
-    assert_eq!(all[26], Fr::from(5u64), "note_spend_key");
-    assert_eq!(all[27], Fr::from(1u64), "path_bits[0]");
-    assert_eq!(&all[28..47], &[Fr::from(0u64); 19], "remaining path bits");
-    assert_eq!(&all[47..], &[Fr::from(7u64); 20], "auth_path");
+    assert_eq!(all[6], Fr::from(100u64), "note_amount");
+    assert_eq!(all[7], Fr::from(5u64), "note_spend_key");
+    assert_eq!(all[8], Fr::from(1u64), "path_bits[0]");
+    assert_eq!(&all[9..28], &[Fr::from(0u64); 19], "remaining path bits");
+    assert_eq!(&all[28..], &[Fr::from(7u64); 20], "auth_path");
 
     assert!(
         outbe_zk_canonical::noir::CIRCUIT_REGISTRY
