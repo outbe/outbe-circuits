@@ -9,6 +9,7 @@
 //! stores the entity hash directly — so the inclusion is over the same value
 //! the ownership constraint binds. Generic over any [`CircuitSuite`].
 
+use ark_ff::PrimeField;
 use ark_std::rand::Rng;
 
 use outbe_protocol::error::Error;
@@ -22,15 +23,23 @@ use crate::noir::full_proof::{FullProof, PublicInputs, Witness};
 use crate::noir::EmbeddedCurvePoint;
 use crate::{CircuitSuite, INCLUSION_DEPTH};
 
+/// Domain prepended to every full-proof commitment-tree inner-node hash.
+pub const FULL_CIRCUIT_DOMAIN: &[u8; 18] = b"OUTBE_FULL_CIRCUIT";
+
+/// Full-proof commitment-tree domain as the canonical circuit field.
+pub fn full_circuit_domain() -> ark_bn254::Fr {
+    ark_bn254::Fr::from_be_bytes_mod_order(FULL_CIRCUIT_DOMAIN)
+}
+
 /// NFT extension: an owned entity can build the full-proof witness (ownership +
 /// inclusion) and, given a backend, a proof. Blanket-implemented for every
 /// owned entity of a [`CircuitSuite`].
 pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
     /// Build + sign the full-proof witness: the ownership witness plus the
     /// Merkle inclusion `path` proving `nft_hash` sits in the commitment tree.
-    /// `path.depth()` must be [`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH). The
-    /// `expected_merkle_root` public input is recomputed from the path (chain
-    /// semantics).
+    /// The path must use [`FULL_CIRCUIT_DOMAIN`] and have
+    /// [`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH) levels. The
+    /// `expected_merkle_root` public input is recomputed from the path.
     fn derive_full_witness<R, K>(
         &self,
         rng: &mut R,
@@ -48,6 +57,11 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
                 INCLUSION_DEPTH,
                 path.depth()
             )));
+        }
+        if path.domain != full_circuit_domain() {
+            return Err(Error::Merkle(
+                "inclusion path uses the wrong tree domain".into(),
+            ));
         }
 
         // Ownership: recompute owner from (pk, nonce), reject a mismatch, sign
@@ -71,7 +85,7 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
             .as_slice()
             .try_into()
             .map_err(|_| Error::Merkle("siblings length".into()))?;
-        let merkle_path_indices: [u8; 32] = path
+        let merkle_path_indices: [bool; 32] = path
             .circuit_indices()
             .try_into()
             .map_err(|_| Error::Merkle("indices length".into()))?;

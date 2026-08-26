@@ -18,6 +18,10 @@ fn ascii_field(value: &str) -> Fr {
     Fr::from_be_bytes_mod_order(value.as_bytes())
 }
 
+fn h3(first: Fr, second: Fr, third: Fr) -> Fr {
+    <<OutbeV1 as Suite>::Hash as FieldHasher<Fr>>::hash(&[first, second, third]).unwrap()
+}
+
 fn emit_hash(tag: &str, values: &[Fr]) -> Fr {
     let mut state = h2(ascii_field("OUTBE_EMIT"), ascii_field(tag));
     state = h2(state, Fr::from(values.len() as u64));
@@ -44,20 +48,23 @@ fn nullifier(chain_id: u64, serial: Fr, spend_key: Fr) -> Fr {
 
 fn single_leaf_path(chain_id: u64) -> [Fr; 20] {
     let mut path = [Fr::from(0u64); 20];
+    let domain = ascii_field("OUTBE_EMIT");
     path[0] = emit_hash("EMIT_EMPTY", &[Fr::from(chain_id)]);
     for level in 1..20 {
-        path[level] = h2(path[level - 1], path[level - 1]);
+        path[level] = h3(domain, path[level - 1], path[level - 1]);
     }
     path
 }
 
-fn root_from_path(leaf: Fr, path_bits: &[bool; 20], path: &[Fr; 20]) -> Fr {
+fn root_from_path(leaf: Fr, leaf_index: u32, path: &[Fr; 20]) -> Fr {
     let mut current = leaf;
-    for (is_right, sibling) in path_bits.iter().copied().zip(path.iter().copied()) {
-        current = if is_right {
-            h2(sibling, current)
+    let domain = ascii_field("OUTBE_EMIT");
+    for (level, sibling) in path.iter().copied().enumerate() {
+        let is_left = (leaf_index >> level) & 1 == 0;
+        current = if is_left {
+            h3(domain, current, sibling)
         } else {
-            h2(current, sibling)
+            h3(domain, sibling, current)
         };
     }
     current
@@ -71,11 +78,10 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let owner = Fr::from_be_bytes_mod_order(&[0x22u8; 20]);
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
-    let path_bits = [false; 20];
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, 100);
     let auth_path = single_leaf_path(chain_id);
-    let root = root_from_path(commitment, &path_bits, &auth_path);
+    let root = root_from_path(commitment, 0, &auth_path);
     let spent_nullifier = nullifier(chain_id, serial, spend_key);
     let next_key = emit_hash("EMIT_CHANGE_KEY", &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
@@ -91,7 +97,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let witness = Witness {
         note_amount: 100,
         note_spend_key: spend_key,
-        path_bits,
+        leaf_index: 0,
         auth_path,
     };
 
@@ -126,11 +132,10 @@ fn oversized_owner_is_rejected() {
 
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
-    let path_bits = [false; 20];
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, 100);
     let auth_path = single_leaf_path(chain_id);
-    let root = root_from_path(commitment, &path_bits, &auth_path);
+    let root = root_from_path(commitment, 0, &auth_path);
 
     let public = PublicInputs {
         chain_id,
@@ -143,7 +148,7 @@ fn oversized_owner_is_rejected() {
     let witness = Witness {
         note_amount: 100,
         note_spend_key: spend_key,
-        path_bits,
+        leaf_index: 0,
         auth_path,
     };
 

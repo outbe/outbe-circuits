@@ -1,10 +1,11 @@
 //! Emit private-note formulas.
 //!
 //! Emit hashes are domain-separated iterated Poseidon2 hashes. Merkle inner
-//! nodes deliberately use the shared plain `hash2::hash_2([left, right])` tree;
-//! only the empty leaf remains Emit-domain-separated.
+//! nodes use `EMIT_DOMAIN` through the shared inclusion helper; the empty leaf
+//! remains Emit-domain-separated by `TAG_EMPTY`.
 
 use outbe_circuit_core::hash2;
+use outbe_circuit_core::inclusion::compute_merkle_root;
 use outbe_circuit_core::types::EthAddress;
 
 // Big-endian ASCII protocol domain and purpose tags.
@@ -43,27 +44,15 @@ pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Field {
     p(TAG_CHANGE_KEY, [note_spend_key, note_nullifier])
 }
 
-pub fn empty_leaf(chain_id: u64) -> Field {
-    p(TAG_EMPTY, [chain_id as Field])
-}
-
-/// Compute a Merkle root from little-endian path bits.
+/// Resolve an Emit Merkle root from a compact little-endian leaf index.
 pub fn merkle_root<let DEPTH: u32>(
     leaf: Field,
+    leaf_index: u32,
     path_siblings: [Field; DEPTH],
-    path_bits: [bool; DEPTH],
 ) -> Field {
-    let mut current = leaf;
-    for i in 0..DEPTH {
-        let sibling = path_siblings[i];
-        let (left, right) = if path_bits[i] {
-            (sibling, current)
-        } else {
-            (current, sibling)
-        };
-        current = hash2::hash_2([left, right]);
-    }
-    current
+    let max_leaf_index = ((1 << DEPTH) - 1) as Field;
+    let path_indices: [bool; DEPTH] = (max_leaf_index - leaf_index as Field).to_le_bits();
+    compute_merkle_root(EMIT_DOMAIN, leaf, path_siblings, path_indices)
 }
 
 #[test]

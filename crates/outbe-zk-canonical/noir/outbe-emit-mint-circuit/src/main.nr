@@ -1,6 +1,6 @@
 // Emit private-note mint circuit.
 //
-// Proves knowledge of `(note_amount, note_spend_key, path_bits, auth_path)` for
+// Proves knowledge of `(note_amount, note_spend_key, leaf_index, auth_path)` for
 // a note bound to the public `(chain_id, note_owner)` without revealing the note
 // amount or spend key.
 //
@@ -9,7 +9,7 @@
 //      nonzero.
 //   2. `note_owner` and `note_spend_key` derive the note serial.
 //   3. `(chain_id, serial, note_amount)` derives a nonzero commitment included
-//      under the public `root` via the depth-20 `path_bits` and `auth_path`.
+//      under the public `root` via the depth-20 `leaf_index` and `auth_path`.
 //   4. `(chain_id, serial, note_spend_key)` derives the public `nullifier`.
 //   5. A partial mint publishes exactly the commitment for the remaining value,
 //      using a spend key rotated by the current nullifier; a full mint publishes
@@ -37,7 +37,7 @@ fn main(
     change_commitment: pub Field,
     note_amount: u64,
     note_spend_key: Field,
-    path_bits: [bool; MERKLE_DEPTH],
+    leaf_index: u32,
     auth_path: [Field; MERKLE_DEPTH],
 ) {
     assert(mint_units > 0);
@@ -48,7 +48,7 @@ fn main(
 
     let serial = note_sn(note_owner, note_spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
-    let computed_root = merkle_root(commitment, auth_path, path_bits);
+    let computed_root = merkle_root(commitment, leaf_index, auth_path);
     let computed_nullifier = emit::nullifier(chain_id, serial, note_spend_key);
 
     assert(serial != 0);
