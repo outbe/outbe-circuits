@@ -1,20 +1,20 @@
 use super::{
-    emit::{change_key, merkle_root, note_commitment, note_sn, nullifier, p, EMIT_DOMAIN, TAG_EMPTY},
+    emit::{change_key, merkle_root, note_commitment, note_sn, nullifier, EMIT_DOMAIN, TAG_EMPTY},
     main,
     MERKLE_DEPTH,
 };
-use outbe_circuit_core::{hash2, inclusion::compute_merkle_root};
+use outbe_circuit_core::{hash, inclusion::compute_merkle_root};
 use outbe_circuit_core::types::EthAddress;
 
 pub fn empty_leaf(chain_id: u64) -> Field {
-    p(TAG_EMPTY, [chain_id as Field])
+    hash::hash_multi(TAG_EMPTY, [chain_id as Field])
 }
 
 fn single_leaf_path(chain_id: u64) -> [Field; MERKLE_DEPTH] {
     let mut path = [0; MERKLE_DEPTH];
     path[0] = empty_leaf(chain_id);
     for level in 1..MERKLE_DEPTH {
-        path[level] = hash2::hash_3([EMIT_DOMAIN, path[level - 1], path[level - 1]]);
+        path[level] = hash::hash_3([EMIT_DOMAIN, path[level - 1], path[level - 1]]);
     }
     path
 }

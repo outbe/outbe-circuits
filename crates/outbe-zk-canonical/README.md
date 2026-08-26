@@ -14,7 +14,7 @@ released circuit version and its on-chain identity.
 
 ## Emit mint statement
 
-`outbe.emit.mint@1.2.0` proves knowledge of a private note amount, spend key,
+`outbe.emit.mint@1.2.1` proves knowledge of a private note amount, spend key,
 depth-20 Merkle leaf index, and authentication path for a note committed under a
 public chain root. Its public statement is:
 

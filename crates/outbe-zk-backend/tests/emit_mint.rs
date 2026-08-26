@@ -22,9 +22,8 @@ fn h3(first: Fr, second: Fr, third: Fr) -> Fr {
     <<OutbeV1 as Suite>::Hash as FieldHasher<Fr>>::hash(&[first, second, third]).unwrap()
 }
 
-fn emit_hash(tag: &str, values: &[Fr]) -> Fr {
-    let mut state = h2(ascii_field("OUTBE_EMIT"), ascii_field(tag));
-    state = h2(state, Fr::from(values.len() as u64));
+fn hash_multi(domain: &str, values: &[Fr]) -> Fr {
+    let mut state = h2(ascii_field(domain), Fr::from(values.len() as u64));
     for value in values {
         state = h2(state, *value);
     }
@@ -32,24 +31,24 @@ fn emit_hash(tag: &str, values: &[Fr]) -> Fr {
 }
 
 fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
-    emit_hash("EMIT_NOTE_SN", &[owner, spend_key])
+    hash_multi("EMIT_NOTE_SN", &[owner, spend_key])
 }
 
 fn note_commitment(chain_id: u64, serial: Fr, amount: u64) -> Fr {
-    emit_hash(
+    hash_multi(
         "EMIT_COMMITMENT",
         &[Fr::from(chain_id), serial, Fr::from(amount)],
     )
 }
 
 fn nullifier(chain_id: u64, serial: Fr, spend_key: Fr) -> Fr {
-    emit_hash("EMIT_NULLIFIER", &[Fr::from(chain_id), serial, spend_key])
+    hash_multi("EMIT_NULLIFIER", &[Fr::from(chain_id), serial, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> [Fr; 20] {
     let mut path = [Fr::from(0u64); 20];
     let domain = ascii_field("OUTBE_EMIT");
-    path[0] = emit_hash("EMIT_EMPTY", &[Fr::from(chain_id)]);
+    path[0] = hash_multi("EMIT_EMPTY", &[Fr::from(chain_id)]);
     for level in 1..20 {
         path[level] = h3(domain, path[level - 1], path[level - 1]);
     }
@@ -83,7 +82,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let auth_path = single_leaf_path(chain_id);
     let root = root_from_path(commitment, 0, &auth_path);
     let spent_nullifier = nullifier(chain_id, serial, spend_key);
-    let next_key = emit_hash("EMIT_CHANGE_KEY", &[spend_key, spent_nullifier]);
+    let next_key = hash_multi("EMIT_CHANGE_KEY", &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
 
     let public = PublicInputs {

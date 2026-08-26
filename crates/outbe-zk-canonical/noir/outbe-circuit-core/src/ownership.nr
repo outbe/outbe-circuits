@@ -27,7 +27,7 @@
 // interpreted as a Grumpkin scalar (`shared_sk` mod `q_Grumpkin`)
 // for in-circuit signing. See Appendix A of the spec.
 
-use crate::hash2;
+use crate::hash;
 use std::embedded_curve_ops::EmbeddedCurvePoint;
 
 /// Compute the Poseidon3 owner commitment from a Grumpkin public key
@@ -37,7 +37,7 @@ use std::embedded_curve_ops::EmbeddedCurvePoint;
 /// BN254's scalar field), so the legacy 128-bit-limb decomposition
 /// from the secp256k1 variant is gone.
 pub fn compute_ownership(pk: EmbeddedCurvePoint, nonce: Field) -> Field {
-    hash2::hash_3([pk.x, pk.y, nonce])
+    hash::hash_3([pk.x, pk.y, nonce])
 }
 
 /// Verify a Grumpkin Schnorr signature over `message`. Thin wrapper
@@ -130,7 +130,7 @@ pub fn verify_ownership_per_su(
     //     binding; a replay across NFTs *or* across a different
     //     (sender, tdId, chainId) produces a different pre-hash and
     //     fails verification.
-    let pre_hash_fr: Field = hash2::hash_3([nft_hash, nonce, binding_hash]);
+    let pre_hash_fr: Field = hash::hash_3([nft_hash, nonce, binding_hash]);
     let pre_hash_bytes: [u8; 32] = pre_hash_fr.to_be_bytes();
 
     let signature_ok = verify_schnorr_grumpkin(pk, signature, pre_hash_bytes);
