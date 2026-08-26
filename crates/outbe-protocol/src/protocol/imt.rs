@@ -256,7 +256,6 @@ impl<S: Suite> InclusionPath<S> {
 mod tests {
     use super::*;
     use crate::OutbeV1;
-    use ark_ff::PrimeField;
 
     type Fr = <OutbeV1 as Suite>::Field;
 

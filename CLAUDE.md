@@ -10,7 +10,7 @@ Rust workspace (version `0.11.0`, edition 2021) for the Outbe zero-knowledge pro
 - `crates/outbe-protocol-derive` — `#[derive(Entity)]` proc-macro. Per-field `#[outbe(...)]` roles (`id_seed` / `id_body` / `body` / `owner` / `skip` / `limbed` / `pos = N`) generate the canonical entity-hash preimage. Exercised by the protocol crate's tests.
 - `crates/outbe-zk-backend` — Noir proving backend: a shared ACVM witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Generic over any circuit implementing the `outbe-protocol` zk seams (`Circuit` / `CircuitId` / `CircuitSuite`). `publish = false` (consumes noir git deps + native libs). Feature `with-network-srs` (on by default) pulls `reqwest` for the Aztec SRS download fallback; `default-features = false` is the offline/mobile build.
 - `crates/outbe-zk-canonical` — Concrete canonical circuit/witness types **and** the in-code, append-only, versioned circuit registry. Builds from committed frozen artifacts (no git/noir deps), so it ships to crates.io and `cargo build` is deterministic with or without the noir toolchain. `INCLUSION_DEPTH = 32`.
-- `xtask/` — Release tooling. Single command: `cargo xtask freeze-circuits` — the **only** step that runs `nargo`/`bb`.
+- `xtask/` — Circuit tooling: `cargo xtask test-circuits` runs every Noir package; `cargo xtask freeze-circuits` is the only command that runs `bb` or writes frozen artifacts.
 
 ### How the canonical registry works (`outbe-zk-canonical`)
 

@@ -2,10 +2,9 @@
 # then `mise tasks ls` to list or `mise run <task>` to invoke. Every task
 # documents the equivalent raw command so non-mise users can copy-paste.
 #
-# The only steps that need the Noir toolchain are the canonical
-# circuit-freeze tasks (`xtask freeze-circuits` shells out to `nargo` + `bb`).
-# Plain `cargo build`/`test` need neither — `outbe-zk-canonical`
-# builds from its committed frozen artifacts.
+# Circuit tests need `nargo`; freezing additionally needs `bb`. Plain
+# `cargo build`/`test` need neither because `outbe-zk-canonical` builds from
+# committed frozen artifacts.
 [tools]
 rust = "latest"
 
@@ -24,10 +23,16 @@ nargo = "github:noir-lang/noir"
 bb = "github:AztecProtocol/barretenberg"
 
 # ---------------------------------------------------------------
-# Canonical circuit management. `freeze-circuits` recompiles the Noir
-# circuits, refreshes the committed bytecode/VKs, and updates the
-# manifest. Needs `install:zk-toolchain` (nargo + bb on PATH / ~/.nargo,
-# ~/.bb — the xtask also honours $NARGO / $BB overrides).
+# Noir circuit tests.
+# ---------------------------------------------------------------
+[tasks."test-circuits"]
+description = "Run nargo test in every vendored Noir package"
+run = "cargo xtask test-circuits"
+
+# ---------------------------------------------------------------
+# Canonical circuit management. `freeze-circuits` recompiles the Noir circuits,
+# refreshes the committed bytecode/VKs, and updates the manifest. Needs nargo +
+# bb on PATH / ~/.nargo / ~/.bb; xtask also honours $NARGO / $BB overrides.
 # ---------------------------------------------------------------
 [tasks."freeze-circuits"]
 description = "Recompile circuits + refresh frozen artifacts: cargo run -p xtask -- freeze-circuits"
@@ -47,6 +52,7 @@ set -euo pipefail
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo test --workspace
+cargo xtask test-circuits
 '''
 
 [tasks.fmt]
