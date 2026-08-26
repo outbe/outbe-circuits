@@ -404,9 +404,29 @@ fn emit_abi_leaf(ty: &Value, expr: &str, out: &mut String, indent: &str, depth: 
             emit_abi_leaf(&ty["type"], &var, out, &format!("{indent}    "), depth + 1);
             out.push_str(&format!("{indent}}}\n"));
         }
+        // Walk the declared fields in ABI order. For `EmbeddedCurvePoint` that
+        // is exactly `x` then `y` (`is_infinite` is not an ABI field), so this
+        // is byte-identical to the hardcoded pair it replaces -- it just also
+        // handles newtypes like `EthAddress`, which collapse to one leaf.
         Some("struct") => {
-            out.push_str(&format!("{indent}v.push({expr}.x);\n"));
-            out.push_str(&format!("{indent}v.push({expr}.y);\n"));
+            let fields = ty["fields"].as_array().expect("struct ABI fields");
+            match fields.as_slice() {
+                // Newtype (`EthAddress { inner: Field }`): transparent here, to
+                // match `rust_type` collapsing it to its inner Rust type.
+                [only] => emit_abi_leaf(&only["type"], expr, out, indent, depth + 1),
+                _ => {
+                    for f in fields {
+                        let name = f["name"].as_str().expect("struct field name");
+                        emit_abi_leaf(
+                            &f["type"],
+                            &format!("{expr}.{name}"),
+                            out,
+                            indent,
+                            depth + 1,
+                        );
+                    }
+                }
+            }
         }
         other => panic!("witness_inputs: unsupported ABI kind {other:?}"),
     }
@@ -434,9 +454,17 @@ fn rust_type(ty: &Value, module: &str) -> String {
         Some("struct") => {
             let path = ty["path"].as_str().unwrap_or("");
             if path == "std::embedded_curve_ops::EmbeddedCurvePoint" {
-                "EmbeddedCurvePoint".to_string()
-            } else {
-                panic!("{module}: unsupported struct ABI type {path}");
+                return "EmbeddedCurvePoint".to_string();
+            }
+            // A single-field Noir struct is a newtype (`EthAddress { inner:
+            // Field }`); it carries one ABI leaf, so it is transparent at this
+            // boundary and maps to its inner Rust type. The type only exists to
+            // constrain the *circuit* -- `EthAddress::validate` enforces the
+            // 160-bit bound in-circuit, which no Rust-side wrapper could.
+            let fields = ty["fields"].as_array().expect("struct ABI fields");
+            match fields.as_slice() {
+                [only] => rust_type(&only["type"], module),
+                _ => panic!("{module}: unsupported struct ABI type {path}"),
             }
         }
         other => panic!("{module}: unsupported ABI kind {other:?}"),

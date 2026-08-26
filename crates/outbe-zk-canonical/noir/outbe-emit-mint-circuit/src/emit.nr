@@ -5,6 +5,7 @@
 //! only the empty leaf remains Emit-domain-separated.
 
 use outbe_circuit_core::hash2;
+use outbe_circuit_core::types::EthAddress;
 
 // Big-endian ASCII protocol domain and purpose tags.
 pub global EMIT_DOMAIN: Field = 0x4f555442455f454d4954; // "OUTBE_EMIT"
@@ -23,16 +24,8 @@ pub fn p<let N: u32>(tag: Field, values: [Field; N]) -> Field {
     state
 }
 
-pub fn address_field(address: [u8; 20]) -> Field {
-    let mut result = 0;
-    for byte in address {
-        result = result * 256 + byte as Field;
-    }
-    result
-}
-
-pub fn note_sn(note_owner: [u8; 20], note_spend_key: Field) -> Field {
-    p(TAG_NOTE_SN, [address_field(note_owner), note_spend_key])
+pub fn note_sn(note_owner: EthAddress, note_spend_key: Field) -> Field {
+    p(TAG_NOTE_SN, [note_owner.to_field(), note_spend_key])
 }
 
 pub fn note_commitment(chain_id: u64, serial: Field, note_amount: u64) -> Field {
@@ -74,14 +67,9 @@ pub fn merkle_root<let DEPTH: u32>(
 }
 
 #[test]
-fn address_is_big_endian() {
-    assert_eq(address_field([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]), 1);
-}
-
-#[test]
 fn key_rotation_changes_equal_value_notes() {
     let chain_id = 31337;
-    let owner = [0x22; 20];
+    let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
     let commitment = note_commitment(chain_id, serial, 100);
@@ -99,7 +87,7 @@ fn key_rotation_changes_equal_value_notes() {
 #[test]
 fn one_owner_key_pair_has_one_nullifier() {
     let chain_id = 31337;
-    let owner = [0x22; 20];
+    let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
     let commitment_a = note_commitment(chain_id, serial, 40);
