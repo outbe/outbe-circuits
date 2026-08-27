@@ -1,7 +1,8 @@
 use super::{
     main,
     paynote::{
-        change_key, empty_leaf, merkle_root, note_commitment, note_sn, nullifier, PAYNOTE_DOMAIN,
+        change_key, empty_leaf, merkle_root, note_commitment, note_nullifier, note_sn,
+        PAYNOTE_DOMAIN,
     },
 };
 use outbe_circuit_core::{hash, merkle_tree::{DEPTH, merkle_root_from_indices}};
@@ -41,7 +42,7 @@ fn fixture() -> (Field, Field, [Field; DEPTH]) {
     let commitment = note_commitment(CHAIN_ID, serial, asset(), AMOUNT);
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
-    (root, nullifier(commitment, KEY), path)
+    (root, note_nullifier(commitment, KEY), path)
 }
 
 /// The change commitment a correct partial spend of `spend` must publish.
@@ -418,7 +419,7 @@ fn u128_max_amounts_full_and_partial_spend() {
     let commitment = note_commitment(CHAIN_ID, serial, asset(), max);
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
-    let n = nullifier(commitment, KEY);
+    let n = note_nullifier(commitment, KEY);
     main(
         CHAIN_ID,
         root,

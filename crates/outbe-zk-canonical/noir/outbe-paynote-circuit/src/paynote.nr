@@ -56,12 +56,15 @@ pub fn note_commitment(
 /// their nullifiers differ and both stay spendable. It also binds the asset and
 /// the amount for free. `chain_id` is deliberately absent -- the commitment
 /// already binds it.
-pub fn nullifier(commitment: Field, note_spend_key: Field) -> Field {
+pub fn note_nullifier(commitment: Field, note_spend_key: Field) -> Field {
     hash_multi(paynote_tag(TAG_NULLIFIER), [commitment, note_spend_key])
 }
 
-pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Field {
-    hash_multi(paynote_tag(TAG_CHANGE_KEY), [note_spend_key, note_nullifier])
+pub fn change_key(note_spend_key: Field, spent_nullifier: Field) -> Field {
+    hash_multi(
+        paynote_tag(TAG_CHANGE_KEY),
+        [note_spend_key, spent_nullifier],
+    )
 }
 
 /// Empty-leaf value for a Paynote tree on `chain_id`.
@@ -98,11 +101,11 @@ fn key_rotation_changes_equal_value_notes() {
     let key = 17;
     let serial = note_sn(key);
     let commitment = note_commitment(chain_id, serial, asset, 100);
-    let spent_nullifier = nullifier(commitment, key);
+    let spent_nullifier = note_nullifier(commitment, key);
     let next_key = change_key(key, spent_nullifier);
     let next_serial = note_sn(next_key);
     let next_commitment = note_commitment(chain_id, next_serial, asset, 100);
-    let next_nullifier = nullifier(next_commitment, next_key);
+    let next_nullifier = note_nullifier(next_commitment, next_key);
 
     assert(serial != next_serial);
     assert(commitment != next_commitment);
@@ -124,6 +127,6 @@ fn one_serial_two_amounts_have_distinct_nullifiers() {
     let commitment_b = note_commitment(chain_id, serial, asset, 60);
 
     assert(commitment_a != commitment_b);
-    assert(nullifier(commitment_a, key) != nullifier(commitment_b, key));
-    assert_eq(nullifier(commitment_a, key), nullifier(commitment_a, key));
+    assert(note_nullifier(commitment_a, key) != note_nullifier(commitment_b, key));
+    assert_eq(note_nullifier(commitment_a, key), note_nullifier(commitment_a, key));
 }
