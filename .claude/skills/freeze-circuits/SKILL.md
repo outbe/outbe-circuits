@@ -11,7 +11,7 @@ Prereq: the pinned Noir toolchain must be installed — `mise run install:zk-too
 
 1. **Confirm what changed.** Run `git status` and confirm at least one file under `crates/outbe-zk-canonical/noir/` is modified. If nothing under `noir/` changed, this skill is the wrong tool — ask the user what they actually want.
 
-2. **Freeze.** Run `cargo xtask freeze-circuits`. For each of the 9 circuits it prints either `unchanged <module> @ <ver>` (ACIR identical → no-op) or `minted <module> X -> Y (old -> deprecated)` (ACIR changed → new frozen version; the superseded one is set `deprecated`, keeping only its VK). The first barretenberg build is multi-minute — do not kill it.
+2. **Freeze.** Run `cargo xtask freeze-circuits`. For each of the 11 circuits it prints either `unchanged <module> @ <ver>` (ACIR identical → no-op) or `minted <module> X -> Y (old -> deprecated)` (ACIR changed → new frozen version; the superseded one is set `deprecated`, keeping only its VK). The first barretenberg build is multi-minute — do not kill it.
    - **ABI changed?** The freeze requires explicit intent for a public-input-layout change: pass `--abi-change` (minor bump) or `--semantic` (major bump + a new `DOMAIN` decision).
 
 3. **Show what to commit.** Run `git status` and list the modified `crates/outbe-zk-canonical/circuits/manifest.toml` plus the new `resources/circuits/<module>/<version>/` artifacts. These MUST be committed together with the `.nr` source change — the PR review is the audit gate for admitting a circuit.

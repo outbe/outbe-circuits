@@ -27,6 +27,7 @@ use outbe_zk_canonical::noir::flat_aggregation_n64::FlatAggregationN64;
 use outbe_zk_canonical::noir::flat_aggregation_n8::FlatAggregationN8;
 use outbe_zk_canonical::noir::full_proof::FullProof;
 use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
+use outbe_zk_canonical::noir::paynote::Paynote;
 use outbe_zk_canonical::CircuitId;
 
 const G1_POINT_SIZE: usize = 64;
@@ -96,6 +97,7 @@ fn print_srs_pins() {
     let circuits: &[(&str, &str)] = &[
         ("ownership", OwnershipProof::BYTECODE_B64),
         ("emit mint", EmitMint::BYTECODE_B64),
+        ("paynote", Paynote::BYTECODE_B64),
         ("flat n1", FlatAggregationN1::BYTECODE_B64),
         ("flat n2", FlatAggregationN2::BYTECODE_B64),
         ("flat n4", FlatAggregationN4::BYTECODE_B64),
@@ -136,6 +138,7 @@ fn print_circuit_complexity() {
         ("ownership", OwnershipProof::BYTECODE_B64),
         ("full", FullProof::BYTECODE_B64),
         ("emit mint", EmitMint::BYTECODE_B64),
+        ("paynote", Paynote::BYTECODE_B64),
         ("flat n1", FlatAggregationN1::BYTECODE_B64),
         ("flat n2", FlatAggregationN2::BYTECODE_B64),
         ("flat n4", FlatAggregationN4::BYTECODE_B64),
