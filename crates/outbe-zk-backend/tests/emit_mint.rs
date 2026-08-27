@@ -34,15 +34,15 @@ fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
     hash_multi("EMIT_NOTE_SN", &[owner, spend_key])
 }
 
-fn note_commitment(chain_id: u64, serial: Fr, amount: u64) -> Fr {
+fn note_commitment(chain_id: u64, serial: Fr, amount: u128) -> Fr {
     hash_multi(
         "EMIT_COMMITMENT",
         &[Fr::from(chain_id), serial, Fr::from(amount)],
     )
 }
 
-fn nullifier(chain_id: u64, serial: Fr, spend_key: Fr) -> Fr {
-    hash_multi("EMIT_NULLIFIER", &[Fr::from(chain_id), serial, spend_key])
+fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
+    hash_multi("EMIT_NULLIFIER", &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> [Fr; 20] {
@@ -77,11 +77,13 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let owner = Fr::from_be_bytes_mod_order(&[0x22u8; 20]);
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
+    let note_amount = (1u128 << 80) + 100;
+    let mint_units = (1u128 << 80) + 40;
     let serial = note_serial(owner, spend_key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, note_amount);
     let auth_path = single_leaf_path(chain_id);
     let root = root_from_path(commitment, 0, &auth_path);
-    let spent_nullifier = nullifier(chain_id, serial, spend_key);
+    let spent_nullifier = nullifier(commitment, spend_key);
     let next_key = hash_multi("EMIT_CHANGE_KEY", &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
 
@@ -90,11 +92,11 @@ fn emit_partial_mint_prove_verify_round_trip() {
         root,
         nullifier: spent_nullifier,
         note_owner: owner,
-        mint_units: 40,
+        mint_units,
         change_commitment,
     };
     let witness = Witness {
-        note_amount: 100,
+        note_amount,
         note_spend_key: spend_key,
         leaf_index: 0,
         auth_path,
@@ -139,7 +141,7 @@ fn oversized_owner_is_rejected() {
     let public = PublicInputs {
         chain_id,
         root,
-        nullifier: nullifier(chain_id, serial, spend_key),
+        nullifier: nullifier(commitment, spend_key),
         note_owner: owner,
         mint_units: 100,
         change_commitment: Fr::from(0u64),

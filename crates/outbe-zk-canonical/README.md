@@ -14,7 +14,7 @@ released circuit version and its on-chain identity.
 
 ## Emit mint statement
 
-`outbe.emit.mint@1.2.1` proves knowledge of a private note amount, spend key,
+`outbe.emit.mint@1.3.0` proves knowledge of a private note amount, spend key,
 depth-20 Merkle leaf index, and authentication path for a note committed under a
 public chain root. Its public statement is:
 
@@ -24,17 +24,17 @@ public chain root. Its public statement is:
 | `root` | Accepted depth-20 note-commitment root. |
 | `nullifier` | Deterministic identifier consumed to prevent a second mint. |
 | `note_owner` | 20-byte owner identity bound into the private note serial. |
-| `mint_units` | Public amount being minted from the private note. |
+| `mint_units` | Public `u128` amount being minted from the private note. |
 | `change_commitment` | Commitment to unminted value, or zero for a full mint. |
 
-The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
+The private witness is the `u128` `note_amount`, `note_spend_key`, `leaf_index`, and
 `auth_path`. The circuit checks:
 
 1. `0 < mint_units <= note_amount`, with a nonzero spend key and nullifier.
 2. The owner and spend key derive the note serial.
 3. The chain, serial, and hidden amount derive a nonzero note commitment included
    under `root` through the supplied depth-20 path.
-4. The chain, serial, and spend key derive the published `nullifier`.
+4. The note commitment and spend key derive the published `nullifier`.
 5. A partial mint rotates the spend key through that nullifier and publishes the
    exact commitment for `note_amount - mint_units`; a full mint publishes zero.
 

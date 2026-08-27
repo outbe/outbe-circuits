@@ -476,18 +476,20 @@ fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.2.1");
+    assert_eq!(emit::EmitMint::VERSION, "1.3.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
     assert_ne!(emit::EmitMint::VK_HASH, [0u8; 32]);
 
+    let public_amount = (1u128 << 100) + 40;
+    let private_amount = public_amount + 60;
     let public = emit::PublicInputs {
         chain_id: 1,
         root: Fr::from(2u64),
         nullifier: Fr::from(3u64),
         note_owner: Fr::from_be_bytes_mod_order(&[0x22; 20]),
-        mint_units: 40,
+        mint_units: public_amount,
         change_commitment: Fr::from(4u64),
     };
     let flat = <emit::EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
@@ -501,11 +503,15 @@ fn emit_mint_descriptor_and_abi_layout() {
         Fr::from_be_bytes_mod_order(&[0x22; 20]),
         "note_owner is one big-endian-packed field, not 20 byte leaves"
     );
-    assert_eq!(flat[4], Fr::from(40u64), "mint_units follows note_owner");
+    assert_eq!(
+        flat[4],
+        Fr::from(public_amount),
+        "u128 mint_units follows note_owner without truncation"
+    );
     assert_eq!(flat[5], Fr::from(4u64), "change_commitment is last");
 
     let witness = emit::Witness {
-        note_amount: 100,
+        note_amount: private_amount,
         note_spend_key: Fr::from(5u64),
         leaf_index: 1,
         auth_path: [Fr::from(7u64); 20],
@@ -517,7 +523,11 @@ fn emit_mint_descriptor_and_abi_layout() {
         flat.as_slice(),
         "public inputs are the ABI prefix"
     );
-    assert_eq!(all[6], Fr::from(100u64), "note_amount");
+    assert_eq!(
+        all[6],
+        Fr::from(private_amount),
+        "u128 note_amount is encoded without truncation"
+    );
     assert_eq!(all[7], Fr::from(5u64), "note_spend_key");
     assert_eq!(all[8], Fr::from(1u64), "leaf_index");
     assert_eq!(&all[9..], &[Fr::from(7u64); 20], "auth_path");

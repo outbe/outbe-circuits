@@ -393,7 +393,12 @@ fn emit_abi_leaf(ty: &Value, expr: &str, out: &mut String, indent: &str, depth: 
     match ty["kind"].as_str() {
         Some("field") => out.push_str(&format!("{indent}v.push({expr});\n")),
         Some("integer") => {
-            out.push_str(&format!("{indent}v.push(S::Field::from({expr} as u64));\n"))
+            let repr = match ty["sign"].as_str().unwrap_or("unsigned") {
+                "unsigned" => format!("{expr} as u128"),
+                "signed" => format!("{expr} as u64"),
+                other => panic!("unexpected integer sign {other}"),
+            };
+            out.push_str(&format!("{indent}v.push(S::Field::from({repr}));\n"))
         }
         Some("boolean") => {
             out.push_str(&format!("{indent}v.push(S::Field::from({expr} as u64));\n"))
