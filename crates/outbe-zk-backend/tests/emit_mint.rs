@@ -22,33 +22,39 @@ fn h3(first: Fr, second: Fr, third: Fr) -> Fr {
     <<OutbeV1 as Suite>::Hash as FieldHasher<Fr>>::hash(&[first, second, third]).unwrap()
 }
 
-fn hash_multi(domain: &str, values: &[Fr]) -> Fr {
-    let mut state = h2(ascii_field(domain), Fr::from(values.len() as u64));
+fn hash_multi(tag: Fr, values: &[Fr]) -> Fr {
+    let mut state = h2(tag, Fr::from(values.len() as u64));
     for value in values {
         state = h2(state, *value);
     }
     state
 }
 
+/// Mirror of `outbe_circuit_core::tags::tag` under Emit's domain: a base
+/// purpose tag folded with the domain that owns it.
+fn emit_tag(base: &str) -> Fr {
+    h2(ascii_field("OUTBE_EMIT"), ascii_field(base))
+}
+
 fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
-    hash_multi("OUTBE_NOTE_SN", &[owner, spend_key])
+    hash_multi(emit_tag("NOTE_SN"), &[owner, spend_key])
 }
 
 fn note_commitment(chain_id: u64, serial: Fr, amount: u128) -> Fr {
     hash_multi(
-        "OUTBE_COMMITMENT",
+        emit_tag("COMMITMENT"),
         &[Fr::from(chain_id), serial, Fr::from(amount)],
     )
 }
 
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_multi("OUTBE_NULLIFIER", &[commitment, spend_key])
+    hash_multi(emit_tag("NULLIFIER"), &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> [Fr; 32] {
     let mut path = [Fr::from(0u64); 32];
     let domain = ascii_field("OUTBE_EMIT");
-    path[0] = hash_multi("OUTBE_EMPTY", &[Fr::from(chain_id)]);
+    path[0] = hash_multi(emit_tag("EMPTY"), &[Fr::from(chain_id)]);
     for level in 1..32 {
         path[level] = h3(domain, path[level - 1], path[level - 1]);
     }
@@ -84,7 +90,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let auth_path = single_leaf_path(chain_id);
     let root = root_from_path(commitment, 0, &auth_path);
     let spent_nullifier = nullifier(commitment, spend_key);
-    let next_key = hash_multi("OUTBE_CHANGE_KEY", &[spend_key, spent_nullifier]);
+    let next_key = hash_multi(emit_tag("CHANGE_KEY"), &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
 
     let public = PublicInputs {

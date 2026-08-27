@@ -38,7 +38,10 @@ The private witness is the `u128` `note_amount`, `note_spend_key`, `leaf_index`,
 5. A partial mint rotates the spend key through that nullifier and publishes the
    exact commitment for `note_amount - mint_units`; a full mint publishes zero.
 
-Merkle inner nodes use `Poseidon2(EMIT_DOMAIN, left, right)`.
+Every Emit preimage is tagged with `Poseidon2(EMIT_DOMAIN, TAG)`, where `TAG` is
+a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`, `NULLIFIER`,
+`NOTE_SN`, `CHANGE_KEY`, `EMPTY`). Merkle inner nodes use
+`Poseidon2(EMIT_DOMAIN, left, right)`.
 `leaf_index` is converted to little-endian path bits inside the Emit helper:
 zero selects the current node as left; one selects it as right.
 
