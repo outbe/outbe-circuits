@@ -39,6 +39,8 @@ use paynote::{change_key, merkle_root, note_commitment, note_sn};
 
 global MERKLE_DEPTH: u32 = 20;
 
+// TODO consider implementing ownership verification?
+
 fn main(
     chain_id: pub u64,
     root: pub Field,
