@@ -1,22 +1,21 @@
 use super::{
     emit::{
-        change_key, merkle_root, note_commitment, note_sn, nullifier, EMIT_DOMAIN, TAG_CHANGE_KEY,
-        TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
+        change_key, merkle_root, note_commitment, note_sn, nullifier, EMIT_DOMAIN,
+        OUTBE_CHANGE_KEY, OUTBE_COMMITMENT, OUTBE_EMPTY, OUTBE_NOTE_SN, OUTBE_NULLIFIER,
     },
     main,
-    MERKLE_DEPTH,
 };
-use outbe_circuit_core::{hash, inclusion::compute_merkle_root};
+use outbe_circuit_core::{hash, merkle_tree::{merkle_root_from_indices, DEPTH}};
 use outbe_circuit_core::types::EthAddress;
 
 pub fn empty_leaf(chain_id: u64) -> Field {
-    hash::hash_multi(TAG_EMPTY, [chain_id as Field])
+    hash::hash_multi(OUTBE_EMPTY, [chain_id as Field])
 }
 
-fn single_leaf_path(chain_id: u64) -> [Field; MERKLE_DEPTH] {
-    let mut path = [0; MERKLE_DEPTH];
+fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
+    let mut path = [0; DEPTH];
     path[0] = empty_leaf(chain_id);
-    for level in 1..MERKLE_DEPTH {
+    for level in 1..DEPTH {
         path[level] = hash::hash_3([EMIT_DOMAIN, path[level - 1], path[level - 1]]);
     }
     path
@@ -43,12 +42,7 @@ fn wrong_tree_domain_fails_membership() {
     let serial = note_sn(owner, key);
     let commitment = note_commitment(chain_id, serial, 100);
     let path = single_leaf_path(chain_id);
-    let root = compute_merkle_root(
-        EMIT_DOMAIN + 1,
-        commitment,
-        path,
-        [true; MERKLE_DEPTH],
-    );
+    let root = merkle_root_from_indices(EMIT_DOMAIN + 1, commitment, path, [true; DEPTH]);
     let n = nullifier(commitment, key);
     main(chain_id, root, n, owner, 100, 0, 100, key, 0, path);
 }
@@ -209,18 +203,10 @@ fn partial_mint_rejects_zero_change_commitment() {
     main(chain_id, root, n, owner, 40, 0, 100, key, 0, path);
 }
 
-#[test(should_fail)]
-fn leaf_index_above_tree_capacity_fails() {
-    let chain_id = 31337;
-    let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
-    let key = 17;
-    let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
-    let path = single_leaf_path(chain_id);
-    let root = merkle_root(commitment, 0, path);
-    let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, key, 0x100000, path);
-}
+// `leaf_index_above_tree_capacity_fails` lived here. At DEPTH = 32 the tree holds
+// 2^32 leaves and `main` takes `leaf_index: u32`, so no over-capacity index is
+// constructible -- the ABI type is the bound. The generic check that a too-wide
+// index cannot resolve a root lives in `outbe_circuit_core::merkle_tree`.
 
 /// The `[u8; 20]` ABI param used to bound the owner at 160 bits for free. Now
 /// that it crosses the ABI as a bare `Field`, `EthAddress::from_field` is the
@@ -445,7 +431,7 @@ fn max_leaf_index_boundary_proves() {
     let serial = note_sn(owner, key);
     let commitment = note_commitment(chain_id, serial, 100);
     let path = single_leaf_path(chain_id);
-    let last = (1 << MERKLE_DEPTH) - 1;
+    let last = 0xffffffff;
     let root = merkle_root(commitment, last, path);
     let n = nullifier(commitment, key);
     main(chain_id, root, n, owner, 100, 0, 100, key, last, path);
@@ -511,11 +497,11 @@ fn zero_chain_id_and_zero_owner_are_accepted_runtime_must_bind_them() {
 fn protocol_tags_are_pairwise_distinct() {
     let tags = [
         EMIT_DOMAIN,
-        TAG_NOTE_SN,
-        TAG_COMMITMENT,
-        TAG_NULLIFIER,
-        TAG_CHANGE_KEY,
-        TAG_EMPTY,
+        OUTBE_NOTE_SN,
+        OUTBE_COMMITMENT,
+        OUTBE_NULLIFIER,
+        OUTBE_CHANGE_KEY,
+        OUTBE_EMPTY,
     ];
     for i in 0..tags.len() {
         assert(tags[i] != 0);
@@ -529,7 +515,7 @@ fn protocol_tags_are_pairwise_distinct() {
 fn sampled_key_rotations_avoid_spent_identity() {
     let chain_id = 31337;
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
-    let keys = [0, 1, 2, 17, EMIT_DOMAIN, TAG_CHANGE_KEY];
+    let keys = [0, 1, 2, 17, EMIT_DOMAIN, OUTBE_CHANGE_KEY];
     for key in keys {
         let serial = note_sn(owner, key);
         let commitment = note_commitment(chain_id, serial, 100);

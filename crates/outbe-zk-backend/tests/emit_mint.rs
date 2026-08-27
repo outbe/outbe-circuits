@@ -31,31 +31,31 @@ fn hash_multi(domain: &str, values: &[Fr]) -> Fr {
 }
 
 fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
-    hash_multi("EMIT_NOTE_SN", &[owner, spend_key])
+    hash_multi("OUTBE_NOTE_SN", &[owner, spend_key])
 }
 
 fn note_commitment(chain_id: u64, serial: Fr, amount: u128) -> Fr {
     hash_multi(
-        "EMIT_COMMITMENT",
+        "OUTBE_COMMITMENT",
         &[Fr::from(chain_id), serial, Fr::from(amount)],
     )
 }
 
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_multi("EMIT_NULLIFIER", &[commitment, spend_key])
+    hash_multi("OUTBE_NULLIFIER", &[commitment, spend_key])
 }
 
-fn single_leaf_path(chain_id: u64) -> [Fr; 20] {
-    let mut path = [Fr::from(0u64); 20];
+fn single_leaf_path(chain_id: u64) -> [Fr; 32] {
+    let mut path = [Fr::from(0u64); 32];
     let domain = ascii_field("OUTBE_EMIT");
-    path[0] = hash_multi("EMIT_EMPTY", &[Fr::from(chain_id)]);
-    for level in 1..20 {
+    path[0] = hash_multi("OUTBE_EMPTY", &[Fr::from(chain_id)]);
+    for level in 1..32 {
         path[level] = h3(domain, path[level - 1], path[level - 1]);
     }
     path
 }
 
-fn root_from_path(leaf: Fr, leaf_index: u32, path: &[Fr; 20]) -> Fr {
+fn root_from_path(leaf: Fr, leaf_index: u32, path: &[Fr; 32]) -> Fr {
     let mut current = leaf;
     let domain = ascii_field("OUTBE_EMIT");
     for (level, sibling) in path.iter().copied().enumerate() {
@@ -84,7 +84,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let auth_path = single_leaf_path(chain_id);
     let root = root_from_path(commitment, 0, &auth_path);
     let spent_nullifier = nullifier(commitment, spend_key);
-    let next_key = hash_multi("EMIT_CHANGE_KEY", &[spend_key, spent_nullifier]);
+    let next_key = hash_multi("OUTBE_CHANGE_KEY", &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
 
     let public = PublicInputs {

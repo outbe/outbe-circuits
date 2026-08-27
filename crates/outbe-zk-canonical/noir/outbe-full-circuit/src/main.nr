@@ -7,7 +7,7 @@
 // leaf is `nft_hash` itself, so the inclusion proof binds the same entity hash
 // checked by the ownership constraint.
 
-use outbe_circuit_core::inclusion;
+use outbe_circuit_core::merkle_tree;
 use outbe_circuit_core::ownership;
 use std::embedded_curve_ops::EmbeddedCurvePoint;
 
@@ -34,7 +34,7 @@ pub fn main(
     ownership::verify_ownership_per_su(pk, signature, nonce, owner, nft_hash, binding_hash);
 
     // Part 2: Merkle inclusion of `nft_hash` against `expected_merkle_root`.
-    let computed_merkle_root = inclusion::compute_merkle_root(
+    let computed_merkle_root = merkle_tree::merkle_root_from_indices(
         FULL_CIRCUIT_DOMAIN,
         nft_hash,
         merkle_path_siblings,

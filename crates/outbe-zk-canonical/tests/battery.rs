@@ -476,7 +476,7 @@ fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.3.0");
+    assert_eq!(emit::EmitMint::VERSION, "1.4.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
@@ -514,10 +514,10 @@ fn emit_mint_descriptor_and_abi_layout() {
         note_amount: private_amount,
         note_spend_key: Fr::from(5u64),
         leaf_index: 1,
-        auth_path: [Fr::from(7u64); 20],
+        auth_path: [Fr::from(7u64); 32],
     };
     let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
-    assert_eq!(all.len(), 29, "6 public + 23 private ABI leaves");
+    assert_eq!(all.len(), 41, "6 public + 35 private ABI leaves");
     assert_eq!(
         &all[..6],
         flat.as_slice(),
@@ -530,7 +530,7 @@ fn emit_mint_descriptor_and_abi_layout() {
     );
     assert_eq!(all[7], Fr::from(5u64), "note_spend_key");
     assert_eq!(all[8], Fr::from(1u64), "leaf_index");
-    assert_eq!(&all[9..], &[Fr::from(7u64); 20], "auth_path");
+    assert_eq!(&all[9..], &[Fr::from(7u64); 32], "auth_path");
 
     assert!(
         outbe_zk_canonical::noir::CIRCUIT_REGISTRY

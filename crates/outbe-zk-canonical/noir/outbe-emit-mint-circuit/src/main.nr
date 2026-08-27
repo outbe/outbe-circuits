@@ -9,7 +9,7 @@
 //      nonzero.
 //   2. `note_owner` and `note_spend_key` derive the note serial.
 //   3. `(chain_id, serial, note_amount)` derives a nonzero commitment included
-//      under the public `root` via the depth-20 `leaf_index` and `auth_path`.
+//      under the public `root` via the depth-32 `leaf_index` and `auth_path`.
 //   4. The note commitment and spend key derive the public `nullifier`.
 //   5. A partial mint publishes exactly the commitment for the remaining value,
 //      using a spend key rotated by the current nullifier; a full mint publishes
@@ -24,9 +24,8 @@ mod emit;
 mod tests;
 
 use emit::{change_key, merkle_root, note_commitment, note_sn};
+use outbe_circuit_core::merkle_tree::DEPTH;
 use outbe_circuit_core::types::EthAddress;
-
-global MERKLE_DEPTH: u32 = 20;
 
 fn main(
     chain_id: pub u64,
@@ -38,7 +37,7 @@ fn main(
     note_amount: u128,
     note_spend_key: Field,
     leaf_index: u32,
-    auth_path: [Field; MERKLE_DEPTH],
+    auth_path: [Field; DEPTH],
 ) {
     assert(mint_units > 0);
     assert(mint_units <= note_amount);
