@@ -27,7 +27,7 @@ Sibling Nargo packages (each its own `Nargo.toml`):
 
 | Directory | Nargo name | Type | Role |
 |-----------|-----------|------|------|
-| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation. |
+| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `merkle_tree`, `hash`, `tags` (base purpose tags, combined with a per-circuit domain via `tags::tag`), and `types` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation. |
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
