@@ -58,7 +58,7 @@ action tag — the pool contract validates and routes those.
 | Input | Meaning |
 |---|---|
 | `chain_id` | Chain containing the pool. |
-| `root` | Accepted depth-20 note-commitment root. |
+| `root` | Accepted depth-32 note-commitment root. |
 | `nullifier` | Deterministic identifier consumed to prevent a second spend. |
 | `asset` | ERC20 token address the note is denominated in. |
 | `spender` | Address authorized to receive the payout (`msg.sender`). |
@@ -72,13 +72,15 @@ The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
 2. `0 < spend_amount <= note_amount`, with a nonzero spend key and nullifier.
 3. The spend key derives the note serial.
 4. The chain, serial, asset, and hidden amount derive a nonzero note commitment
-   included under `root` through the supplied depth-20 path. The asset and the
+   included under `root` through the supplied depth-32 path. The asset and the
    amount live in the **commitment**, not the serial, so the pool contract can
    build a deposit leaf from the transfer it actually performed — membership then
    attests both.
-5. The commitment and spend key derive the published `nullifier`. Deriving it
-   from the commitment rather than the serial gives exactly one nullifier per
-   leaf, so two leaves sharing a serial stay independently spendable.
+5. The commitment and spend key derive the published `nullifier` under the
+   protocol-wide `OUTBE_NULLIFIER` preimage from `outbe_circuit_core::merkle_tree`.
+   Deriving it from the commitment rather than the serial gives exactly one
+   nullifier per leaf, so two leaves sharing a serial stay independently
+   spendable.
 6. A partial spend rotates the spend key through that nullifier and publishes the
    exact commitment for `note_amount - spend_amount`, inheriting the same asset;
    a full spend publishes zero.

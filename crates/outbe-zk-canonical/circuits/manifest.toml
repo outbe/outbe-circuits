@@ -126,3 +126,4 @@ module = "paynote"
 label = "outbe.paynote"
 version = "1.0.0"
 status = "active"
+
