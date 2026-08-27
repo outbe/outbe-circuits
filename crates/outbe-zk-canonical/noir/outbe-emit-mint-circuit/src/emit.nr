@@ -20,15 +20,15 @@ pub fn note_sn(note_owner: EthAddress, note_spend_key: Field) -> Field {
     hash_multi(TAG_NOTE_SN, [note_owner.to_field(), note_spend_key])
 }
 
-pub fn note_commitment(chain_id: u64, serial: Field, note_amount: u64) -> Field {
+pub fn note_commitment(chain_id: u64, serial: Field, note_amount: u128) -> Field {
     hash_multi(
         TAG_COMMITMENT,
         [chain_id as Field, serial, note_amount as Field],
     )
 }
 
-pub fn nullifier(chain_id: u64, serial: Field, note_spend_key: Field) -> Field {
-    hash_multi(TAG_NULLIFIER, [chain_id as Field, serial, note_spend_key])
+pub fn nullifier(note_commitment: Field, note_spend_key: Field) -> Field {
+    hash_multi(TAG_NULLIFIER, [note_commitment, note_spend_key])
 }
 
 pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Field {
@@ -53,11 +53,11 @@ fn key_rotation_changes_equal_value_notes() {
     let key = 17;
     let serial = note_sn(owner, key);
     let commitment = note_commitment(chain_id, serial, 100);
-    let spent_nullifier = nullifier(chain_id, serial, key);
+    let spent_nullifier = nullifier(commitment, key);
     let next_key = change_key(key, spent_nullifier);
     let next_serial = note_sn(owner, next_key);
     let next_commitment = note_commitment(chain_id, next_serial, 100);
-    let next_nullifier = nullifier(chain_id, next_serial, next_key);
+    let next_nullifier = nullifier(next_commitment, next_key);
 
     assert(serial != next_serial);
     assert(commitment != next_commitment);
@@ -65,7 +65,7 @@ fn key_rotation_changes_equal_value_notes() {
 }
 
 #[test]
-fn one_owner_key_pair_has_one_nullifier() {
+fn distinct_commitments_have_distinct_nullifiers() {
     let chain_id = 31337;
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
@@ -74,5 +74,5 @@ fn one_owner_key_pair_has_one_nullifier() {
     let commitment_b = note_commitment(chain_id, serial, 60);
 
     assert(commitment_a != commitment_b);
-    assert_eq(nullifier(chain_id, serial, key), nullifier(chain_id, serial, key));
+    assert(nullifier(commitment_a, key) != nullifier(commitment_b, key));
 }
