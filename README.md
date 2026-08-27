@@ -10,7 +10,7 @@ Rust workspace for the **Outbe zero-knowledge protocol**: pluggable consensus pr
 | [`outbe-protocol-derive`](crates/outbe-protocol-derive) | `#[derive(Entity)]` — maps a typed struct's `#[outbe(...)]`-annotated fields to the canonical entity-hash preimage. |
 | [`outbe-zk-backend`](crates/outbe-zk-backend) | Noir proving backend: an ACVM witness solver plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Generic over any circuit implementing the `outbe-protocol` zk seams. |
 | [`outbe-zk-canonical`](crates/outbe-zk-canonical) | Concrete canonical circuit/witness types **and** the in-code, append-only, versioned circuit registry. Builds from committed frozen artifacts — ships to crates.io, no Noir toolchain required. |
-| `xtask` | Release tooling: `cargo xtask freeze-circuits`. |
+| `xtask` | Circuit tooling: `cargo xtask test-circuits` and `cargo xtask freeze-circuits`. |
 
 ## Build
 
@@ -30,7 +30,7 @@ The 10 active canonical circuits live as sibling Nargo packages under `crates/ou
 
 | Directory | Nargo name | Type | Role |
 |-----------|-----------|------|------|
-| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash2` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 via the stdlib permutation. |
+| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 via the stdlib permutation. |
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
@@ -51,7 +51,7 @@ mise run install:zk-toolchain    # nargo 1.0.0-beta.22 + bb 5.0.0-nightly.202605
 ### Circuit-change workflow
 
 ```bash
-cargo xtask freeze-circuits          # the only step that runs nargo/bb
+cargo xtask freeze-circuits          # the only step that runs bb/writes frozen artifacts
 ```
 
 For each circuit whose **ACIR changed**, it mints a new frozen version under `resources/circuits/` and records it `active` in `circuits/manifest.toml` (the superseded version is set `deprecated`, keeping only its VK). Pass `--abi-change` (minor) or `--semantic` (major + new `DOMAIN` decision) when the public-input layout changes. Commit the minted artifacts **and** the modified `manifest.toml` together with the `.nr` source change — the PR review is the audit gate.

@@ -17,7 +17,7 @@ use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
 use outbe_protocol::{OutbeV1, Suite};
 use outbe_zk_backend::barretenberg::Barretenberg;
 use outbe_zk_canonical::aggregation::{FlatAggregation, Slot};
-use outbe_zk_canonical::full::FullProvable;
+use outbe_zk_canonical::full::{full_circuit_domain, FullProvable};
 use outbe_zk_canonical::noir::flat_aggregation_n1::FlatAggregationN1;
 use outbe_zk_canonical::noir::flat_aggregation_n16::FlatAggregationN16;
 use outbe_zk_canonical::noir::flat_aggregation_n2::FlatAggregationN2;
@@ -184,7 +184,7 @@ fn bench_proving(c: &mut Criterion) {
 
     // --- full proof (ownership + depth-32 Merkle inclusion) ---
     let (td, signer, binding) = sample(&mut rng);
-    let tree = Imt::<OutbeV1>::new(INCLUSION_DEPTH).unwrap();
+    let tree = Imt::<OutbeV1>::new(full_circuit_domain(), INCLUSION_DEPTH).unwrap();
     let path = tree.empty_inclusion_path(0);
     let (full_w, full_p) = td
         .derive_full_witness(&mut rng, &signer, binding, &path)

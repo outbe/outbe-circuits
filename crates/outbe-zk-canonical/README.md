@@ -14,8 +14,8 @@ released circuit version and its on-chain identity.
 
 ## Emit mint statement
 
-`outbe.emit.mint@1.0.0` proves knowledge of a private note amount, spend key,
-depth-20 Merkle path bits, and authentication path for a note committed under a
+`outbe.emit.mint@1.2.1` proves knowledge of a private note amount, spend key,
+depth-20 Merkle leaf index, and authentication path for a note committed under a
 public chain root. Its public statement is:
 
 | Input | Meaning |
@@ -27,7 +27,7 @@ public chain root. Its public statement is:
 | `mint_units` | Public amount being minted from the private note. |
 | `change_commitment` | Commitment to unminted value, or zero for a full mint. |
 
-The private witness is `note_amount`, `note_spend_key`, `path_bits`, and
+The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
 `auth_path`. The circuit checks:
 
 1. `0 < mint_units <= note_amount`, with a nonzero spend key and nullifier.
@@ -38,9 +38,9 @@ The private witness is `note_amount`, `note_spend_key`, `path_bits`, and
 5. A partial mint rotates the spend key through that nullifier and publishes the
    exact commitment for `note_amount - mint_units`; a full mint publishes zero.
 
-Merkle inner nodes use the shared untagged `Poseidon2(left, right)` hash.
-`path_bits` are little-endian: `false` places the current node on the left and
-`true` places it on the right.
+Merkle inner nodes use `Poseidon2(EMIT_DOMAIN, left, right)`.
+`leaf_index` is converted to little-endian path bits inside the Emit helper:
+zero selects the current node as left; one selects it as right.
 
 The circuit does **not** select or authenticate the payout recipient and does not
 mutate ledger state. The verifier/runtime must bind `chain_id`, accept the

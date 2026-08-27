@@ -1,10 +1,12 @@
-//! `cargo xtask` — canonical-circuit release tooling.
+//! `cargo xtask` — canonical-circuit tooling.
 //!
-//! `freeze-circuits` is the **only** step that runs `nargo`/`bb`. It compiles
-//! the head noir sources under `outbe-zk-canonical/noir/` and, for each
-//! circuit whose ACIR changed, mints a new frozen version under
-//! `outbe-zk-canonical/resources/circuits/<module>/<version>/` and records
-//! it (status `active`) in `circuits/manifest.toml`.
+//! `test-circuits` runs every vendored Noir package through `nargo test`.
+//!
+//! `freeze-circuits` compiles the head Noir sources under
+//! `outbe-zk-canonical/noir/` and, for each circuit whose ACIR changed, mints a
+//! new frozen version under `outbe-zk-canonical/resources/circuits/<module>/<version>/`
+//! and records it (status `active`) in `circuits/manifest.toml`. It is the only
+//! command that invokes `bb` or writes frozen artifacts.
 //!
 //! When a new version supersedes the previously-active one, the old entry is set
 //! to `deprecated`, its `circuit_hash` is written into the manifest (preserving
@@ -45,12 +47,42 @@ fn main() {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("freeze-circuits") => freeze(&args.collect::<Vec<_>>()),
+        Some("test-circuits") => test_circuits(),
         other => {
             eprintln!("unknown command {other:?}");
-            eprintln!("usage: cargo xtask freeze-circuits [--abi-change | --semantic]");
+            eprintln!("usage:");
+            eprintln!("  cargo xtask freeze-circuits [--abi-change | --semantic]");
+            eprintln!("  cargo xtask test-circuits");
             std::process::exit(2);
         }
     }
+}
+
+fn test_circuits() {
+    let noir = workspace_root()
+        .join("crates")
+        .join("outbe-zk-canonical")
+        .join("noir");
+    let nargo = locate("NARGO", ".nargo/bin/nargo", "nargo").expect("nargo not found (set $NARGO)");
+    let packages = std::iter::once(("outbe-circuit-core", "outbe_circuit_core"))
+        .chain(CIRCUITS.iter().copied());
+
+    let mut tested = 0usize;
+    for (dir, package) in packages {
+        println!("  testing    {package}");
+        let status = Command::new(&nargo)
+            .arg("test")
+            .current_dir(noir.join(dir))
+            .status()
+            .unwrap_or_else(|e| panic!("spawn nargo for {dir}: {e}"));
+        if !status.success() {
+            eprintln!("nargo test failed for {dir}");
+            std::process::exit(status.code().unwrap_or(1));
+        }
+        tested += 1;
+    }
+
+    println!("\n{tested} Noir package(s) tested.");
 }
 
 fn freeze(flags: &[String]) {

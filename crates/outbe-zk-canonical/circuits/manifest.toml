@@ -22,7 +22,8 @@ status = "active"
 module = "full_proof"
 label = "outbe.full_proof"
 version = "1.0.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"
 
 [[circuit]]
 module = "flat_aggregation_n1"
@@ -84,4 +85,24 @@ circuit_hash = "f41d5933969dacd80409a6501cd0de2b5efa877961f20b90af0814e786eadc45
 module = "emit_mint"
 label = "outbe.emit.mint"
 version = "1.1.0"
+status = "deprecated"
+circuit_hash = "b3708b87579e41438ea070d6c1cfa8f60a4c00a4480f3b1b8a15e412d7e29766"
+
+[[circuit]]
+module = "full_proof"
+label = "outbe.full_proof"
+version = "1.1.0"
+status = "active"
+
+[[circuit]]
+module = "emit_mint"
+label = "outbe.emit.mint"
+version = "1.2.0"
+status = "deprecated"
+circuit_hash = "a533b2c39163dc386c91d0cdd78a32c16e6bc44e731667d3b6a7b87244f29cf6"
+
+[[circuit]]
+module = "emit_mint"
+label = "outbe.emit.mint"
+version = "1.2.1"
 status = "active"

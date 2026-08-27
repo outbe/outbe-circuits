@@ -101,3 +101,7 @@ jobs:
 
       - name: cargo test --workspace
         run: cargo test --workspace
+
+
+      - name: cargo xtask test-circuits
+        run: cargo xtask test-circuits

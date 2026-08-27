@@ -23,7 +23,7 @@ use outbe_protocol::{OutbeV1, Suite};
 
 use outbe_protocol::protocol::imt::Imt;
 use outbe_zk_canonical::aggregation::{AggregationTier, AnyTier, FlatAggregation, Slot};
-use outbe_zk_canonical::full::FullProvable;
+use outbe_zk_canonical::full::{full_circuit_domain, FullProvable};
 use outbe_zk_canonical::noir::flat_aggregation_n4::FlatAggregationN4;
 use outbe_zk_canonical::noir::flat_aggregation_n64::FlatAggregationN64;
 use outbe_zk_canonical::noir::full_proof::FullProof;
@@ -397,7 +397,8 @@ fn full_proof_round_trip() {
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
 
     // Inclusion: place nft_hash at index 0 of an otherwise-empty depth-32 tree.
-    let tree = Imt::<OutbeV1>::new(outbe_zk_canonical::INCLUSION_DEPTH).unwrap();
+    let tree =
+        Imt::<OutbeV1>::new(full_circuit_domain(), outbe_zk_canonical::INCLUSION_DEPTH).unwrap();
     let path = tree.empty_inclusion_path(0);
     let (witness, public) = td
         .derive_full_witness(&mut rng, &signer, binding, &path)
@@ -406,8 +407,8 @@ fn full_proof_round_trip() {
     assert_eq!(public.owner, owner);
     assert_eq!(public.binding_hash, binding);
     assert_eq!(witness.merkle_path_siblings.len(), 32);
-    // Index 0 => current-left at every level => all circuit direction bits 1.
-    assert_eq!(witness.merkle_path_indices, [1u8; 32]);
+    // Index 0 => current-left at every level => all path bits are true.
+    assert_eq!(witness.merkle_path_indices, [true; 32]);
     // The public root is the inclusion path resolved over nft_hash (the leaf).
     assert_eq!(
         public.expected_merkle_root,
@@ -475,7 +476,7 @@ fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.1.0");
+    assert_eq!(emit::EmitMint::VERSION, "1.2.1");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
@@ -503,16 +504,14 @@ fn emit_mint_descriptor_and_abi_layout() {
     assert_eq!(flat[4], Fr::from(40u64), "mint_units follows note_owner");
     assert_eq!(flat[5], Fr::from(4u64), "change_commitment is last");
 
-    let mut path_bits = [false; 20];
-    path_bits[0] = true;
     let witness = emit::Witness {
         note_amount: 100,
         note_spend_key: Fr::from(5u64),
-        path_bits,
+        leaf_index: 1,
         auth_path: [Fr::from(7u64); 20],
     };
     let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
-    assert_eq!(all.len(), 48, "6 public + 42 private ABI leaves");
+    assert_eq!(all.len(), 29, "6 public + 23 private ABI leaves");
     assert_eq!(
         &all[..6],
         flat.as_slice(),
@@ -520,9 +519,8 @@ fn emit_mint_descriptor_and_abi_layout() {
     );
     assert_eq!(all[6], Fr::from(100u64), "note_amount");
     assert_eq!(all[7], Fr::from(5u64), "note_spend_key");
-    assert_eq!(all[8], Fr::from(1u64), "path_bits[0]");
-    assert_eq!(&all[9..28], &[Fr::from(0u64); 19], "remaining path bits");
-    assert_eq!(&all[28..], &[Fr::from(7u64); 20], "auth_path");
+    assert_eq!(all[8], Fr::from(1u64), "leaf_index");
+    assert_eq!(&all[9..], &[Fr::from(7u64); 20], "auth_path");
 
     assert!(
         outbe_zk_canonical::noir::CIRCUIT_REGISTRY

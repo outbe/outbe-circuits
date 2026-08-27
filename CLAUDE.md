@@ -10,7 +10,7 @@ Rust workspace (version `0.11.0`, edition 2021) for the Outbe zero-knowledge pro
 - `crates/outbe-protocol-derive` — `#[derive(Entity)]` proc-macro. Per-field `#[outbe(...)]` roles (`id_seed` / `id_body` / `body` / `owner` / `skip` / `limbed` / `pos = N`) generate the canonical entity-hash preimage. Exercised by the protocol crate's tests.
 - `crates/outbe-zk-backend` — Noir proving backend: a shared ACVM witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Generic over any circuit implementing the `outbe-protocol` zk seams (`Circuit` / `CircuitId` / `CircuitSuite`). `publish = false` (consumes noir git deps + native libs). Feature `with-network-srs` (on by default) pulls `reqwest` for the Aztec SRS download fallback; `default-features = false` is the offline/mobile build.
 - `crates/outbe-zk-canonical` — Concrete canonical circuit/witness types **and** the in-code, append-only, versioned circuit registry. Builds from committed frozen artifacts (no git/noir deps), so it ships to crates.io and `cargo build` is deterministic with or without the noir toolchain. `INCLUSION_DEPTH = 32`.
-- `xtask/` — Release tooling. Single command: `cargo xtask freeze-circuits` — the **only** step that runs `nargo`/`bb`.
+- `xtask/` — Circuit tooling: `cargo xtask test-circuits` runs every Noir package; `cargo xtask freeze-circuits` is the only command that runs `bb` or writes frozen artifacts.
 
 ### How the canonical registry works (`outbe-zk-canonical`)
 
@@ -27,13 +27,13 @@ Sibling Nargo packages (each its own `Nargo.toml`):
 
 | Directory | Nargo name | Type | Role |
 |-----------|-----------|------|------|
-| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash2` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation. |
+| `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `inclusion`, and `hash` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation. |
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `outbe-full-circuit/` | `full_proof` | bin | Ownership + depth-32 Merkle inclusion. |
 | `outbe-flat-aggregation-circuit-n{1,2,4,8,16,32,64}/` | `flat_aggregation_n{N}` | bin | Aggregates N ownership proofs. |
 | `outbe-emit-mint-circuit/` | `emit_mint` | bin | Contains all Emit-specific formulas plus mint, nullifier, membership, and optional change constraints. |
 
-The ownership / full / aggregation bins pull shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time. Emit owns its protocol formulas locally and imports only the generic `hash2` primitive from the core. `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
+The ownership / full / aggregation bins pull shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time. Emit owns its protocol formulas locally and imports only generic hashing and Merkle inclusion from the core. `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
 
 ## Build commands
 
