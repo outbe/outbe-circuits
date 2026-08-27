@@ -1,7 +1,7 @@
 use super::{
     main,
     paynote::{
-        change_key, merkle_root, note_commitment, note_sn, nullifier, PAYNOTE_DOMAIN, TAG_EMPTY,
+        change_key, empty_leaf, merkle_root, note_commitment, note_sn, nullifier, PAYNOTE_DOMAIN,
     },
 };
 use outbe_circuit_core::{hash, merkle_tree::{DEPTH, merkle_root_from_indices}};
@@ -23,10 +23,6 @@ fn other_asset() -> EthAddress {
 
 fn spender() -> EthAddress {
     EthAddress::from_field(0x3333333333333333333333333333333333333333)
-}
-
-pub fn empty_leaf(chain_id: u64) -> Field {
-    hash::hash_multi(TAG_EMPTY, [chain_id as Field])
 }
 
 fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {

@@ -79,17 +79,18 @@ The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
    amount live in the **commitment**, not the serial, so the pool contract can
    build a deposit leaf from the transfer it actually performed — membership then
    attests both.
-5. The commitment and spend key derive the published `nullifier` under the
-   protocol-wide `OUTBE_NULLIFIER` preimage from `outbe_circuit_core::merkle_tree`.
-   Deriving it from the commitment rather than the serial gives exactly one
+5. The commitment and spend key derive the published `nullifier`. Deriving it from the commitment rather than the serial gives exactly one
    nullifier per leaf, so two leaves sharing a serial stay independently
    spendable.
 6. A partial spend rotates the spend key through that nullifier and publishes the
    exact commitment for `note_amount - spend_amount`, inheriting the same asset;
    a full spend publishes zero.
 
-Merkle inner nodes use `Poseidon2(PAYNOTE_DOMAIN, left, right)` and the empty
-leaf is `Poseidon2(PAYNOTE_EMPTY, chain_id)`.
+Every Paynote preimage is tagged with `Poseidon2(PAYNOTE_DOMAIN, TAG)`, where
+`TAG` is a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`,
+`NULLIFIER`, `NOTE_SN`, `CHANGE_KEY`, `EMPTY`). Merkle inner nodes use
+`Poseidon2(PAYNOTE_DOMAIN, left, right)` and the empty leaf is
+`hash_multi(tag(PAYNOTE_DOMAIN, EMPTY), [chain_id])`.
 
 ### Runtime obligations
 
@@ -101,7 +102,7 @@ missed:
   freely *transferable* — anyone can submit it verbatim. A contract that pays
   `msg.sender` instead hands the entire `spend_amount` to the first front-runner.
 - Derive the deposit leaf from the asset and amount actually transferred:
-  `leaf = Poseidon2(PAYNOTE_COMMITMENT, [chain_id, serial, asset, amount])`, where
+  `leaf = hash_multi(tag(PAYNOTE_DOMAIN, COMMITMENT), [chain_id, serial, asset, amount])`, where
   `serial` is supplied by the depositor. This is what binds the deposited value
   to the note; accepting a caller-supplied leaf makes the pool drainable.
 - Deduplicate deposits on the **leaf**, not the serial. An identical

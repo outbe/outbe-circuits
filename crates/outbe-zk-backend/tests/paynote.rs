@@ -26,12 +26,18 @@ fn ascii_field(value: &str) -> Fr {
     Fr::from_be_bytes_mod_order(value.as_bytes())
 }
 
-fn hash_multi(tag: &str, values: &[Fr]) -> Fr {
-    let mut state = h2(ascii_field(tag), Fr::from(values.len() as u64));
+fn hash_multi(tag: Fr, values: &[Fr]) -> Fr {
+    let mut state = h2(tag, Fr::from(values.len() as u64));
     for value in values {
         state = h2(state, *value);
     }
     state
+}
+
+/// Mirror of `outbe_circuit_core::tags::tag` under Paynote's domain: a base
+/// purpose tag folded with the domain that owns it.
+fn paynote_tag(base: &str) -> Fr {
+    h2(ascii_field("OUTBE_PAYNOTE"), ascii_field(base))
 }
 
 /// One 20-byte address = one big-endian field element. Must agree with
@@ -41,28 +47,26 @@ fn address(bytes: [u8; 20]) -> Fr {
 }
 
 fn note_serial(spend_key: Fr) -> Fr {
-    hash_multi("PAYNOTE_NOTE_SN", &[spend_key])
+    hash_multi(paynote_tag("NOTE_SN"), &[spend_key])
 }
 
 fn note_commitment(chain_id: u64, serial: Fr, asset: Fr, amount: u128) -> Fr {
     hash_multi(
-        "PAYNOTE_COMMITMENT",
+        paynote_tag("COMMITMENT"),
         &[Fr::from(chain_id), serial, asset, Fr::from(amount)],
     )
 }
 
 /// Derived from the commitment, not the serial — so every leaf has exactly one
-/// nullifier, and `chain_id` needs no separate input. The tag is the shared
-/// `OUTBE_NULLIFIER`: the preimage lives in `outbe_circuit_core::merkle_tree`,
-/// not in Paynote.
+/// nullifier, and `chain_id` needs no separate input.
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_multi("OUTBE_NULLIFIER", &[commitment, spend_key])
+    hash_multi(paynote_tag("NULLIFIER"), &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> [Fr; 32] {
     let mut path = [Fr::from(0u64); 32];
     let domain = ascii_field("OUTBE_PAYNOTE");
-    path[0] = hash_multi("PAYNOTE_EMPTY", &[Fr::from(chain_id)]);
+    path[0] = hash_multi(paynote_tag("EMPTY"), &[Fr::from(chain_id)]);
     for level in 1..32 {
         path[level] = h3(domain, path[level - 1], path[level - 1]);
     }
@@ -102,7 +106,7 @@ fn paynote_partial_spend_prove_verify_round_trip() {
 
     // The change note inherits the same asset, so it stays spendable in the
     // same token.
-    let next_key = hash_multi("PAYNOTE_CHANGE_KEY", &[spend_key, spent_nullifier]);
+    let next_key = hash_multi(paynote_tag("CHANGE_KEY"), &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(
         chain_id,
         note_serial(next_key),
