@@ -9,8 +9,8 @@
 //      nonzero.
 //   2. `note_owner` and `note_spend_key` derive the note serial.
 //   3. `(chain_id, serial, note_amount)` derives a nonzero commitment included
-//      under the public `root` via the depth-20 `leaf_index` and `auth_path`.
-//   4. `(chain_id, serial, note_spend_key)` derives the public `nullifier`.
+//      under the public `root` via the depth-32 `leaf_index` and `auth_path`.
+//   4. The note commitment and spend key derive the public `nullifier`.
 //   5. A partial mint publishes exactly the commitment for the remaining value,
 //      using a spend key rotated by the current nullifier; a full mint publishes
 //      the zero change sentinel.
@@ -24,21 +24,20 @@ mod emit;
 mod tests;
 
 use emit::{change_key, merkle_root, note_commitment, note_sn};
+use outbe_circuit_core::merkle_tree::DEPTH;
 use outbe_circuit_core::types::EthAddress;
-
-global MERKLE_DEPTH: u32 = 20;
 
 fn main(
     chain_id: pub u64,
     root: pub Field,
     nullifier: pub Field,
     note_owner: pub EthAddress,
-    mint_units: pub u64,
+    mint_units: pub u128,
     change_commitment: pub Field,
-    note_amount: u64,
+    note_amount: u128,
     note_spend_key: Field,
     leaf_index: u32,
-    auth_path: [Field; MERKLE_DEPTH],
+    auth_path: [Field; DEPTH],
 ) {
     assert(mint_units > 0);
     assert(mint_units <= note_amount);
@@ -49,7 +48,7 @@ fn main(
     let serial = note_sn(note_owner, note_spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
     let computed_root = merkle_root(commitment, leaf_index, auth_path);
-    let computed_nullifier = emit::nullifier(chain_id, serial, note_spend_key);
+    let computed_nullifier = emit::nullifier(commitment, note_spend_key);
 
     assert(serial != 0);
     assert(commitment != 0);
@@ -63,7 +62,7 @@ fn main(
         let next_key = change_key(note_spend_key, computed_nullifier);
         let next_serial = note_sn(note_owner, next_key);
         let next_commitment = note_commitment(chain_id, next_serial, remaining);
-        let next_nullifier = emit::nullifier(chain_id, next_serial, next_key);
+        let next_nullifier = emit::nullifier(next_commitment, next_key);
         assert(next_key != 0);
         assert(next_serial != 0);
         assert(next_commitment != 0);
