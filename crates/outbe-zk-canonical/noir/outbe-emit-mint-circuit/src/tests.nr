@@ -1,16 +1,15 @@
 use super::{
     emit::{
-        change_key, merkle_root, note_commitment, note_sn, nullifier, EMIT_DOMAIN,
-        OUTBE_CHANGE_KEY, OUTBE_COMMITMENT, OUTBE_EMPTY, OUTBE_NOTE_SN, OUTBE_NULLIFIER,
+        change_key, emit_tag, empty_leaf, merkle_root, note_commitment, note_sn, nullifier,
+        EMIT_DOMAIN,
     },
     main,
 };
 use outbe_circuit_core::{hash, merkle_tree::{merkle_root_from_indices, DEPTH}};
+use outbe_circuit_core::tags::{
+    TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
+};
 use outbe_circuit_core::types::EthAddress;
-
-pub fn empty_leaf(chain_id: u64) -> Field {
-    hash::hash_multi(OUTBE_EMPTY, [chain_id as Field])
-}
 
 fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
     let mut path = [0; DEPTH];
@@ -497,11 +496,11 @@ fn zero_chain_id_and_zero_owner_are_accepted_runtime_must_bind_them() {
 fn protocol_tags_are_pairwise_distinct() {
     let tags = [
         EMIT_DOMAIN,
-        OUTBE_NOTE_SN,
-        OUTBE_COMMITMENT,
-        OUTBE_NULLIFIER,
-        OUTBE_CHANGE_KEY,
-        OUTBE_EMPTY,
+        emit_tag(TAG_NOTE_SN),
+        emit_tag(TAG_COMMITMENT),
+        emit_tag(TAG_NULLIFIER),
+        emit_tag(TAG_CHANGE_KEY),
+        emit_tag(TAG_EMPTY),
     ];
     for i in 0..tags.len() {
         assert(tags[i] != 0);
@@ -515,7 +514,7 @@ fn protocol_tags_are_pairwise_distinct() {
 fn sampled_key_rotations_avoid_spent_identity() {
     let chain_id = 31337;
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
-    let keys = [0, 1, 2, 17, EMIT_DOMAIN, OUTBE_CHANGE_KEY];
+    let keys = [0, 1, 2, 17, EMIT_DOMAIN, emit_tag(TAG_CHANGE_KEY)];
     for key in keys {
         let serial = note_sn(owner, key);
         let commitment = note_commitment(chain_id, serial, 100);

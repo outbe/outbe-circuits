@@ -2,24 +2,19 @@
 //!
 //! Shaped after Aztec's `noir-protocol-circuits/crates/types/src/merkle_tree`
 //! (`merkle_tree.nr` + `root.nr`), trimmed to what this protocol needs: a
-//! domain-separated inner-node hash, a root resolved from a sibling path, and
-//! the commitment/nullifier preimages every note-bearing circuit shares.
+//! domain-separated inner-node hash and a root resolved from a sibling path.
 //!
 //! Aztec bakes the domain into a named hasher per tree (`merkle_hash`,
 //! `nullifier_merkle_hash`, ...). Here the domain is a parameter instead, so
 //! one function serves every tree — `EMIT_DOMAIN`, `FULL_CIRCUIT_DOMAIN`, ...
 //! Distinct domains are what keeps the trees separated.
 
-use crate::hash::{hash_3, hash_multi};
+use crate::hash::hash_3;
 
 /// Canonical tree depth across the protocol — the chain's
 /// `CommitmentWindowBase.TREE_DEPTH`, mirrored in Rust as
 /// `outbe_zk_canonical::INCLUSION_DEPTH`.
 pub global DEPTH: u32 = 32;
-
-// Big-endian ASCII purpose tags.
-pub global OUTBE_COMMITMENT: Field = 0x4f555442455f434f4d4d49544d454e54; // "OUTBE_COMMITMENT"
-pub global OUTBE_NULLIFIER: Field = 0x4f555442455f4e554c4c4946494552; // "OUTBE_NULLIFIER"
 
 /// Inner-node hash: `Poseidon2(domain, left, right)`.
 pub fn merkle_hash(domain: Field, left: Field, right: Field) -> Field {
@@ -66,19 +61,6 @@ pub fn merkle_root<let N: u32>(
     merkle_root_from_indices(domain, leaf, sibling_path, path_indices)
 }
 
-/// Value commitment: `(chain_id, serial, amount)` under `OUTBE_COMMITMENT`.
-pub fn commitment(chain_id: u64, serial: Field, amount: u128) -> Field {
-    hash_multi(
-        OUTBE_COMMITMENT,
-        [chain_id as Field, serial, amount as Field],
-    )
-}
-
-/// Spend nullifier: `(commitment, spend_key)` under `OUTBE_NULLIFIER`.
-pub fn nullifier(commitment: Field, spend_key: Field) -> Field {
-    hash_multi(OUTBE_NULLIFIER, [commitment, spend_key])
-}
-
 #[test]
 fn root_matches_hand_computed_depth_2() {
     let domain = 7;
@@ -117,11 +99,4 @@ fn index_and_flag_forms_agree() {
 #[test(should_fail)]
 fn leaf_index_above_tree_capacity_fails() {
     let _ = merkle_root(7, 11, 16, [13, 17, 19, 23]);
-}
-
-#[test]
-fn tags_are_distinct_and_nonzero() {
-    assert(OUTBE_COMMITMENT != 0);
-    assert(OUTBE_NULLIFIER != 0);
-    assert(OUTBE_COMMITMENT != OUTBE_NULLIFIER);
 }
