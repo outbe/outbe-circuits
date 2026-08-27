@@ -1,38 +1,31 @@
 //! Emit private-note formulas.
 //!
 //! Emit formulas use caller-selected purpose tags with the shared iterated
-//! Poseidon2 hash. Merkle inner nodes use `EMIT_DOMAIN`; the empty leaf uses
-//! `TAG_EMPTY`.
+//! Poseidon2 hash. The commitment and nullifier preimages are protocol-wide and
+//! live in `outbe_circuit_core::merkle_tree`; the note serial, change-key
+//! rotation and empty leaf are Emit's own. Merkle inner nodes use `EMIT_DOMAIN`;
+//! the empty leaf uses `OUTBE_EMPTY`.
 
 use outbe_circuit_core::hash::hash_multi;
-use outbe_circuit_core::inclusion::compute_merkle_root;
+use outbe_circuit_core::merkle_tree;
 use outbe_circuit_core::types::EthAddress;
+
+pub use outbe_circuit_core::merkle_tree::{
+    commitment as note_commitment, nullifier, OUTBE_COMMITMENT, OUTBE_NULLIFIER,
+};
 
 // Big-endian ASCII tree domain and purpose tags.
 pub global EMIT_DOMAIN: Field = 0x4f555442455f454d4954; // "OUTBE_EMIT"
-pub global TAG_NOTE_SN: Field = 0x454d49545f4e4f54455f534e; // "EMIT_NOTE_SN"
-pub global TAG_COMMITMENT: Field = 0x454d49545f434f4d4d49544d454e54; // "EMIT_COMMITMENT"
-pub global TAG_NULLIFIER: Field = 0x454d49545f4e554c4c4946494552; // "EMIT_NULLIFIER"
-pub global TAG_CHANGE_KEY: Field = 0x454d49545f4348414e47455f4b4559; // "EMIT_CHANGE_KEY"
-pub global TAG_EMPTY: Field = 0x454d49545f454d505459; // "EMIT_EMPTY"
+pub global OUTBE_NOTE_SN: Field = 0x4f555442455f4e4f54455f534e; // "OUTBE_NOTE_SN"
+pub global OUTBE_CHANGE_KEY: Field = 0x4f555442455f4348414e47455f4b4559; // "OUTBE_CHANGE_KEY"
+pub global OUTBE_EMPTY: Field = 0x4f555442455f454d505459; // "OUTBE_EMPTY"
 
 pub fn note_sn(note_owner: EthAddress, note_spend_key: Field) -> Field {
-    hash_multi(TAG_NOTE_SN, [note_owner.to_field(), note_spend_key])
-}
-
-pub fn note_commitment(chain_id: u64, serial: Field, note_amount: u128) -> Field {
-    hash_multi(
-        TAG_COMMITMENT,
-        [chain_id as Field, serial, note_amount as Field],
-    )
-}
-
-pub fn nullifier(note_commitment: Field, note_spend_key: Field) -> Field {
-    hash_multi(TAG_NULLIFIER, [note_commitment, note_spend_key])
+    hash_multi(OUTBE_NOTE_SN, [note_owner.to_field(), note_spend_key])
 }
 
 pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Field {
-    hash_multi(TAG_CHANGE_KEY, [note_spend_key, note_nullifier])
+    hash_multi(OUTBE_CHANGE_KEY, [note_spend_key, note_nullifier])
 }
 
 /// Resolve an Emit Merkle root from a compact little-endian leaf index.
@@ -41,9 +34,7 @@ pub fn merkle_root<let DEPTH: u32>(
     leaf_index: u32,
     path_siblings: [Field; DEPTH],
 ) -> Field {
-    let max_leaf_index = ((1 << DEPTH) - 1) as Field;
-    let path_indices: [bool; DEPTH] = (max_leaf_index - leaf_index as Field).to_le_bits();
-    compute_merkle_root(EMIT_DOMAIN, leaf, path_siblings, path_indices)
+    merkle_tree::merkle_root(EMIT_DOMAIN, leaf, leaf_index as Field, path_siblings)
 }
 
 #[test]
