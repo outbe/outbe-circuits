@@ -6,7 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
 Concrete canonical circuit + witness types for the Outbe protocol (ownership,
-flat-aggregation tiers n1–n64, full proof, and Emit mint), built on the generic
+flat-aggregation tiers n1–n64, full proof, Emit mint, and Paynote), built on the generic
 seams in
 `outbe-protocol` (`Circuit` / `CircuitId` / `CircuitSuite`). It is also the **in-code,
 versioned circuit registry**: the authoritative, append-only record of every
@@ -49,6 +49,83 @@ The circuit does **not** select or authenticate the payout recipient and does no
 mutate ledger state. The verifier/runtime must bind `chain_id`, accept the
 supplied root, reject a previously consumed nullifier, record any change
 commitment, and authorize and execute the payout.
+
+## Paynote statement
+
+`outbe.paynote@1.0.0` proves the right to spend part or all of a private ERC20
+payment note committed under a public chain root, without revealing the note's
+total value. The note is a **bearer instrument**: spend authority is knowledge of
+`note_spend_key`. There is no owner identity, no spender allow-list, and no
+action tag — the pool contract validates and routes those.
+
+| Input | Meaning |
+|---|---|
+| `chain_id` | Chain containing the pool. |
+| `root` | Accepted depth-32 note-commitment root. |
+| `nullifier` | Deterministic identifier consumed to prevent a second spend. |
+| `asset` | ERC20 token address the note is denominated in. |
+| `spender` | Address authorized to receive the payout (`msg.sender`). |
+| `spend_amount` | Public amount being spent from the private note. |
+| `change_commitment` | Commitment to unspent value, or zero for a full spend. |
+
+The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
+`auth_path`. The circuit checks:
+
+1. `asset` and `spender` are in-range (160-bit) addresses and nonzero.
+2. `0 < spend_amount <= note_amount`, with a nonzero spend key and nullifier.
+3. The spend key derives the note serial.
+4. The chain, serial, asset, and hidden amount derive a nonzero note commitment
+   included under `root` through the supplied depth-32 path. The asset and the
+   amount live in the **commitment**, not the serial, so the pool contract can
+   build a deposit leaf from the transfer it actually performed — membership then
+   attests both.
+5. The commitment and spend key derive the published `nullifier`. Deriving it from the commitment rather than the serial gives exactly one
+   nullifier per leaf, so two leaves sharing a serial stay independently
+   spendable.
+6. A partial spend rotates the spend key through that nullifier and publishes the
+   exact commitment for `note_amount - spend_amount`, inheriting the same asset;
+   a full spend publishes zero.
+
+Every Paynote preimage is tagged with `Poseidon2(PAYNOTE_DOMAIN, TAG)`, where
+`TAG` is a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`,
+`NULLIFIER`, `NOTE_SN`, `CHANGE_KEY`, `EMPTY`). Merkle inner nodes use
+`Poseidon2(PAYNOTE_DOMAIN, left, right)` and the empty leaf is
+`hash_multi(tag(PAYNOTE_DOMAIN, EMPTY), [chain_id])`.
+
+### Runtime obligations
+
+The circuit cannot enforce any of these, and each is a real vulnerability if
+missed:
+
+- **Pay out to the public `spender`, or require `msg.sender == spender`.**
+  Binding `spender` into the public inputs stops *redirection*, but the proof is
+  freely *transferable* — anyone can submit it verbatim. A contract that pays
+  `msg.sender` instead hands the entire `spend_amount` to the first front-runner.
+- Derive the deposit leaf from the asset and amount actually transferred:
+  `leaf = hash_multi(tag(PAYNOTE_DOMAIN, COMMITMENT), [chain_id, serial, asset, amount])`, where
+  `serial` is supplied by the depositor. This is what binds the deposited value
+  to the note; accepting a caller-supplied leaf makes the pool drainable.
+- Deduplicate deposits on the **leaf**, not the serial. An identical
+  `(key, asset, amount)` would otherwise produce a second leaf sharing one
+  nullifier, permanently locking it up. Deduplicating on the serial instead
+  reintroduces a griefing vector, since a serial is public in the mempool.
+- Insert leaves only via those two paths (deposit, and a spend's
+  `change_commitment`), and skip insertion entirely when `change_commitment` is
+  zero.
+- Bind `chain_id`, accept `root` only from the history it produced, and own its
+  nullifier set. Nothing in the public inputs identifies the pool, so two
+  deployments sharing a chain must not share roots.
+
+### Privacy limits
+
+- This hides **which** note was spent, not **how much** it held. Deposits are
+  public and `spend_amount` is public, so `note_amount` is private only relative
+  to the anonymity set of same-asset leaves under `root`. Uniform deposit
+  denominations are the lever if amount privacy matters.
+- The change note is reachable by **any holder of the parent spend key**, not
+  only by whoever created the note: `change_key` derives from the spend key and
+  the *public* nullifier, so a key disclosed once unlocks every descendant note.
+  There is no forward secrecy.
 
 ## What the build produces
 

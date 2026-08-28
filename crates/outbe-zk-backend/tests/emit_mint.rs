@@ -1,78 +1,33 @@
 //! Real barretenberg prove→verify round-trip for the canonical Emit mint circuit.
 
+mod common;
+
 use ark_ff::PrimeField;
 
-use outbe_protocol::primitive::hash::FieldHasher;
-use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
-use outbe_protocol::{OutbeV1, Suite};
-use outbe_zk_backend::barretenberg::Barretenberg;
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
 
-type Fr = <OutbeV1 as Suite>::Field;
+use common::{address, hash_tagged, AuthPath, Fr};
 
-fn h2(left: Fr, right: Fr) -> Fr {
-    <<OutbeV1 as Suite>::Hash as FieldHasher<Fr>>::hash(&[left, right]).unwrap()
-}
-
-fn ascii_field(value: &str) -> Fr {
-    Fr::from_be_bytes_mod_order(value.as_bytes())
-}
-
-fn h3(first: Fr, second: Fr, third: Fr) -> Fr {
-    <<OutbeV1 as Suite>::Hash as FieldHasher<Fr>>::hash(&[first, second, third]).unwrap()
-}
-
-fn hash_multi(tag: Fr, values: &[Fr]) -> Fr {
-    let mut state = h2(tag, Fr::from(values.len() as u64));
-    for value in values {
-        state = h2(state, *value);
-    }
-    state
-}
-
-/// Mirror of `outbe_circuit_core::tags::tag` under Emit's domain: a base
-/// purpose tag folded with the domain that owns it.
-fn emit_tag(base: &str) -> Fr {
-    h2(ascii_field("OUTBE_EMIT"), ascii_field(base))
-}
+const EMIT: &str = "OUTBE_EMIT";
 
 fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
-    hash_multi(emit_tag("NOTE_SN"), &[owner, spend_key])
+    hash_tagged(EMIT, "NOTE_SN", &[owner, spend_key])
 }
 
 fn note_commitment(chain_id: u64, serial: Fr, amount: u128) -> Fr {
-    hash_multi(
-        emit_tag("COMMITMENT"),
+    hash_tagged(
+        EMIT,
+        "COMMITMENT",
         &[Fr::from(chain_id), serial, Fr::from(amount)],
     )
 }
 
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_multi(emit_tag("NULLIFIER"), &[commitment, spend_key])
+    hash_tagged(EMIT, "NULLIFIER", &[commitment, spend_key])
 }
 
-fn single_leaf_path(chain_id: u64) -> [Fr; 32] {
-    let mut path = [Fr::from(0u64); 32];
-    let domain = ascii_field("OUTBE_EMIT");
-    path[0] = hash_multi(emit_tag("EMPTY"), &[Fr::from(chain_id)]);
-    for level in 1..32 {
-        path[level] = h3(domain, path[level - 1], path[level - 1]);
-    }
-    path
-}
-
-fn root_from_path(leaf: Fr, leaf_index: u32, path: &[Fr; 32]) -> Fr {
-    let mut current = leaf;
-    let domain = ascii_field("OUTBE_EMIT");
-    for (level, sibling) in path.iter().copied().enumerate() {
-        let is_left = (leaf_index >> level) & 1 == 0;
-        current = if is_left {
-            h3(domain, current, sibling)
-        } else {
-            h3(domain, sibling, current)
-        };
-    }
-    current
+fn single_leaf_path(chain_id: u64) -> AuthPath {
+    common::single_leaf_path(EMIT, chain_id)
 }
 
 #[test]
@@ -80,7 +35,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     // `note_owner` crosses the ABI as one field; the big-endian fold that
     // `emit::address_field` used to do in-circuit now happens here, and must
     // agree with `EthAddress::from_field` on the other side.
-    let owner = Fr::from_be_bytes_mod_order(&[0x22u8; 20]);
+    let owner = address([0x22; 20]);
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
     let note_amount = (1u128 << 80) + 100;
@@ -88,9 +43,9 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
     let auth_path = single_leaf_path(chain_id);
-    let root = root_from_path(commitment, 0, &auth_path);
+    let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
     let spent_nullifier = nullifier(commitment, spend_key);
-    let next_key = hash_multi(emit_tag("CHANGE_KEY"), &[spend_key, spent_nullifier]);
+    let next_key = hash_tagged(EMIT, "CHANGE_KEY", &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(chain_id, note_serial(owner, next_key), 60);
 
     let public = PublicInputs {
@@ -108,19 +63,16 @@ fn emit_partial_mint_prove_verify_round_trip() {
         auth_path,
     };
 
-    let backend = Barretenberg::default();
-    let proof = ProofGenerator::<OutbeV1, EmitMint>::generate(&backend, &witness, &public)
-        .expect("Emit mint proof generation");
-    assert!(
-        ProofVerifier::<OutbeV1, EmitMint>::verify(&backend, &public, &proof).unwrap(),
-        "valid partial-mint proof must verify"
-    );
-
-    let mut wrong = public.clone();
-    wrong.mint_units += 1;
-    assert!(
-        !ProofVerifier::<OutbeV1, EmitMint>::verify(&backend, &wrong, &proof).unwrap(),
-        "proof must not verify for a different mint amount"
+    common::assert_round_trip::<EmitMint>(
+        &witness,
+        &public,
+        &[(
+            "a different mint amount",
+            PublicInputs {
+                mint_units: mint_units + 1,
+                ..public.clone()
+            },
+        )],
     );
 }
 
@@ -142,7 +94,7 @@ fn oversized_owner_is_rejected() {
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, 100);
     let auth_path = single_leaf_path(chain_id);
-    let root = root_from_path(commitment, 0, &auth_path);
+    let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
 
     let public = PublicInputs {
         chain_id,
@@ -159,9 +111,9 @@ fn oversized_owner_is_rejected() {
         auth_path,
     };
 
-    let backend = Barretenberg::default();
-    assert!(
-        ProofGenerator::<OutbeV1, EmitMint>::generate(&backend, &witness, &public).is_err(),
-        "an owner of 2^160 must fail EthAddress::validate in-circuit"
+    common::assert_unprovable::<EmitMint>(
+        &witness,
+        &public,
+        "an owner of 2^160 must fail EthAddress::validate in-circuit",
     );
 }

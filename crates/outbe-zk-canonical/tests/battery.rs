@@ -545,3 +545,78 @@ fn emit_mint_descriptor_and_abi_layout() {
         "revoked commitment-nullifier must not remain in CIRCUIT_REGISTRY"
     );
 }
+
+/// Paynote's descriptor and ABI layout. Mirrors the Emit mint case: the two
+/// addresses cross as `EthAddress` newtypes, so each is a single packed field
+/// rather than 20 byte leaves.
+#[test]
+fn paynote_descriptor_and_abi_layout() {
+    use outbe_zk_canonical::noir::paynote as pay;
+
+    assert_eq!(pay::Paynote::LABEL, "outbe.paynote");
+    assert_eq!(pay::Paynote::VERSION, "1.0.0");
+    assert!(!pay::Paynote::BYTECODE_B64.is_empty());
+    assert_ne!(pay::Paynote::CIRCUIT_HASH, [0u8; 32]);
+    assert!(!pay::Paynote::VK_BYTES.is_empty());
+    assert_ne!(pay::Paynote::VK_HASH, [0u8; 32]);
+
+    let asset = Fr::from_be_bytes_mod_order(&[0xa0; 20]);
+    let spender = Fr::from_be_bytes_mod_order(&[0x33; 20]);
+    let spend_amount = (1u128 << 100) + 40;
+    let note_amount = spend_amount + 60;
+    let public = pay::PublicInputs {
+        chain_id: 1,
+        root: Fr::from(2u64),
+        nullifier: Fr::from(3u64),
+        asset,
+        spender,
+        spend_amount,
+        change_commitment: Fr::from(4u64),
+    };
+    let flat = <pay::Paynote as Circuit<OutbeV1>>::public_inputs(&public);
+    assert_eq!(flat.len(), 7, "Paynote public-input arity");
+    assert_eq!(
+        &flat[..3],
+        &[Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)]
+    );
+    assert_eq!(
+        flat[3], asset,
+        "asset is one big-endian-packed field, not 20 byte leaves"
+    );
+    assert_eq!(flat[4], spender, "spender likewise");
+    assert_eq!(
+        flat[5],
+        Fr::from(spend_amount),
+        "u128 spend_amount follows spender without truncation"
+    );
+    assert_eq!(flat[6], Fr::from(4u64), "change_commitment is last");
+
+    let witness = pay::Witness {
+        note_amount,
+        note_spend_key: Fr::from(5u64),
+        leaf_index: 1,
+        auth_path: [Fr::from(7u64); 32],
+    };
+    let all = <pay::Paynote as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
+    assert_eq!(all.len(), 42, "7 public + 35 private ABI leaves");
+    assert_eq!(
+        &all[..7],
+        flat.as_slice(),
+        "public inputs are the ABI prefix"
+    );
+    assert_eq!(
+        all[7],
+        Fr::from(note_amount),
+        "u128 note_amount is encoded without truncation"
+    );
+    assert_eq!(all[8], Fr::from(5u64), "note_spend_key");
+    assert_eq!(all[9], Fr::from(1u64), "leaf_index");
+    assert_eq!(&all[10..], &[Fr::from(7u64); 32], "auth_path");
+
+    assert!(
+        outbe_zk_canonical::noir::CIRCUIT_REGISTRY
+            .iter()
+            .any(|e| e.label == "outbe.paynote"),
+        "Paynote missing from CIRCUIT_REGISTRY"
+    );
+}

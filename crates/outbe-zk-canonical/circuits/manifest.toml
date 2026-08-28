@@ -127,3 +127,10 @@ module = "emit_mint"
 label = "outbe.emit.mint"
 version = "1.4.1"
 status = "active"
+
+[[circuit]]
+module = "paynote"
+label = "outbe.paynote"
+version = "1.0.0"
+status = "active"
+
