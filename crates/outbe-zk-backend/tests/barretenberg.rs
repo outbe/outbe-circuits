@@ -11,8 +11,9 @@ use outbe_protocol::primitive::signature::SignatureScheme;
 use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::imt::Imt;
 use outbe_protocol::protocol::key::{NftSecret, Signer};
-use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
-use outbe_protocol::{OutbeV1, Suite};
+use outbe_protocol::protocol::zk::{Circuit, ProofGenerator, ProofVerifier};
+use outbe_protocol::protocol::zkproof::{decode_full_proof_public_inputs, FULL_PROOF_COMBINED_LEN};
+use outbe_protocol::{Codec, OutbeV1, Suite};
 use outbe_zk_backend::barretenberg::Barretenberg;
 use outbe_zk_canonical::full::{full_circuit_domain, FullProvable};
 use outbe_zk_canonical::noir::full_proof::FullProof;
@@ -113,4 +114,20 @@ fn full_proof_prove_verify_round_trip() {
             .unwrap(),
         "valid full proof must verify"
     );
+
+    let fields = <FullProof as Circuit<OutbeV1>>::public_inputs(&public);
+    let mut combined = Vec::with_capacity(FULL_PROOF_COMBINED_LEN);
+    combined.extend_from_slice(&(fields.len() as u32).to_be_bytes());
+    for field in fields {
+        combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+    }
+    for word in proof.proof {
+        combined.extend_from_slice(&word);
+    }
+    assert_eq!(combined.len(), FULL_PROOF_COMBINED_LEN);
+    let decoded = decode_full_proof_public_inputs(&combined).unwrap();
+    let owner_bytes = OutbeV1::field_to_be_bytes(&owner);
+    let binding_bytes = OutbeV1::field_to_be_bytes(&binding);
+    assert_eq!(decoded.derived_owner.as_slice(), owner_bytes.as_slice());
+    assert_eq!(decoded.binding_hash.as_slice(), binding_bytes.as_slice());
 }

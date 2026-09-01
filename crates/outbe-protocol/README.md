@@ -26,7 +26,7 @@ below it, so swapping a primitive never touches the protocol logic.
 | ----- | ------ | -------------- |
 | **codec** | `codec` | `Codec` byte conventions + the `FieldElement` / `FieldEncode` encoding seam — how a typed value becomes one or more field elements. |
 | **primitive** | `primitive::{curve, hash, signature, kdf, exchange}` | The swappable crypto traits and their instances: the embedded Grumpkin curve, the Poseidon2 field hash, Grumpkin Schnorr, the KDF, and the key-exchange "consent box". |
-| **protocol** | `protocol::{entity, key, imt, zk}` | The protocol logic — entity hashing, NFT keys/signers, the insertion Merkle tree, and the ZK trait seams — all generic over `S: Suite`. |
+| **protocol** | `protocol::{entity, key, imt, zk, zkproof}` | Entity hashing, NFT keys/signers, the insertion Merkle tree, ZK backend seams, and canonical proof-wire marshaling. |
 | **suite** | `suite` (+ `OutbeV1` at the crate root) | The `Suite` trait wires one choice per primitive and supplies `derive_owner` / `nft_hash` / `signing_payload` / `binding` as default methods. |
 
 ### What a `Suite` fixes
@@ -59,13 +59,13 @@ versions, while a submission is unambiguously tied to one version.
 
 ### The ZK boundary
 
-Everything **except** the zero-knowledge layer lives on the `Suite`. This crate
-defines only the ZK trait seams — `Circuit`, `ProofGenerator`, `ProofVerifier`
-(`protocol::zk`) — and the statement *semantics* (`derive_owner` /
-`signing_payload` / `binding`). The concrete circuits, the witness/public-input
-projection, the aggregation tier ladder, and the verification keys are keyed by
-the suite but live downstream in `outbe-circuits-canonical`, so circuit-ABI
-drift never reaches the protocol.
+Everything **except** the zero-knowledge backend lives on the `Suite`. This
+crate defines the ZK trait seams (`protocol::zk`) and canonical verifier-wire
+marshaling (`protocol::zkproof`), including strict Solidity ABI and public-input
+decoders. Concrete circuits, witness projections, verification keys, and the
+Barretenberg implementation remain downstream in `outbe-zk-canonical` and
+`outbe-zk-backend`, avoiding dependency cycles and keeping circuit artifacts
+out of the protocol core.
 
 ## Usage
 

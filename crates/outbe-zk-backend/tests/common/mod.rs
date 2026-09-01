@@ -10,7 +10,7 @@ use ark_ff::PrimeField;
 use outbe_protocol::primitive::hash::FieldHasher;
 use outbe_protocol::protocol::zk::{Circuit, CircuitId, ProofGenerator, ProofVerifier};
 use outbe_protocol::{OutbeV1, Suite};
-use outbe_zk_backend::barretenberg::Barretenberg;
+use outbe_zk_backend::barretenberg::{Barretenberg, Proof};
 use outbe_zk_canonical::INCLUSION_DEPTH;
 
 pub type Fr = <OutbeV1 as Suite>::Field;
@@ -78,7 +78,8 @@ pub fn assert_round_trip<C>(
     witness: &C::Witness,
     public: &C::PublicInputs,
     tampered: &[(&str, C::PublicInputs)],
-) where
+) -> Proof
+where
     C: Circuit<OutbeV1> + CircuitId,
 {
     let backend = Barretenberg::default();
@@ -95,6 +96,7 @@ pub fn assert_round_trip<C>(
             "proof must not verify for {changed}"
         );
     }
+    proof
 }
 
 /// Assert the witness/claim pair is unsatisfiable — proving must fail in-circuit.

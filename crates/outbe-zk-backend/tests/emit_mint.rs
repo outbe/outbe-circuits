@@ -5,6 +5,10 @@ mod common;
 use alloy_primitives::U256;
 use ark_ff::PrimeField;
 
+use outbe_protocol::protocol::zk::Circuit;
+use outbe_protocol::protocol::zkproof::{decode_emit_mint_public_inputs, EMIT_MINT_COMBINED_LEN};
+use outbe_protocol::{Codec, OutbeV1};
+
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
 
@@ -83,7 +87,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
         auth_path,
     };
 
-    common::assert_round_trip::<EmitMint>(
+    let proof = common::assert_round_trip::<EmitMint>(
         &witness,
         &public,
         &[(
@@ -96,6 +100,21 @@ fn emit_partial_mint_prove_verify_round_trip() {
             },
         )],
     );
+
+    let fields = <EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
+    let mut combined = Vec::with_capacity(EMIT_MINT_COMBINED_LEN);
+    combined.extend_from_slice(&(fields.len() as u32).to_be_bytes());
+    for field in fields {
+        combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+    }
+    for word in proof.proof {
+        combined.extend_from_slice(&word);
+    }
+    assert_eq!(combined.len(), EMIT_MINT_COMBINED_LEN);
+    let decoded = decode_emit_mint_public_inputs(&combined).unwrap();
+    assert_eq!(decoded.chain_id, chain_id);
+    assert_eq!(decoded.note_owner, [0x22; 20]);
+    assert_eq!(decoded.mint_units, mint_units);
 }
 
 /// `note_owner` crosses the ABI as an `EthAddress` struct, so `from_field` --
