@@ -27,6 +27,7 @@
 pub mod aggregation;
 pub mod full;
 pub mod ownership;
+pub mod u256;
 
 /// The circuit seams live in the core (`outbe-protocol`), so a noir backend can be
 /// generic over circuits without depending on this crate. Re-exported here for

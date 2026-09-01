@@ -6,3 +6,6 @@ compiler_version = ">=1.0.0"
 
 [dependencies]
 outbe_circuit_core = { path = "../outbe-circuit-core" }
+# 256-bit note amounts (3 x 120-bit limbs, radix 2^120). Pinned tag; must
+# compile under the nargo pin in mise.toml (verified with 1.0.0-beta.22).
+bignum = { tag = "v0.10.0", git = "https://github.com/noir-lang/noir-bignum" }

@@ -468,32 +468,36 @@ fn witness_inputs_layout_is_canonical() {
     );
 }
 
-/// The Emit mint statement carries 6 public field elements: `chain_id`, two
-/// field scalars, the owner address as one `EthAddress`-packed field,
-/// `mint_units`, and change commitment.
+/// The Emit mint statement carries 8 public field elements: `chain_id`, two
+/// field scalars, the owner address as one `EthAddress`-packed field, the
+/// three 120-bit `U256` limbs of `mint_units`, and the change commitment.
 #[test]
 fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
+    use outbe_zk_canonical::u256;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.4.1");
+    assert_eq!(emit::EmitMint::VERSION, "1.5.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
     assert_ne!(emit::EmitMint::VK_HASH, [0u8; 32]);
 
-    let public_amount = (1u128 << 100) + 40;
-    let private_amount = public_amount + 60;
+    // Above the old u128 ceiling, so the upper limbs must carry value.
+    let public_amount = (0xfu128, (1u128 << 100) + 40);
+    let private_amount = (public_amount.0, public_amount.1 + 60);
+    let public_limbs = u256::to_limbs(public_amount.0, public_amount.1);
+    let private_limbs = u256::to_limbs(private_amount.0, private_amount.1);
     let public = emit::PublicInputs {
         chain_id: 1,
         root: Fr::from(2u64),
         nullifier: Fr::from(3u64),
         note_owner: Fr::from_be_bytes_mod_order(&[0x22; 20]),
-        mint_units: public_amount,
+        mint_units: public_limbs,
         change_commitment: Fr::from(4u64),
     };
     let flat = <emit::EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
-    assert_eq!(flat.len(), 6, "Emit mint public-input arity");
+    assert_eq!(flat.len(), 8, "Emit mint public-input arity");
     assert_eq!(
         &flat[..3],
         &[Fr::from(1u64), Fr::from(2u64), Fr::from(3u64)]
@@ -504,33 +508,33 @@ fn emit_mint_descriptor_and_abi_layout() {
         "note_owner is one big-endian-packed field, not 20 byte leaves"
     );
     assert_eq!(
-        flat[4],
-        Fr::from(public_amount),
-        "u128 mint_units follows note_owner without truncation"
+        &flat[4..7],
+        public_limbs.map(Fr::from).as_slice(),
+        "u256 mint_units follows note_owner as three little-endian 120-bit limbs"
     );
-    assert_eq!(flat[5], Fr::from(4u64), "change_commitment is last");
+    assert_eq!(flat[7], Fr::from(4u64), "change_commitment is last");
 
     let witness = emit::Witness {
-        note_amount: private_amount,
+        note_amount: private_limbs,
         note_spend_key: Fr::from(5u64),
         leaf_index: 1,
         auth_path: [Fr::from(7u64); 32],
     };
     let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
-    assert_eq!(all.len(), 41, "6 public + 35 private ABI leaves");
+    assert_eq!(all.len(), 45, "8 public + 37 private ABI leaves");
     assert_eq!(
-        &all[..6],
+        &all[..8],
         flat.as_slice(),
         "public inputs are the ABI prefix"
     );
     assert_eq!(
-        all[6],
-        Fr::from(private_amount),
-        "u128 note_amount is encoded without truncation"
+        &all[8..11],
+        private_limbs.map(Fr::from).as_slice(),
+        "u256 note_amount is encoded as three limbs without truncation"
     );
-    assert_eq!(all[7], Fr::from(5u64), "note_spend_key");
-    assert_eq!(all[8], Fr::from(1u64), "leaf_index");
-    assert_eq!(&all[9..], &[Fr::from(7u64); 32], "auth_path");
+    assert_eq!(all[11], Fr::from(5u64), "note_spend_key");
+    assert_eq!(all[12], Fr::from(1u64), "leaf_index");
+    assert_eq!(&all[13..], &[Fr::from(7u64); 32], "auth_path");
 
     assert!(
         outbe_zk_canonical::noir::CIRCUIT_REGISTRY

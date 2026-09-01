@@ -14,7 +14,7 @@ released circuit version and its on-chain identity.
 
 ## Emit mint statement
 
-`outbe.emit.mint@1.3.0` proves knowledge of a private note amount, spend key,
+`outbe.emit.mint@1.5.0` proves knowledge of a private note amount, spend key,
 depth-32 Merkle leaf index, and authentication path for a note committed under a
 public chain root. Its public statement is:
 
@@ -24,11 +24,11 @@ public chain root. Its public statement is:
 | `root` | Accepted depth-32 note-commitment root. |
 | `nullifier` | Deterministic identifier consumed to prevent a second mint. |
 | `note_owner` | 20-byte owner identity bound into the private note serial. |
-| `mint_units` | Public `u128` amount being minted from the private note. |
+| `mint_units` | Public 256-bit amount being minted from the private note. |
 | `change_commitment` | Commitment to unminted value, or zero for a full mint. |
 
-The private witness is the `u128` `note_amount`, `note_spend_key`, `leaf_index`, and
-`auth_path`. The circuit checks:
+The private witness is the 256-bit `note_amount`, `note_spend_key`, `leaf_index`,
+and `auth_path`. The circuit checks:
 
 1. `0 < mint_units <= note_amount`, with a nonzero spend key and nullifier.
 2. The owner and spend key derive the note serial.
@@ -44,6 +44,27 @@ a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`, `NULLIFIER`,
 `Poseidon2(EMIT_DOMAIN, left, right)`.
 `leaf_index` is converted to little-endian path bits inside the Emit helper:
 zero selects the current node as left; one selects it as right.
+
+### Amount encoding (256-bit)
+
+Amounts are `noir-bignum`'s `U256` — three little-endian limbs of radix 2^120
+(`limbs[i] < 2^120`, `limbs[2] < 2^17`) — crossing the ABI as `[u128; 3]`. The
+host-side halves-to-limbs conversions live in [`outbe_zk_canonical::u256`](src/u256.rs).
+Two encoding rules are load-bearing:
+
+- **Canonicality is enforced in-circuit.** The ABI carries raw `u128` limbs with
+  no range check; `U256::validate_in_range` in `main` is the gate that makes the
+  limb-wise ordering, subtraction, and hashing mean what they claim.
+- **The commitment hashes limbs, not a folded field element.** A 256-bit amount
+  does not fit the 254-bit proving field: folding would alias amounts differing
+  by the field modulus. The preimage is
+  `(chain_id, serial, limbs[0], limbs[1], limbs[2])`.
+
+`EMIT_DOMAIN` is unchanged from 1.4.x: `hash_multi` seeds its state with the
+preimage length, so the 3-element (u128-era) and 5-element (limb) preimages
+cannot collide. Notes committed under 1.4.x are **not** provable under 1.5.0 —
+the commitment formula changed — so the runtime must migrate note commitments
+when it adopts 1.5.0.
 
 The circuit does **not** select or authenticate the payout recipient and does not
 mutate ledger state. The verifier/runtime must bind `chain_id`, accept the

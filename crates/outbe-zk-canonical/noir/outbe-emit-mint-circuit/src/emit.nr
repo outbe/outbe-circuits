@@ -5,7 +5,7 @@
 //! with another domain's hash of the same purpose. Only the base tags and the
 //! Merkle primitives come from `outbe_circuit_core`; the preimages themselves
 //! are Emit's. Merkle inner nodes use `EMIT_DOMAIN` directly.
-
+use bignum::{BigNum, U256};
 use outbe_circuit_core::hash::hash_multi;
 use outbe_circuit_core::merkle_tree;
 use outbe_circuit_core::tags::{
@@ -21,11 +21,31 @@ pub fn emit_tag(base: Field) -> Field {
     tag(EMIT_DOMAIN, base)
 }
 
-/// Value commitment for an Emit note: `(chain_id, serial, amount)`.
-pub fn note_commitment(chain_id: u64, serial: Field, amount: u128) -> Field {
+/// Canonical `U256` amount from a `u128` value.
+pub fn amount_from_u128(x: u128) -> U256 {
+    U256::from_limbs([x & ((1 << 120) - 1), x >> 120, 0])
+}
+
+/// Value commitment for an Emit note: `(chain_id, serial, amount)` with the
+/// amount carried as its three canonical `U256` limbs (little-endian,
+/// radix 2^120). Limbs are hashed separately -- folding them into a single
+/// `Field` first (e.g. `U256::to_field`) would alias amounts that differ by
+/// the 254-bit field modulus, which a full 256-bit range admits. Each
+/// canonical limb is below 2^120, so the limb preimage is injective.
+///
+/// `amount` must be canonical (`from_limbs`-built); callers canonicalize at
+/// the ABI boundary.
+pub fn note_commitment(chain_id: u64, serial: Field, amount: U256) -> Field {
+    let limbs = amount.get_limbs();
     hash_multi(
         emit_tag(TAG_COMMITMENT),
-        [chain_id as Field, serial, amount as Field],
+        [
+            chain_id as Field,
+            serial,
+            limbs[0] as Field,
+            limbs[1] as Field,
+            limbs[2] as Field,
+        ],
     )
 }
 
@@ -62,11 +82,11 @@ fn key_rotation_changes_equal_value_notes() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, amount_from_u128(100));
     let spent_nullifier = nullifier(commitment, key);
     let next_key = change_key(key, spent_nullifier);
     let next_serial = note_sn(owner, next_key);
-    let next_commitment = note_commitment(chain_id, next_serial, 100);
+    let next_commitment = note_commitment(chain_id, next_serial, amount_from_u128(100));
     let next_nullifier = nullifier(next_commitment, next_key);
 
     assert(serial != next_serial);
@@ -80,8 +100,8 @@ fn distinct_commitments_have_distinct_nullifiers() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment_a = note_commitment(chain_id, serial, 40);
-    let commitment_b = note_commitment(chain_id, serial, 60);
+    let commitment_a = note_commitment(chain_id, serial, amount_from_u128(40));
+    let commitment_b = note_commitment(chain_id, serial, amount_from_u128(60));
 
     assert(commitment_a != commitment_b);
     assert(nullifier(commitment_a, key) != nullifier(commitment_b, key));
