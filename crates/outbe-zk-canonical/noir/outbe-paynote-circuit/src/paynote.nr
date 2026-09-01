@@ -14,6 +14,7 @@
 //! the serial would be user-supplied and unverifiable at deposit time, letting a
 //! depositor fund a note in a cheap token and spend it as an expensive one.
 
+use bignum::{BigNum, U256};
 use outbe_circuit_core::hash::hash_multi;
 use outbe_circuit_core::merkle_tree;
 use outbe_circuit_core::tags::{
@@ -29,6 +30,7 @@ pub fn paynote_tag(base: Field) -> Field {
     tag(PAYNOTE_DOMAIN, base)
 }
 
+
 /// Note serial -- a hiding commitment to the spend key. Chain-, asset- and
 /// amount-independent, so the pool contract can accept one at deposit time and
 /// build the leaf around it.
@@ -38,15 +40,25 @@ pub fn note_sn(note_spend_key: Field) -> Field {
 
 /// Note commitment -- the Merkle leaf. Binds the asset and the amount, both of
 /// which the pool contract fills in from the transfer it actually performed.
+/// The three canonical amount limbs are hashed independently: a 256-bit value
+/// cannot be folded into the 254-bit circuit field without aliases.
 pub fn note_commitment(
     chain_id: u64,
     serial: Field,
     asset: EthAddress,
-    note_amount: u128,
+    note_amount: U256,
 ) -> Field {
+    let limbs = note_amount.get_limbs();
     hash_multi(
         paynote_tag(TAG_COMMITMENT),
-        [chain_id as Field, serial, asset.to_field(), note_amount as Field],
+        [
+            chain_id as Field,
+            serial,
+            asset.to_field(),
+            limbs[0] as Field,
+            limbs[1] as Field,
+            limbs[2] as Field,
+        ],
     )
 }
 
@@ -89,8 +101,8 @@ fn asset_separates_equal_value_notes() {
     let serial = note_sn(17);
 
     assert(
-        note_commitment(chain_id, serial, usdc, 100)
-            != note_commitment(chain_id, serial, wbtc, 100),
+        note_commitment(chain_id, serial, usdc, U256::from(100))
+            != note_commitment(chain_id, serial, wbtc, U256::from(100)),
     );
 }
 
@@ -100,11 +112,11 @@ fn key_rotation_changes_equal_value_notes() {
     let asset = EthAddress::from_field(0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48);
     let key = 17;
     let serial = note_sn(key);
-    let commitment = note_commitment(chain_id, serial, asset, 100);
+    let commitment = note_commitment(chain_id, serial, asset, U256::from(100));
     let spent_nullifier = note_nullifier(commitment, key);
     let next_key = change_key(key, spent_nullifier);
     let next_serial = note_sn(next_key);
-    let next_commitment = note_commitment(chain_id, next_serial, asset, 100);
+    let next_commitment = note_commitment(chain_id, next_serial, asset, U256::from(100));
     let next_nullifier = note_nullifier(next_commitment, next_key);
 
     assert(serial != next_serial);
@@ -123,8 +135,8 @@ fn one_serial_two_amounts_have_distinct_nullifiers() {
     let asset = EthAddress::from_field(0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48);
     let key = 17;
     let serial = note_sn(key);
-    let commitment_a = note_commitment(chain_id, serial, asset, 40);
-    let commitment_b = note_commitment(chain_id, serial, asset, 60);
+    let commitment_a = note_commitment(chain_id, serial, asset, U256::from(40));
+    let commitment_b = note_commitment(chain_id, serial, asset, U256::from(60));
 
     assert(commitment_a != commitment_b);
     assert(note_nullifier(commitment_a, key) != note_nullifier(commitment_b, key));

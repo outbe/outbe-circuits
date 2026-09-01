@@ -1,4 +1,4 @@
-//! Real baratenberg prove→verify round-trip for the canonical Emit mint circuit.
+//! Real barretenberg prove→verify round-trip for the canonical Emit mint circuit.
 
 mod common;
 

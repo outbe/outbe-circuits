@@ -1,10 +1,9 @@
 //! Host-side encoding for 256-bit circuit amounts.
 //!
-//! The Emit mint circuit (`outbe.emit.mint@1.5.0`) carries amounts as
-//! noir-bignum's `U256`: three little-endian limbs of radix 2^120 (the first
-//! two limbs are `< 2^120`, the top limb is `< 2^16`). That shape crosses the
-//! ABI as `[u128; 3]`; this module converts directly to and from Alloy's
-//! `U256`.
+//! Emit mint and Paynote carry amounts as noir-bignum `U256`: three
+//! little-endian limbs of radix 2^120 (the first two limbs are `< 2^120`, the
+//! top limb is `< 2^16`). That shape crosses the ABI as `[u128; 3]`; this
+//! module converts directly to and from Alloy's `U256`.
 
 use alloy_primitives::U256;
 
