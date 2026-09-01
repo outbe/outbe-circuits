@@ -2,6 +2,7 @@
 
 mod common;
 
+use alloy_primitives::U256;
 use ark_ff::PrimeField;
 
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
@@ -51,10 +52,10 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let chain_id = 31_337u64;
     // Above the old u128 ceiling: the upper limbs carry real value through
     // the commitment preimage and the change arithmetic.
-    let note_amount = (0xabu128, (1u128 << 100) + 100);
-    let mint_units = (0xabu128, (1u128 << 100) + 40);
-    let note_amount = u256::to_limbs(note_amount.0, note_amount.1);
-    let mint_units = u256::to_limbs(mint_units.0, mint_units.1);
+    let note_amount = (U256::from(0xabu64) << 128) + U256::from((1u128 << 100) + 100);
+    let mint_units = (U256::from(0xabu64) << 128) + U256::from((1u128 << 100) + 40);
+    let note_amount = u256::to_limbs(note_amount);
+    let mint_units = u256::to_limbs(mint_units);
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
     let auth_path = single_leaf_path(chain_id);
@@ -64,7 +65,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let change_commitment = note_commitment(
         chain_id,
         note_serial(owner, next_key),
-        u256::to_limbs(0, 60),
+        u256::to_limbs(U256::from(60)),
     );
 
     let public = PublicInputs {
@@ -88,7 +89,9 @@ fn emit_partial_mint_prove_verify_round_trip() {
         &[(
             "a different mint amount",
             PublicInputs {
-                mint_units: u256::to_limbs(0xab, (1u128 << 100) + 41),
+                mint_units: u256::to_limbs(
+                    (U256::from(0xabu64) << 128) + U256::from((1u128 << 100) + 41),
+                ),
                 ..public.clone()
             },
         )],
@@ -111,7 +114,7 @@ fn oversized_owner_is_rejected() {
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
     let serial = note_serial(owner, spend_key);
-    let commitment = note_commitment(chain_id, serial, u256::to_limbs(0, 100));
+    let commitment = note_commitment(chain_id, serial, u256::to_limbs(U256::from(100)));
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
 
@@ -120,11 +123,11 @@ fn oversized_owner_is_rejected() {
         root,
         nullifier: nullifier(commitment, spend_key),
         note_owner: owner,
-        mint_units: u256::to_limbs(0, 100),
+        mint_units: u256::to_limbs(U256::from(100)),
         change_commitment: Fr::from(0u64),
     };
     let witness = Witness {
-        note_amount: u256::to_limbs(0, 100),
+        note_amount: u256::to_limbs(U256::from(100)),
         note_spend_key: spend_key,
         leaf_index: 0,
         auth_path,
@@ -148,7 +151,7 @@ fn non_canonical_mint_limb_is_rejected() {
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
     let serial = note_serial(owner, spend_key);
-    let commitment = note_commitment(chain_id, serial, u256::to_limbs(0, 200));
+    let commitment = note_commitment(chain_id, serial, u256::to_limbs(U256::from(200)));
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
 
@@ -163,7 +166,7 @@ fn non_canonical_mint_limb_is_rejected() {
         change_commitment: Fr::from(0u64),
     };
     let witness = Witness {
-        note_amount: u256::to_limbs(0, 200),
+        note_amount: u256::to_limbs(U256::from(200)),
         note_spend_key: spend_key,
         leaf_index: 0,
         auth_path,

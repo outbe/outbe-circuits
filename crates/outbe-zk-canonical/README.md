@@ -48,8 +48,8 @@ zero selects the current node as left; one selects it as right.
 ### Amount encoding (256-bit)
 
 Amounts are `noir-bignum`'s `U256` — three little-endian limbs of radix 2^120
-(`limbs[i] < 2^120`, `limbs[2] < 2^17`) — crossing the ABI as `[u128; 3]`. The
-host-side halves-to-limbs conversions live in [`outbe_zk_canonical::u256`](src/u256.rs).
+(`limbs[0..2] < 2^120`, `limbs[2] < 2^16`) — crossing the ABI as `[u128; 3]`.
+Alloy `U256` conversions live in [`outbe_zk_canonical::u256`](src/u256.rs).
 Two encoding rules are load-bearing:
 
 - **Canonicality is enforced in-circuit.** The ABI carries raw `u128` limbs with

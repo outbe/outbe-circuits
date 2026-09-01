@@ -1824,6 +1824,7 @@ version = "0.11.0"
 dependencies = [
  "acir",
  "acvm",
+ "alloy-primitives",
  "ark-bn254",
  "ark-ff",
  "ark-std",
@@ -1842,6 +1843,7 @@ dependencies = [
 name = "outbe-zk-canonical"
 version = "0.11.0"
 dependencies = [
+ "alloy-primitives",
  "ark-bn254",
  "ark-ff",
  "ark-std",

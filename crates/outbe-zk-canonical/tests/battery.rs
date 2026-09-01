@@ -473,6 +473,7 @@ fn witness_inputs_layout_is_canonical() {
 /// three 120-bit `U256` limbs of `mint_units`, and the change commitment.
 #[test]
 fn emit_mint_descriptor_and_abi_layout() {
+    use alloy_primitives::U256;
     use outbe_zk_canonical::noir::emit_mint as emit;
     use outbe_zk_canonical::u256;
 
@@ -484,10 +485,10 @@ fn emit_mint_descriptor_and_abi_layout() {
     assert_ne!(emit::EmitMint::VK_HASH, [0u8; 32]);
 
     // Above the old u128 ceiling, so the upper limbs must carry value.
-    let public_amount = (0xfu128, (1u128 << 100) + 40);
-    let private_amount = (public_amount.0, public_amount.1 + 60);
-    let public_limbs = u256::to_limbs(public_amount.0, public_amount.1);
-    let private_limbs = u256::to_limbs(private_amount.0, private_amount.1);
+    let public_amount = (U256::from(0xfu64) << 128) + U256::from((1u128 << 100) + 40);
+    let private_amount = public_amount + U256::from(60);
+    let public_limbs = u256::to_limbs(public_amount);
+    let private_limbs = u256::to_limbs(private_amount);
     let public = emit::PublicInputs {
         chain_id: 1,
         root: Fr::from(2u64),
