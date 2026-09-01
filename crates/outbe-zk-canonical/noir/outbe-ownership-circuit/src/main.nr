@@ -12,11 +12,8 @@
 //
 // `[owner, nft_hash, binding_hash]`
 //
-// The on-chain verifier supplies `owner`/`nft_hash` from the NFT's
-// stored `derivedOwner` field and the entity hash reconstructed from
-// the NFT's other fields (see `outbe_protocol::nft::compute_*_hash`),
-// and `binding_hash` via precompile `0x0210` from `msg.sender`,
-// `tributeDraftId`, and `block.chainid`.
+// The verifier supplies `owner`/`nft_hash` from its canonical entity state and
+// recomputes `binding_hash` from the application context it intends to bind.
 
 use outbe_circuit_core::ownership;
 use std::embedded_curve_ops::EmbeddedCurvePoint;

@@ -10,30 +10,14 @@ use alloy_primitives::U256;
 
 /// Canonical noir-bignum limbs for an Alloy `U256`.
 pub fn to_limbs(value: U256) -> [u128; 3] {
-    const M120: u128 = (1u128 << 120) - 1;
-    let words = value.as_limbs();
-    let lo = u128::from(words[0]) | (u128::from(words[1]) << 64);
-    let hi = u128::from(words[2]) | (u128::from(words[3]) << 64);
-    let mid = (lo >> 120) | ((hi & ((1u128 << 112) - 1)) << 8);
-    [lo & M120, mid, hi >> 112]
+    outbe_protocol::codec::u256_limbs_be(&value.to_be_bytes::<32>())
 }
 
 /// Recombine canonical noir-bignum limbs into an Alloy `U256`.
 ///
 /// Returns `None` rather than aliasing a non-canonical ABI representation.
 pub fn from_limbs(limbs: [u128; 3]) -> Option<U256> {
-    let [l0, l1, l2] = limbs;
-    if l0 >= 1u128 << 120 || l1 >= 1u128 << 120 || l2 >= 1u128 << 16 {
-        return None;
-    }
-    let lo = l0 | ((l1 & 0xff) << 120);
-    let hi = (l2 << 112) | (l1 >> 8);
-    Some(U256::from_limbs([
-        lo as u64,
-        (lo >> 64) as u64,
-        hi as u64,
-        (hi >> 64) as u64,
-    ]))
+    outbe_protocol::codec::u256_from_limbs_be(limbs).map(U256::from_be_bytes)
 }
 
 #[cfg(test)]

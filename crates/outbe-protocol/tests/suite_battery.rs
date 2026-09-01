@@ -156,9 +156,7 @@ where
         "entity hash not sensitive to body"
     );
 
-    // --- binding + KDF are reachable and deterministic ---
-    let binding = S::binding(&[7u8; 20], &[9u8; 32], 1234).unwrap();
-    assert_eq!(binding, S::binding(&[7u8; 20], &[9u8; 32], 1234).unwrap());
+    // --- KDF is reachable and deterministic ---
     let k = S::Kdf::derive(&[nonce, owner]).unwrap();
     assert_eq!(
         k,

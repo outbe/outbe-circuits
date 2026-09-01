@@ -184,7 +184,7 @@ fn outbe_suite() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[7u8; 20], &[9u8; 32], 1234).unwrap();
+    let binding = Fr::from(1234u64);
     let td = sample_nft(&mut rng, owner);
 
     // Canonical descriptor identity is carried on the marker types.
@@ -293,7 +293,7 @@ fn outbe_suite() {
 #[test]
 fn flat_aggregation_n64_round_trip() {
     let mut rng = ark_std::test_rng();
-    let binding = OutbeV1::binding(&[3u8; 20], &[5u8; 32], 777).unwrap();
+    let binding = Fr::from(777u64);
 
     // 50 real slots → tier 64 (the smallest tier that fits).
     const REAL: usize = 50;
@@ -392,7 +392,7 @@ fn full_proof_round_trip() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[3u8; 20], &[4u8; 32], 99).unwrap();
+    let binding = Fr::from(99u64);
     let td = sample_nft(&mut rng, owner);
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
 
@@ -431,7 +431,7 @@ fn witness_inputs_layout_is_canonical() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7).unwrap();
+    let binding = Fr::from(7u64);
     let td = sample_nft(&mut rng, owner);
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
     let (witness, public) = td
