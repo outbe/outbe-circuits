@@ -8,6 +8,7 @@ use ark_ff::PrimeField;
 use outbe_protocol::protocol::zk::Circuit;
 use outbe_protocol::protocol::zkproof::{decode_emit_mint_public_inputs, EMIT_MINT_COMBINED_LEN};
 use outbe_protocol::{Codec, OutbeV1};
+use outbe_zk_backend::barretenberg::verify_circuit;
 
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
@@ -115,6 +116,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     assert_eq!(decoded.chain_id, chain_id);
     assert_eq!(decoded.note_owner, [0x22; 20]);
     assert_eq!(decoded.mint_units, mint_units);
+    assert!(verify_circuit::<EmitMint>(&combined).unwrap());
 }
 
 /// `note_owner` crosses the ABI as an `EthAddress` struct, so `from_field` --

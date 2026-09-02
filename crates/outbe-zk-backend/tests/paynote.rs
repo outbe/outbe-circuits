@@ -9,6 +9,10 @@ mod common;
 
 use alloy_primitives::U256;
 use ark_ff::PrimeField;
+use outbe_protocol::protocol::zk::Circuit;
+use outbe_protocol::protocol::zkproof::PAYNOTE_COMBINED_LEN;
+use outbe_protocol::{Codec, OutbeV1};
+use outbe_zk_backend::barretenberg::verify_circuit;
 
 use outbe_zk_canonical::noir::paynote::{Paynote, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
@@ -93,7 +97,7 @@ fn paynote_partial_spend_prove_verify_round_trip() {
         auth_path,
     };
 
-    common::assert_round_trip::<Paynote>(
+    let proof = common::assert_round_trip::<Paynote>(
         &witness,
         &public,
         &[
@@ -122,6 +126,18 @@ fn paynote_partial_spend_prove_verify_round_trip() {
             ),
         ],
     );
+
+    let fields = <Paynote as Circuit<OutbeV1>>::public_inputs(&public);
+    let mut combined = Vec::with_capacity(PAYNOTE_COMBINED_LEN);
+    combined.extend_from_slice(&(fields.len() as u32).to_be_bytes());
+    for field in fields {
+        combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+    }
+    for word in proof.proof {
+        combined.extend_from_slice(&word);
+    }
+    assert_eq!(combined.len(), PAYNOTE_COMBINED_LEN);
+    assert!(verify_circuit::<Paynote>(&combined).unwrap());
 }
 
 /// `asset` crosses the ABI as an `EthAddress` struct, so `from_field` -- and its

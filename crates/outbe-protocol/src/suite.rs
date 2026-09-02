@@ -6,7 +6,7 @@
 //! 1. **Primitive swap** — change an associated type (`Curve`, `Hash`,
 //!    `Signature`, `Kdf`). Every formula built on it follows automatically.
 //! 2. **Formula swap** — override a default method (`derive_owner`,
-//!    `nft_hash`, `signing_payload`) without touching the primitives.
+//!    `nft_hash`, `binding`, `signing_payload`) without touching the primitives.
 //!
 //! All protocol logic (`crate::protocol`) is written against `S: Suite`,
 //! so concrete Outbe behaviour is just the default impls under the
@@ -34,7 +34,7 @@ pub trait Suite: 'static {
     type Field: PrimeField;
     /// Embedded curve (its base field is `Field`).
     type Curve: EmbeddedCurve<Base = Self::Field>;
-    /// Field hash (owner, entity, payload, Merkle).
+    /// Field hash (owner, entity, payload, binding, Merkle).
     type Hash: FieldHasher<Self::Field>;
     /// Signature scheme; its public key is the curve's affine point.
     type Signature: SignatureScheme<Field = Self::Field, PublicKey = Affine<Self::Curve>>;
@@ -42,6 +42,10 @@ pub trait Suite: 'static {
     type Kdf: Kdf<Self::Field>;
     /// Key exchange backing the consent box (Outbe: ECDH on the embedded curve).
     type Exchange: KeyExchange<Self::Field>;
+
+    /// Protocol version/domain separator folded into [`Suite::binding`].
+    /// Defaults to zero for an unversioned suite.
+    const DOMAIN: u64 = 0;
 
     // ---- Signer initiation (uses `Self::Exchange`; no exchange type to pass) ----
 
@@ -109,5 +113,21 @@ pub trait Suite: 'static {
         binding: Self::Field,
     ) -> Result<Self::Field, Error> {
         Self::Hash::hash(&[nft_hash, nonce, binding])
+    }
+
+    /// Submission binding `Hash([DOMAIN, sender, cid_lo128, cid_hi128, chain_id])`.
+    ///
+    /// The commitment ID uses its established two-limb Tribute encoding. This
+    /// layout is independent of the three-limb encoding used for U256 amounts.
+    fn binding(
+        sender: &[u8; 20],
+        commitment_id: &[u8; 32],
+        chain_id: u64,
+    ) -> Result<Self::Field, Error> {
+        let domain = Self::Field::from(Self::DOMAIN);
+        let sender = crate::codec::field_from_be_bytes::<Self::Field>(sender);
+        let low = crate::codec::field_from_be_bytes::<Self::Field>(&commitment_id[16..]);
+        let high = crate::codec::field_from_be_bytes::<Self::Field>(&commitment_id[..16]);
+        Self::Hash::hash(&[domain, sender, low, high, Self::Field::from(chain_id)])
     }
 }

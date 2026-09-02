@@ -33,7 +33,8 @@ pub use suite::Suite;
 /// as `OutbeV2`, etc. The **core protocol logic** (`crate::protocol`, the `Suite`
 /// formulas, the signature/curve/hash *traits*) is generic over `S: Suite`;
 /// this type is one concrete selection of the swappable instances. (The
-/// noir circuits fix the proving field.)
+/// noir circuits fix the proving field.) `DOMAIN = 1` preserves the V1
+/// submission-binding interface and separates it from future suite versions.
 ///
 /// Every formula is inherited from the [`Suite`] defaults, so this is just the
 /// primitive selection. Swapping, say, `Hash` here would re-key the entire
@@ -47,4 +48,5 @@ impl Suite for OutbeV1 {
     type Signature = primitive::signature::Schnorr<primitive::curve::Grumpkin>;
     type Kdf = primitive::kdf::PoseidonKdf;
     type Exchange = primitive::exchange::EcdhEmbedded<primitive::curve::Grumpkin>;
+    const DOMAIN: u64 = 1;
 }

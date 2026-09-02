@@ -21,27 +21,31 @@ pub const EMIT_MINT_PROOF_WORDS: usize = 250;
 pub const EMIT_MINT_COMBINED_LEN: usize =
     4 + (EMIT_MINT_PUBLIC_INPUT_COUNT + EMIT_MINT_PROOF_WORDS) * 32;
 
+pub const PAYNOTE_PUBLIC_INPUT_COUNT: usize = 9;
+pub const PAYNOTE_PROOF_WORDS: usize = 250;
+pub const PAYNOTE_COMBINED_LEN: usize = 4 + (PAYNOTE_PUBLIC_INPUT_COUNT + PAYNOTE_PROOF_WORDS) * 32;
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProofMarshalingError {
-    #[error("zk proof call is too short ({0} < 64 bytes)")]
+    #[error("zk_verify: input too short ({0} < 64 bytes)")]
     InputTooShort(usize),
-    #[error("malformed zk proof ABI input: {0}")]
+    #[error("zk_verify: malformed ABI input ({0})")]
     MalformedAbi(&'static str),
-    #[error("combined proof is too short ({0} < 4 bytes)")]
+    #[error("zk_verify: combined proof is too short ({0} < 4 bytes)")]
     CombinedProofTooShort(usize),
-    #[error("combined proof public input count is {actual}, expected {expected}")]
+    #[error("zk_verify: combined proof public input count is {actual}, expected {expected}")]
     WrongPublicInputCount { expected: usize, actual: usize },
-    #[error("combined proof public inputs are truncated ({actual} < {expected} bytes)")]
+    #[error("zk_verify: combined proof public inputs are truncated ({actual} < {expected} bytes)")]
     TruncatedPublicInputs { expected: usize, actual: usize },
-    #[error("public input at index {0} is not a canonical BN254 field element")]
+    #[error("zk_verify: public input at index {0} is not a canonical BN254 field element")]
     NonCanonicalPublicInput(usize),
-    #[error("combined proof length is {actual} bytes, expected {expected}")]
+    #[error("zk_verify: combined proof length is {actual} bytes, expected {expected}")]
     WrongCombinedProofLength { expected: usize, actual: usize },
-    #[error("Emit chain ID word is not a right-aligned uint64")]
+    #[error("zk_verify: emit chain ID word is not a right-aligned uint64")]
     InvalidEmitChainId,
-    #[error("Emit owner word exceeds the 160-bit address bound")]
+    #[error("zk_verify: emit owner word exceeds the 160-bit address bound")]
     InvalidEmitOwner,
-    #[error("Emit mint limb {0} is outside its canonical range")]
+    #[error("zk_verify: emit mint limb {0} is outside its canonical range")]
     InvalidEmitMintLimb(usize),
 }
 
@@ -59,6 +63,19 @@ pub struct FullProofPublicInputs {
     pub nft_hash: [u8; 32],
     pub binding_hash: [u8; 32],
     pub merkle_root: [u8; 32],
+}
+
+/// Public claim carried by `outbe.paynote@1.1.0` in circuit order.
+#[cfg(feature = "alloy")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PayNotePublicInputs {
+    pub chain_id: u64,
+    pub root: [u8; 32],
+    pub nullifier: [u8; 32],
+    pub asset: alloy_primitives::Address,
+    pub spender: alloy_primitives::Address,
+    pub spend_amount: alloy_primitives::U256,
+    pub change_commitment: [u8; 32],
 }
 
 /// Public claim carried by `outbe.emit.mint@1.5.0` in circuit order.
@@ -137,6 +154,44 @@ pub fn decode_full_proof_public_inputs(
         nft_hash: words[1],
         binding_hash: words[2],
         merkle_root: words[3],
+    })
+}
+
+#[cfg(feature = "alloy")]
+pub fn decode_paynote_public_inputs(
+    combined_proof: &[u8],
+) -> Result<PayNotePublicInputs, ProofMarshalingError> {
+    let words =
+        decode_public_words::<PAYNOTE_PUBLIC_INPUT_COUNT>(combined_proof, PAYNOTE_COMBINED_LEN)?;
+
+    let chain_id =
+        read_u64_be_padded(&words[0]).ok_or(ProofMarshalingError::NonCanonicalPublicInput(0))?;
+    let asset = read_address_be_padded(&words[3])
+        .ok_or(ProofMarshalingError::NonCanonicalPublicInput(3))?;
+    let spender = read_address_be_padded(&words[4])
+        .ok_or(ProofMarshalingError::NonCanonicalPublicInput(4))?;
+    let mut limbs = [0u128; 3];
+    for (index, limb) in limbs.iter_mut().enumerate() {
+        let word_index = 5 + index;
+        *limb = read_u128_be_padded(&words[word_index])
+            .ok_or(ProofMarshalingError::NonCanonicalPublicInput(word_index))?;
+        let limit = if index < 2 { 1u128 << 120 } else { 1u128 << 16 };
+        if *limb >= limit {
+            return Err(ProofMarshalingError::NonCanonicalPublicInput(word_index));
+        }
+    }
+    let spend_amount = alloy_primitives::U256::from_be_bytes(
+        crate::codec::u256_from_limbs_be(limbs).expect("validated canonical U256 limbs"),
+    );
+
+    Ok(PayNotePublicInputs {
+        chain_id,
+        root: words[1],
+        nullifier: words[2],
+        asset,
+        spender,
+        spend_amount,
+        change_commitment: words[8],
     })
 }
 
@@ -233,6 +288,16 @@ fn read_u128_be_padded(slot: &[u8]) -> Option<u128> {
     Some(u128::from_be_bytes(slot[16..].try_into().ok()?))
 }
 
+#[cfg(feature = "alloy")]
+fn read_address_be_padded(slot: &[u8]) -> Option<alloy_primitives::Address> {
+    if slot.len() != 32 || slot[..12].iter().any(|byte| *byte != 0) {
+        return None;
+    }
+    let mut address = [0u8; 20];
+    address.copy_from_slice(&slot[12..]);
+    Some(alloy_primitives::Address::from(address))
+}
+
 fn is_canonical_field_word(word: &[u8; 32]) -> bool {
     let field = Fr::from_be_bytes_mod_order(word);
     let bytes = field.into_bigint().to_bytes_be();
@@ -296,6 +361,25 @@ mod tests {
             u128_word(1u128 << 80),
             u128_word((1u128 << 16) - 1),
             field_word(104),
+        ]
+    }
+
+    #[cfg(feature = "alloy")]
+    fn valid_paynote_words() -> [[u8; 32]; PAYNOTE_PUBLIC_INPUT_COUNT] {
+        let mut asset = [0u8; 32];
+        asset[12..].fill(0x11);
+        let mut spender = [0u8; 32];
+        spender[12..].fill(0x22);
+        [
+            u64_word(31_337),
+            field_word(202),
+            field_word(203),
+            asset,
+            spender,
+            u128_word((1u128 << 120) - 1),
+            u128_word((1u128 << 120) - 1),
+            u128_word((1u128 << 16) - 1),
+            field_word(204),
         ]
     }
 
@@ -390,6 +474,129 @@ mod tests {
             decode_full_proof_public_inputs(&non_canonical),
             Err(ProofMarshalingError::NonCanonicalPublicInput(2))
         );
+    }
+
+    #[test]
+    fn marshaling_errors_keep_chain_visible_text() {
+        let cases = [
+            (
+                ProofMarshalingError::InputTooShort(3),
+                "zk_verify: input too short (3 < 64 bytes)",
+            ),
+            (
+                ProofMarshalingError::MalformedAbi("bad offset"),
+                "zk_verify: malformed ABI input (bad offset)",
+            ),
+            (
+                ProofMarshalingError::CombinedProofTooShort(2),
+                "zk_verify: combined proof is too short (2 < 4 bytes)",
+            ),
+            (
+                ProofMarshalingError::WrongPublicInputCount {
+                    expected: 9,
+                    actual: 8,
+                },
+                "zk_verify: combined proof public input count is 8, expected 9",
+            ),
+            (
+                ProofMarshalingError::TruncatedPublicInputs {
+                    expected: 292,
+                    actual: 100,
+                },
+                "zk_verify: combined proof public inputs are truncated (100 < 292 bytes)",
+            ),
+            (
+                ProofMarshalingError::NonCanonicalPublicInput(5),
+                "zk_verify: public input at index 5 is not a canonical BN254 field element",
+            ),
+            (
+                ProofMarshalingError::WrongCombinedProofLength {
+                    expected: 8_292,
+                    actual: 8_260,
+                },
+                "zk_verify: combined proof length is 8260 bytes, expected 8292",
+            ),
+            (
+                ProofMarshalingError::InvalidEmitChainId,
+                "zk_verify: emit chain ID word is not a right-aligned uint64",
+            ),
+            (
+                ProofMarshalingError::InvalidEmitOwner,
+                "zk_verify: emit owner word exceeds the 160-bit address bound",
+            ),
+            (
+                ProofMarshalingError::InvalidEmitMintLimb(1),
+                "zk_verify: emit mint limb 1 is outside its canonical range",
+            ),
+        ];
+
+        for (error, expected) in cases {
+            assert_eq!(error.to_string(), expected);
+        }
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn paynote_inputs_decode_current_u256_layout() {
+        let words = valid_paynote_words();
+        let proof = combined(words, PAYNOTE_PROOF_WORDS);
+        let decoded = decode_paynote_public_inputs(&proof).unwrap();
+        assert_eq!(decoded.chain_id, 31_337);
+        assert_eq!(decoded.root, words[1]);
+        assert_eq!(decoded.nullifier, words[2]);
+        assert_eq!(decoded.asset, alloy_primitives::Address::from([0x11; 20]));
+        assert_eq!(decoded.spender, alloy_primitives::Address::from([0x22; 20]));
+        assert_eq!(decoded.spend_amount, alloy_primitives::U256::MAX);
+        assert_eq!(decoded.change_commitment, words[8]);
+        assert_eq!(proof.len(), PAYNOTE_COMBINED_LEN);
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn paynote_rejects_short_wrong_count_and_wrong_length() {
+        assert_eq!(
+            decode_paynote_public_inputs(&[0u8; 3]),
+            Err(ProofMarshalingError::CombinedProofTooShort(3))
+        );
+
+        let mut wrong_count = combined(valid_paynote_words(), PAYNOTE_PROOF_WORDS);
+        wrong_count[..4].copy_from_slice(&8u32.to_be_bytes());
+        assert_eq!(
+            decode_paynote_public_inputs(&wrong_count),
+            Err(ProofMarshalingError::WrongPublicInputCount {
+                expected: PAYNOTE_PUBLIC_INPUT_COUNT,
+                actual: 8,
+            })
+        );
+
+        let wrong_length = combined(valid_paynote_words(), PAYNOTE_PROOF_WORDS - 1);
+        assert_eq!(
+            decode_paynote_public_inputs(&wrong_length),
+            Err(ProofMarshalingError::WrongCombinedProofLength {
+                expected: PAYNOTE_COMBINED_LEN,
+                actual: PAYNOTE_COMBINED_LEN - 32,
+            })
+        );
+    }
+
+    #[cfg(feature = "alloy")]
+    #[test]
+    fn paynote_rejects_oversized_addresses_and_limbs_by_word_index() {
+        let mut invalid_address = valid_paynote_words();
+        invalid_address[3][11] = 1;
+        assert_eq!(
+            decode_paynote_public_inputs(&combined(invalid_address, PAYNOTE_PROOF_WORDS)),
+            Err(ProofMarshalingError::NonCanonicalPublicInput(3))
+        );
+
+        for (word_index, value) in [(5, 1u128 << 120), (6, 1u128 << 120), (7, 1u128 << 16)] {
+            let mut invalid_limb = valid_paynote_words();
+            invalid_limb[word_index] = u128_word(value);
+            assert_eq!(
+                decode_paynote_public_inputs(&combined(invalid_limb, PAYNOTE_PROOF_WORDS)),
+                Err(ProofMarshalingError::NonCanonicalPublicInput(word_index))
+            );
+        }
     }
 
     #[test]
