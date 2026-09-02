@@ -25,8 +25,12 @@
 //! The `.nr` circuits remain the source of truth.
 
 pub mod aggregation;
+pub mod emit_mint;
 pub mod full;
+pub mod full_proof;
 pub mod ownership;
+pub mod paynote;
+pub mod u256;
 
 /// The circuit seams live in the core (`outbe-protocol`), so a noir backend can be
 /// generic over circuits without depending on this crate. Re-exported here for

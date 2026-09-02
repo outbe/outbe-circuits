@@ -59,7 +59,7 @@ fn sample(rng: &mut impl ark_std::rand::Rng) -> (TestNft, Signer<OutbeV1>, Fr) {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(rng);
     let nonce = Fr::rand(rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7).unwrap();
+    let binding = Fr::from(7u64);
     let td = TestNft {
         id: owner,
         owner,
@@ -224,7 +224,7 @@ fn bench_proving(c: &mut Criterion) {
     g.finish();
 
     // --- aggregation tiers n1..n64 (each filled to capacity, then proven) ---
-    let binding = OutbeV1::binding(&[3u8; 20], &[4u8; 32], 9).unwrap();
+    let binding = Fr::from(9u64);
     let mut g = c.benchmark_group("aggregation");
     g.sample_size(10);
     bench_tiers!(g, rng, binding;

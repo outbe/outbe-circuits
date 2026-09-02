@@ -11,7 +11,7 @@
 //!      address, a `bytes32` that is itself a field value, a small integer).
 //!      Usable as an entity's id seed.
 //!    - [`FieldEncode`] — a value expanding into **zero or more** field elements
-//!      in canonical order (a `uint256` → two 128-bit limbs, a `T[]` → its
+//!      in canonical order (a `uint256` → `[120, 120, 16]`-bit limbs, a `T[]` → its
 //!      elements). Everything in an entity body is `FieldEncode`.
 //!
 //!    Encoding is **fallible**: there is no safe total map from arbitrary
@@ -88,15 +88,28 @@ pub fn field_from_be_bytes_canonical<F: PrimeField>(
     F::from_bigint(repr).ok_or(Error::NonCanonical(what))
 }
 
-/// Split a big-endian `uint256` into canonical `[lo, hi]` 128-bit limbs —
-/// the same split [`crate::suite::Suite::binding`] applies to a
-/// `commitmentId`. A 256-bit value does not fit one field element, so it
-/// is always carried as this two-limb pair. Each limb is 128 bits, always
-/// smaller than the modulus, so this is total (never aliases).
-pub fn u256_limbs_be<F: PrimeField>(be32: &[u8; 32]) -> [F; 2] {
-    let lo = F::from_be_bytes_mod_order(&be32[16..32]);
-    let hi = F::from_be_bytes_mod_order(&be32[0..16]);
-    [lo, hi]
+/// Split a big-endian `uint256` into the canonical noir-bignum representation:
+/// three little-endian limbs with radix `2^120`.
+pub fn u256_limbs_be(be32: &[u8; 32]) -> [u128; 3] {
+    let hi = u128::from_be_bytes(be32[..16].try_into().expect("16-byte slice"));
+    let lo = u128::from_be_bytes(be32[16..].try_into().expect("16-byte slice"));
+    let mask = (1u128 << 120) - 1;
+    let mid = (lo >> 120) | ((hi & ((1u128 << 112) - 1)) << 8);
+    [lo & mask, mid, hi >> 112]
+}
+
+/// Recombine canonical noir-bignum limbs into a big-endian `uint256`.
+pub fn u256_from_limbs_be(limbs: [u128; 3]) -> Option<[u8; 32]> {
+    let [l0, l1, l2] = limbs;
+    if l0 >= 1u128 << 120 || l1 >= 1u128 << 120 || l2 >= 1u128 << 16 {
+        return None;
+    }
+    let lo = l0 | ((l1 & 0xff) << 120);
+    let hi = (l2 << 112) | (l1 >> 8);
+    let mut bytes = [0u8; 32];
+    bytes[..16].copy_from_slice(&hi.to_be_bytes());
+    bytes[16..].copy_from_slice(&lo.to_be_bytes());
+    Some(bytes)
 }
 
 // ---- primitive integers / bool: one element each ----
@@ -240,7 +253,8 @@ impl<F: PrimeField, T: FieldEncode<F>, const N: usize> FieldEncode<F> for [T; N]
 // These impls live here, not in a consumer crate, because the orphan rule
 // forbids `impl FieldEncode for alloy::Address` anywhere but the trait's
 // own crate. They mirror the Solidity → field convention exactly:
-// `address`/`bytes32` are single elements, `uint256` is a two-limb pair.
+// `address`/`bytes32` are single elements; `uint256` uses the canonical
+// `[120, 120, 16]`-bit limb representation shared with Noir.
 #[cfg(feature = "alloy")]
 mod alloy_impls {
     use super::{
@@ -296,11 +310,11 @@ mod alloy_impls {
     }
     uint_one_limb!(U16, U32, U64);
 
-    // `uint256` — two 128-bit limbs `[lo, hi]`. Intentionally not a
-    // `FieldElement`, so it can't seed an id or be an owner.
+    // `uint256` uses the canonical noir-bignum limbs. Intentionally not a
+    // `FieldElement`, so it cannot seed an id or be an owner.
     impl<F: PrimeField> FieldEncode<F> for U256 {
         fn encode(&self, out: &mut Vec<F>) -> Result<(), Error> {
-            out.extend(u256_limbs_be::<F>(&self.to_be_bytes::<32>()));
+            out.extend(u256_limbs_be(&self.to_be_bytes::<32>()).map(F::from));
             Ok(())
         }
     }

@@ -1,9 +1,8 @@
 //! # outbe-protocol (generic core)
 //!
-//! Consensus-binding protocol logic written once, against a swappable
-//! [`Suite`]. A suite selects the curve, field hash, signature
-//! scheme, and KDF, and supplies the entity/owner/binding/payload
-//! formulas as overridable defaults.
+//! Consensus protocol logic written once against a swappable [`Suite`]. A suite
+//! selects the curve, field hash, signature scheme, KDF, and key exchange, and
+//! supplies the entity/owner/payload formulas as overridable defaults.
 //!
 //! - [`primitive`] — the swappable cryptographic traits + instances.
 //! - [`suite`] — the `Suite` trait + default formulas. The production
@@ -34,10 +33,8 @@ pub use suite::Suite;
 /// as `OutbeV2`, etc. The **core protocol logic** (`crate::protocol`, the `Suite`
 /// formulas, the signature/curve/hash *traits*) is generic over `S: Suite`;
 /// this type is one concrete selection of the swappable instances. (The
-/// `outbe-zk-canonical` circuit layer is deliberately concrete to a BN254 suite —
-/// the noir circuits fix the proving field.) `DOMAIN = 1` folds the version
-/// into the submission binding, keeping V1 proofs cryptographically distinct
-/// from any later version's.
+/// noir circuits fix the proving field.) `DOMAIN = 1` preserves the V1
+/// submission-binding interface and separates it from future suite versions.
 ///
 /// Every formula is inherited from the [`Suite`] defaults, so this is just the
 /// primitive selection. Swapping, say, `Hash` here would re-key the entire

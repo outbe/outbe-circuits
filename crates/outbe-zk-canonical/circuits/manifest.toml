@@ -126,11 +126,24 @@ circuit_hash = "1c7d2bf7f8f98ff0c9db8dcdca7c4906792cb5413e868c3c97842ef583264a21
 module = "emit_mint"
 label = "outbe.emit.mint"
 version = "1.4.1"
-status = "active"
+status = "deprecated"
+circuit_hash = "373839906d1be64ea45407d74ca5681426aef630c2ddc5baa980ad21394f737b"
 
 [[circuit]]
 module = "paynote"
 label = "outbe.paynote"
 version = "1.0.0"
+status = "deprecated"
+circuit_hash = "966df28e971781674bd7ed54ebe96afeeac5897a10e7445807ed495f53b5d38f"
+
+[[circuit]]
+module = "emit_mint"
+label = "outbe.emit.mint"
+version = "1.5.0"
 status = "active"
 
+[[circuit]]
+module = "paynote"
+label = "outbe.paynote"
+version = "1.1.0"
+status = "active"

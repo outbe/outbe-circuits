@@ -10,7 +10,7 @@ witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier.
 
 ## A circuit-generic prover/verifier
 
-The backend is **generic over any circuit** — it depends only on the
+The proving core is **generic over any circuit** — it depends only on the
 `outbe-protocol` seams (`Circuit` with its prove-side `witness_inputs` /
 verify-side `public_inputs`, `CircuitId`, `CircuitSuite`), **not** on the
 concrete `outbe-zk-canonical` (only the tests/benches pull that in). A single
@@ -22,6 +22,10 @@ concrete `outbe-zk-canonical` (only the tests/benches pull that in). A single
 So the same backend proves/verifies ownership, every flat-aggregation tier
 (n1–n64), the full proof, Emit mint, Paynote, **or any circuit you define** that implements
 the seams — you pick the circuit type at the call site via the `C` type parameter.
+
+Generic verifier-wire validation lives in `outbe-protocol::protocol::zkproof`.
+The matching `full_proof`, `emit_mint`, and `paynote` modules in
+`outbe-zk-canonical` own each circuit's strict layout and public-input decoder.
 
 ```rust
 use outbe_protocol::{OutbeV1, Suite};

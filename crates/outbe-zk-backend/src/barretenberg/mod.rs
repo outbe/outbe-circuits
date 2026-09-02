@@ -18,7 +18,7 @@
 //! matching the `bb` that writes the committed VKs (`-t evm-no-zk`).
 
 use std::io::Read;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use barretenberg_rs::api::BarretenbergApi;
 use barretenberg_rs::backends::FfiBackend;
@@ -40,6 +40,9 @@ mod srs;
 /// `with-network-srs` (there is no network fallback then). See
 /// [`srs::set_srs_path`].
 pub use srs::set_srs_path;
+
+/// Largest CRS required by the canonical circuit set.
+pub const CANONICAL_SRS_POINTS: u32 = (1 << 20) + 1;
 
 /// Barretenberg's CRS factory, low-memory globals, and prover are **process-
 /// global** C++ state, and the API is not reentrant — so every bb operation
@@ -63,6 +66,38 @@ pub fn preinit_srs(num_points: u32) -> Result<(), Error> {
     let _bb = bb_lock();
     let mut api = Barretenberg::api()?;
     srs::ensure_srs(&mut api, num_points)
+}
+
+/// Initialize the process-global CRS once for every canonical circuit.
+///
+/// `OUTBE_BB_SRS_PATH`, when set, selects a pre-staged G1 SRS file. Panics from
+/// the FFI boundary become proof errors so startup callers can fail cleanly.
+pub fn init_crs() -> Result<(), Error> {
+    static INIT: OnceLock<Result<(), String>> = OnceLock::new();
+    INIT.get_or_init(|| {
+        let srs_path = std::env::var("OUTBE_BB_SRS_PATH").ok();
+        let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if let Some(path) = srs_path {
+                set_srs_path(path.into());
+            }
+            preinit_srs(CANONICAL_SRS_POINTS)
+        }));
+        match outcome {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(error)) => Err(error.to_string()),
+            Err(_) => Err("Barretenberg SRS initialization panicked".to_string()),
+        }
+    })
+    .clone()
+    .map_err(Error::Proof)
+}
+
+/// Verify a decoded combined proof against its compile-time circuit identity.
+///
+/// The owning protocol decoder must validate the public words before this
+/// backend call.
+pub fn verify_circuit<C: CircuitId>(combined_proof: &[u8]) -> Result<bool, Error> {
+    Barretenberg::default().verify_combined(C::VK_BYTES, combined_proof)
 }
 
 /// UltraHonkKeccak proof, as bb's field encoding (`Vec<Vec<u8>>`). The public

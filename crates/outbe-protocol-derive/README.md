@@ -23,9 +23,9 @@ The macro emits, generic over `S: Suite`:
 
 Field types must implement the encoding seam: `FieldElement<S::Field>` for the
 single-element roles (`id_seed`, `owner`) and `FieldEncode<S::Field>` for the
-fold roles (`id_body`, `body`) — a `uint256`, for instance, encodes to two limbs
-`[lo, hi]`. The `alloy` feature on `outbe-protocol` provides these impls for
-`Address` / `U256` / `B256`.
+fold roles (`id_body`, `body`) — a `uint256`, for instance, uses the canonical
+three-limb `[120, 120, 16]`-bit representation. The `alloy` feature on
+`outbe-protocol` provides these impls for `Address` / `U256` / `B256`.
 
 ### Field roles
 
@@ -62,7 +62,7 @@ struct SpendingUnit {
     #[outbe(id_seed)]              id: B256,
     #[outbe(body, owner, pos = 0)] derived_owner: B256,
     #[outbe(body, pos = 1)]        attester: Address,
-    #[outbe(body, pos = 5)]        base: U256,      // folds as [lo, hi]
+    #[outbe(body, pos = 5)]        base: U256,      // three canonical limbs
     #[outbe(skip)]                 cached_hash: B256,
 }
 

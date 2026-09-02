@@ -5,6 +5,7 @@ use super::{
     },
     main,
 };
+use bignum::{BigNum, U256};
 use outbe_circuit_core::{hash, merkle_tree::{merkle_root_from_indices, DEPTH}};
 use outbe_circuit_core::tags::{
     TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
@@ -20,17 +21,33 @@ fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
     path
 }
 
+/// `2^256 - 1` as canonical limbs.
+fn u256_max() -> U256 {
+    U256::from_limbs([(1 << 120) - 1, (1 << 120) - 1, (1 << 16) - 1])
+}
+
 #[test]
 fn full_mint_uses_zero_change_sentinel() {
     let chain_id = 31337;
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -39,11 +56,22 @@ fn wrong_tree_domain_fails_membership() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root_from_indices(EMIT_DOMAIN + 1, commitment, path, [true; DEPTH]);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test]
@@ -52,13 +80,24 @@ fn partial_mint_rotates_change_key() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
-    let change = note_commitment(chain_id, note_sn(owner, next_key), 60);
-    main(chain_id, root, n, owner, 40, change, 100, key, 0, path);
+    let change = note_commitment(chain_id, note_sn(owner, next_key), U256::from(60));
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(40),
+        change,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -71,9 +110,9 @@ fn zero_key_fails() {
         1,
         1,
         owner,
-        1,
+        U256::from(1),
         0,
-        1,
+        U256::from(1),
         0,
         0,
         path,
@@ -87,13 +126,24 @@ fn wrong_owner_fails_membership() {
     let wrong_owner = EthAddress::from_field(0x2323232323232323232323232323232323232323);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let wrong_serial = note_sn(wrong_owner, key);
-    let wrong_commitment = note_commitment(chain_id, wrong_serial, 100);
+    let wrong_commitment = note_commitment(chain_id, wrong_serial, U256::from(100));
     let n = nullifier(wrong_commitment, key);
-    main(chain_id, root, n, wrong_owner, 100, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        wrong_owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -102,11 +152,22 @@ fn wrong_private_key_fails_membership() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, 18, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        18,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -115,13 +176,24 @@ fn wrong_path_fails_membership() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let mut wrong_path = path;
     wrong_path[0] = 0;
-    main(chain_id, root, n, owner, 100, 0, 100, key, 0, wrong_path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        wrong_path,
+    );
 }
 
 #[test(should_fail)]
@@ -130,11 +202,22 @@ fn wrong_leaf_index_fails_membership() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, key, 1, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        1,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -143,11 +226,22 @@ fn wrong_nullifier_fails() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let wrong_n = nullifier(commitment, key) + 1;
-    main(chain_id, root, wrong_n, owner, 100, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        wrong_n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -156,20 +250,20 @@ fn wrong_change_amount_fails() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
-    let wrong_change = note_commitment(chain_id, note_sn(owner, next_key), 60);
+    let wrong_change = note_commitment(chain_id, note_sn(owner, next_key), U256::from(60));
     main(
         chain_id,
         root,
         n,
         owner,
-        41,
+        U256::from(41),
         wrong_change,
-        100,
+        U256::from(100),
         key,
         0,
         path,
@@ -182,11 +276,22 @@ fn full_mint_rejects_nonzero_change_sentinel() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 1, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        1,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -195,11 +300,22 @@ fn partial_mint_rejects_zero_change_commitment() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 40, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(40),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 // `leaf_index_above_tree_capacity_fails` lived here. At DEPTH = 32 the tree holds
@@ -209,7 +325,7 @@ fn partial_mint_rejects_zero_change_commitment() {
 
 /// The `[u8; 20]` ABI param used to bound the owner at 160 bits for free. Now
 /// that it crosses the ABI as a bare `Field`, `EthAddress::from_field` is the
-/// only thing holding that bound — check it actually bites.
+/// only thing holding that bound -- check it actually bites.
 #[test(should_fail)]
 fn owner_above_160_bits_fails() {
     let _ = EthAddress::from_field(0x010000000000000000000000000000000000000000);
@@ -223,11 +339,22 @@ fn overspend_above_note_amount_fails() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 101, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(101),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -236,20 +363,24 @@ fn zero_mint_units_fails() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
-    let equal_value_change = note_commitment(chain_id, note_sn(owner, next_key), 100);
+    let equal_value_change = note_commitment(
+        chain_id,
+        note_sn(owner, next_key),
+        U256::from(100),
+    );
     main(
         chain_id,
         root,
         n,
         owner,
-        0,
+        U256::zero(),
         equal_value_change,
-        100,
+        U256::from(100),
         key,
         0,
         path,
@@ -262,10 +393,21 @@ fn zero_nullifier_public_input_fails() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
-    main(chain_id, root, 0, owner, 100, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root,
+        0,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -274,11 +416,22 @@ fn tampered_public_root_fails_membership() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root + 1, n, owner, 100, 0, 100, key, 0, path);
+    main(
+        chain_id,
+        root + 1,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -288,19 +441,19 @@ fn cross_chain_replay_fails_with_recomputed_nullifier() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let source_commitment = note_commitment(source_chain, serial, 100);
+    let source_commitment = note_commitment(source_chain, serial, U256::from(100));
     let path = single_leaf_path(source_chain);
     let source_root = merkle_root(source_commitment, 0, path);
-    let target_commitment = note_commitment(target_chain, serial, 100);
+    let target_commitment = note_commitment(target_chain, serial, U256::from(100));
     let target_nullifier = nullifier(target_commitment, key);
     main(
         target_chain,
         source_root,
         target_nullifier,
         owner,
-        100,
+        U256::from(100),
         0,
-        100,
+        U256::from(100),
         key,
         0,
         path,
@@ -313,8 +466,8 @@ fn larger_hidden_amount_cannot_spend_smaller_note() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let committed_amount = 100;
-    let forged_amount = 101;
+    let committed_amount = U256::from(100);
+    let forged_amount = U256::from(101);
     let commitment = note_commitment(chain_id, serial, committed_amount);
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
@@ -340,19 +493,19 @@ fn partial_mint_rejects_unrotated_change_key() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    let unrotated_change = note_commitment(chain_id, serial, 60);
+    let unrotated_change = note_commitment(chain_id, serial, U256::from(60));
     main(
         chain_id,
         root,
         n,
         owner,
-        40,
+        U256::from(40),
         unrotated_change,
-        100,
+        U256::from(100),
         key,
         0,
         path,
@@ -366,20 +519,49 @@ fn partial_mint_rejects_change_for_another_owner() {
     let other_owner = EthAddress::from_field(0x9999999999999999999999999999999999999999);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
-    let redirected_change = note_commitment(chain_id, note_sn(other_owner, next_key), 60);
+    let redirected_change = note_commitment(chain_id, note_sn(other_owner, next_key), U256::from(60));
     main(
         chain_id,
         root,
         n,
         owner,
-        40,
+        U256::from(40),
         redirected_change,
-        100,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
+}
+
+/// The ABI crosses amounts as raw `u128` limbs; nothing at the boundary
+/// range-checks them. `from_limbs` inside `main` is the only canonicality
+/// gate -- a limb set above 2^120 (here bit 127 of limb 0) must be rejected
+/// even though every other relation would hold, because the limb-wise
+/// comparison and subtraction only mean what they claim on canonical limbs.
+#[test(should_fail)]
+fn non_canonical_amount_limb_fails() {
+    let chain_id = 31337;
+    let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
+    let key = 17;
+    let serial = note_sn(owner, key);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
+    let path = single_leaf_path(chain_id);
+    let root = merkle_root(commitment, 0, path);
+    let n = nullifier(commitment, key);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from_limbs([1 << 127, 0, 0]),
+        0,
+        U256::from(100),
         key,
         0,
         path,
@@ -394,14 +576,36 @@ fn duplicate_leaf_proves_at_two_indices_runtime_must_dedup() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let mut path = single_leaf_path(chain_id);
     path[0] = commitment;
     let root = merkle_root(commitment, 0, path);
     assert_eq(root, merkle_root(commitment, 1, path));
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, key, 0, path);
-    main(chain_id, root, n, owner, 100, 0, 100, key, 1, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        1,
+        path,
+    );
 }
 
 #[test]
@@ -410,7 +614,7 @@ fn same_note_proves_under_two_roots_runtime_must_pin_roots() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let n = nullifier(commitment, key);
     let path_a = single_leaf_path(chain_id);
     let root_a = merkle_root(commitment, 0, path_a);
@@ -418,8 +622,30 @@ fn same_note_proves_under_two_roots_runtime_must_pin_roots() {
     path_b[0] = empty_leaf(chain_id);
     let root_b = merkle_root(commitment, 1, path_b);
     assert(root_a != root_b);
-    main(chain_id, root_a, n, owner, 100, 0, 100, key, 0, path_a);
-    main(chain_id, root_b, n, owner, 100, 0, 100, key, 1, path_b);
+    main(
+        chain_id,
+        root_a,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        0,
+        path_a,
+    );
+    main(
+        chain_id,
+        root_b,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        1,
+        path_b,
+    );
 }
 
 #[test]
@@ -428,12 +654,23 @@ fn max_leaf_index_boundary_proves() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let last = 0xffffffff;
     let root = merkle_root(commitment, last, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 100, 0, 100, key, last, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(100),
+        0,
+        U256::from(100),
+        key,
+        last,
+        path,
+    );
 }
 
 #[test]
@@ -442,8 +679,8 @@ fn same_key_distinct_notes_have_independent_nullifiers() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment_40 = note_commitment(chain_id, serial, 40);
-    let commitment_60 = note_commitment(chain_id, serial, 60);
+    let commitment_40 = note_commitment(chain_id, serial, U256::from(40));
+    let commitment_60 = note_commitment(chain_id, serial, U256::from(60));
     let nullifier_40 = nullifier(commitment_40, key);
     let nullifier_60 = nullifier(commitment_60, key);
     assert(nullifier_40 != nullifier_60);
@@ -455,9 +692,9 @@ fn same_key_distinct_notes_have_independent_nullifiers() {
         root_40,
         nullifier_40,
         owner,
-        40,
+        U256::from(40),
         0,
-        40,
+        U256::from(40),
         key,
         0,
         path_40,
@@ -470,9 +707,9 @@ fn same_key_distinct_notes_have_independent_nullifiers() {
         root_60,
         nullifier_60,
         owner,
-        60,
+        U256::from(60),
         0,
-        60,
+        U256::from(60),
         key,
         0,
         path_60,
@@ -485,11 +722,22 @@ fn zero_chain_id_and_zero_owner_are_accepted_runtime_must_bind_them() {
     let owner = EthAddress::from_field(0);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 5);
+    let commitment = note_commitment(chain_id, serial, U256::from(5));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
-    main(chain_id, root, n, owner, 5, 0, 5, key, 0, path);
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(5),
+        0,
+        U256::from(5),
+        key,
+        0,
+        path,
+    );
 }
 
 #[test]
@@ -517,11 +765,11 @@ fn sampled_key_rotations_avoid_spent_identity() {
     let keys = [0, 1, 2, 17, EMIT_DOMAIN, emit_tag(TAG_CHANGE_KEY)];
     for key in keys {
         let serial = note_sn(owner, key);
-        let commitment = note_commitment(chain_id, serial, 100);
+        let commitment = note_commitment(chain_id, serial, U256::from(100));
         let n = nullifier(commitment, key);
         let next_key = change_key(key, n);
         let next_serial = note_sn(owner, next_key);
-        let next_commitment = note_commitment(chain_id, next_serial, 60);
+        let next_commitment = note_commitment(chain_id, next_serial, U256::from(60));
         let next_nullifier = nullifier(next_commitment, next_key);
         assert(next_key != key);
         assert(next_serial != serial);
@@ -535,14 +783,25 @@ fn change_note_is_spendable_after_rotation() {
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
     let serial = note_sn(owner, key);
-    let commitment = note_commitment(chain_id, serial, 100);
+    let commitment = note_commitment(chain_id, serial, U256::from(100));
     let path = single_leaf_path(chain_id);
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
     let next_serial = note_sn(owner, next_key);
-    let change = note_commitment(chain_id, next_serial, 60);
-    main(chain_id, root, n, owner, 40, change, 100, key, 0, path);
+    let change = note_commitment(chain_id, next_serial, U256::from(60));
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(40),
+        change,
+        U256::from(100),
+        key,
+        0,
+        path,
+    );
 
     let change_path = single_leaf_path(chain_id);
     let change_root = merkle_root(change, 0, change_path);
@@ -552,21 +811,24 @@ fn change_note_is_spendable_after_rotation() {
         change_root,
         change_nullifier,
         owner,
-        60,
+        U256::from(60),
         0,
-        60,
+        U256::from(60),
         next_key,
         0,
         change_path,
     );
 }
 
+/// Amounts are `U256`; the top of the range must survive the round-trip
+/// through the limb-hashed commitment and the `note_amount - mint_units`
+/// change arithmetic.
 #[test]
-fn u128_max_amounts_full_and_partial_mint() {
+fn u256_max_amounts_full_and_partial_mint() {
     let chain_id = 31337;
     let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
     let key = 17;
-    let max: u128 = 340282366920938463463374607431768211455;
+    let max = u256_max();
     let serial = note_sn(owner, key);
     let commitment = note_commitment(chain_id, serial, max);
     let path = single_leaf_path(chain_id);
@@ -575,6 +837,77 @@ fn u128_max_amounts_full_and_partial_mint() {
     main(chain_id, root, n, owner, max, 0, max, key, 0, path);
 
     let next_key = change_key(key, n);
-    let change = note_commitment(chain_id, note_sn(owner, next_key), max - 1);
-    main(chain_id, root, n, owner, 1, change, max, key, 0, path);
+    let change = note_commitment(chain_id, note_sn(owner, next_key), max - U256::from(1));
+    main(
+        chain_id,
+        root,
+        n,
+        owner,
+        U256::from(1),
+        change,
+        max,
+        key,
+        0,
+        path,
+    );
+}
+
+/// Amounts above the old `u128` ceiling exercise the upper limbs of the
+/// commitment preimage and the change arithmetic end-to-end: `2^200 + 100`
+/// minted by `2^199`, leaving `2^199 + 100`.
+#[test]
+fn amounts_above_u128_full_and_partial_mint() {
+    let chain_id = 31337;
+    let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
+    let key = 17;
+    let note = U256::from_limbs([100, 1 << 80, 0]); // 2^200 + 100
+    let mint = U256::from_limbs([0, 1 << 79, 0]); // 2^199
+    let remaining = U256::from_limbs([100, 1 << 79, 0]); // 2^199 + 100
+    let serial = note_sn(owner, key);
+    let commitment = note_commitment(chain_id, serial, note);
+    let path = single_leaf_path(chain_id);
+    let root = merkle_root(commitment, 0, path);
+    let n = nullifier(commitment, key);
+    main(chain_id, root, n, owner, note, 0, note, key, 0, path);
+
+    let next_key = change_key(key, n);
+    let change = note_commitment(chain_id, note_sn(owner, next_key), remaining);
+    main(chain_id, root, n, owner, mint, change, note, key, 0, path);
+}
+
+/// Folding a 256-bit amount into one `Field` before hashing would alias
+/// amounts that differ by the 254-bit modulus. The commitment hashes limbs
+/// separately, so zero and the modulus itself must commit differently --
+/// this is exactly the pair that folding would collapse.
+#[test]
+fn field_modulus_offset_amounts_have_distinct_commitments() {
+    let chain_id = 31337;
+    let serial = 17;
+    // The BN254 Fr modulus as canonical `U256` limbs -- exactly the amount
+    // `U256::to_field`-style folding would collapse onto zero.
+    let modulus_offset = U256::from_limbs([
+        269518400912893473352610297457672193,
+        407329191355489184324853464957476136,
+        12388,
+    ]);
+    assert(modulus_offset != U256::zero());
+    assert(
+        note_commitment(chain_id, serial, U256::zero())
+            != note_commitment(chain_id, serial, modulus_offset)
+    );
+}
+
+#[test(should_fail)]
+fn overspend_above_u128_range_fails() {
+    let chain_id = 31337;
+    let owner = EthAddress::from_field(0x2222222222222222222222222222222222222222);
+    let key = 17;
+    let serial = note_sn(owner, key);
+    let note = U256::from_limbs([39, 1 << 80, 0]); // 2^200 + 39
+    let mint = U256::from_limbs([40, 1 << 80, 0]); // 2^200 + 40
+    let commitment = note_commitment(chain_id, serial, note);
+    let path = single_leaf_path(chain_id);
+    let root = merkle_root(commitment, 0, path);
+    let n = nullifier(commitment, key);
+    main(chain_id, root, n, owner, mint, 0, note, key, 0, path);
 }

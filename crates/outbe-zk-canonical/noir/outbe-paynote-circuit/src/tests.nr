@@ -5,12 +5,13 @@ use super::{
         PAYNOTE_DOMAIN,
     },
 };
+use bignum::{BigNum, U256};
 use outbe_circuit_core::{hash, merkle_tree::{DEPTH, merkle_root_from_indices}};
 use outbe_circuit_core::types::EthAddress;
 
 global CHAIN_ID: u64 = 31337;
 global KEY: Field = 17;
-global AMOUNT: u128 = 100;
+global AMOUNT: Field = 100;
 
 // `EthAddress::from_field` range-checks, so these are functions rather than
 // globals -- a global initialiser has to be comptime-evaluable.
@@ -26,6 +27,7 @@ fn spender() -> EthAddress {
     EthAddress::from_field(0x3333333333333333333333333333333333333333)
 }
 
+
 fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
     let mut path = [0; DEPTH];
     path[0] = empty_leaf(chain_id);
@@ -39,16 +41,21 @@ fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
 /// otherwise empty depth-32 tree. Returns `(root, nullifier, path)`.
 fn fixture() -> (Field, Field, [Field; DEPTH]) {
     let serial = note_sn(KEY);
-    let commitment = note_commitment(CHAIN_ID, serial, asset(), AMOUNT);
+    let commitment = note_commitment(CHAIN_ID, serial, asset(), U256::from(AMOUNT));
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     (root, note_nullifier(commitment, KEY), path)
 }
 
 /// The change commitment a correct partial spend of `spend` must publish.
-fn expected_change(n: Field, change_asset: EthAddress, spend: u128) -> Field {
+fn expected_change(n: Field, change_asset: EthAddress, spend: Field) -> Field {
     let next_key = change_key(KEY, n);
-    note_commitment(CHAIN_ID, note_sn(next_key), change_asset, AMOUNT - spend)
+    note_commitment(
+        CHAIN_ID,
+        note_sn(next_key),
+        change_asset,
+        U256::from(AMOUNT - spend),
+    )
 }
 
 // ---------------------------------------------------------------- happy paths
@@ -62,9 +69,9 @@ fn full_spend_uses_zero_change_sentinel() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -81,9 +88,9 @@ fn partial_spend_rotates_change_key_and_inherits_asset() {
         n,
         asset(),
         spender(),
-        40,
+        U256::from(40),
         change,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -101,9 +108,9 @@ fn wrong_asset_fails_membership() {
         n,
         other_asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -120,9 +127,9 @@ fn change_note_cannot_switch_asset() {
         n,
         asset(),
         spender(),
-        40,
+        U256::from(40),
         change,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -139,9 +146,9 @@ fn zero_asset_fails() {
         n,
         zero,
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -158,9 +165,9 @@ fn zero_spender_fails() {
         n,
         asset(),
         zero,
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -176,9 +183,9 @@ fn zero_spend_amount_fails() {
         n,
         asset(),
         spender(),
+        U256::from(0),
         0,
-        0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -194,9 +201,9 @@ fn overspend_fails() {
         n,
         asset(),
         spender(),
-        AMOUNT + 1,
+        U256::from(AMOUNT + 1),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -210,7 +217,7 @@ fn overspend_fails() {
 fn wrong_tree_domain_fails_membership() {
     let (_, n, path) = fixture();
     let serial = note_sn(KEY);
-    let commitment = note_commitment(CHAIN_ID, serial, asset(), AMOUNT);
+    let commitment = note_commitment(CHAIN_ID, serial, asset(), U256::from(AMOUNT));
     let root = merkle_root_from_indices(PAYNOTE_DOMAIN + 1, commitment, path, [true; DEPTH]);
     main(
         CHAIN_ID,
@@ -218,9 +225,9 @@ fn wrong_tree_domain_fails_membership() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -232,7 +239,7 @@ fn wrong_tree_domain_fails_membership() {
 #[test(should_fail)]
 fn zero_key_fails() {
     let path = single_leaf_path(CHAIN_ID);
-    main(CHAIN_ID, 1, 1, asset(), spender(), 1, 0, 1, 0, 0, path);
+    main(CHAIN_ID, 1, 1, asset(), spender(), U256::from(1), 0, U256::from(1), 0, 0, path);
 }
 
 #[test(should_fail)]
@@ -244,9 +251,9 @@ fn wrong_private_key_fails_membership() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         18,
         0,
         path,
@@ -262,9 +269,9 @@ fn wrong_amount_fails_membership() {
         n,
         asset(),
         spender(),
-        99,
+        U256::from(99),
         0,
-        99,
+        U256::from(99),
         KEY,
         0,
         path,
@@ -282,9 +289,9 @@ fn wrong_path_fails_membership() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         wrong_path,
@@ -300,9 +307,9 @@ fn wrong_leaf_index_fails_membership() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         1,
         path,
@@ -318,9 +325,9 @@ fn wrong_nullifier_fails() {
         n + 1,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -338,9 +345,9 @@ fn wrong_change_amount_fails() {
         n,
         asset(),
         spender(),
-        41,
+        U256::from(41),
         change,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -356,9 +363,9 @@ fn full_spend_rejects_nonzero_change_sentinel() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         1,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -374,9 +381,9 @@ fn partial_spend_rejects_zero_change_commitment() {
         n,
         asset(),
         spender(),
-        40,
+        U256::from(40),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         0,
         path,
@@ -392,7 +399,7 @@ fn partial_spend_rejects_zero_change_commitment() {
 fn max_leaf_index_boundary_proves() {
     let (_, n, path) = fixture();
     let serial = note_sn(KEY);
-    let commitment = note_commitment(CHAIN_ID, serial, asset(), AMOUNT);
+    let commitment = note_commitment(CHAIN_ID, serial, asset(), U256::from(AMOUNT));
     let last = 0xffffffff;
     let root = merkle_root(commitment, last, path);
     main(
@@ -401,22 +408,89 @@ fn max_leaf_index_boundary_proves() {
         n,
         asset(),
         spender(),
-        AMOUNT,
+        U256::from(AMOUNT),
         0,
-        AMOUNT,
+        U256::from(AMOUNT),
         KEY,
         last,
         path,
     );
 }
 
-/// Amounts are `u128`; the top of the range must survive the round-trip through
-/// the commitment and the `note_amount - spend_amount` change arithmetic.
+/// Amounts are `U256`; the top of the range must survive the limb-hashed
+/// commitment and `note_amount - spend_amount` change arithmetic.
 #[test]
-fn u128_max_amounts_full_and_partial_spend() {
-    let max: u128 = 340282366920938463463374607431768211455;
+fn u256_max_amounts_full_and_partial_spend() {
+    let max = U256::from_limbs([(1 << 120) - 1, (1 << 120) - 1, (1 << 16) - 1]);
     let serial = note_sn(KEY);
     let commitment = note_commitment(CHAIN_ID, serial, asset(), max);
+    let path = single_leaf_path(CHAIN_ID);
+    let root = merkle_root(commitment, 0, path);
+    let n = note_nullifier(commitment, KEY);
+    main(CHAIN_ID, root, n, asset(), spender(), max, 0, max, KEY, 0, path);
+
+    let next_key = change_key(KEY, n);
+    let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), max - U256::from(1));
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        spender(),
+        U256::from(1),
+        change,
+        max,
+        KEY,
+        0,
+        path,
+    );
+}
+
+#[test]
+fn amounts_above_u128_full_and_partial_spend() {
+    let note = U256::from_limbs([100, 1 << 80, 0]); // 2^200 + 100
+    let spend = U256::from_limbs([0, 1 << 79, 0]); // 2^199
+    let remaining = U256::from_limbs([100, 1 << 79, 0]); // 2^199 + 100
+    let serial = note_sn(KEY);
+    let commitment = note_commitment(CHAIN_ID, serial, asset(), note);
+    let path = single_leaf_path(CHAIN_ID);
+    let root = merkle_root(commitment, 0, path);
+    let n = note_nullifier(commitment, KEY);
+    main(CHAIN_ID, root, n, asset(), spender(), note, 0, note, KEY, 0, path);
+
+    let next_key = change_key(KEY, n);
+    let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), remaining);
+    main(CHAIN_ID, root, n, asset(), spender(), spend, change, note, KEY, 0, path);
+}
+
+/// Limb hashing must distinguish values that folding into one `Field` aliases.
+#[test]
+fn field_modulus_offset_amounts_have_distinct_commitments() {
+    let modulus_offset = U256::from_limbs([
+        269518400912893473352610297457672193,
+        407329191355489184324853464957476136,
+        12388,
+    ]);
+    assert(
+        note_commitment(CHAIN_ID, KEY, asset(), U256::zero())
+            != note_commitment(CHAIN_ID, KEY, asset(), modulus_offset)
+    );
+}
+
+#[test(should_fail)]
+fn non_canonical_amount_limb_fails() {
+    let bad = U256::from_limbs([1 << 127, 0, 0]);
+    let commitment = note_commitment(CHAIN_ID, note_sn(KEY), asset(), bad);
+    let path = single_leaf_path(CHAIN_ID);
+    let root = merkle_root(commitment, 0, path);
+    let n = note_nullifier(commitment, KEY);
+    main(CHAIN_ID, root, n, asset(), spender(), bad, 0, bad, KEY, 0, path);
+}
+
+#[test(should_fail)]
+fn modulus_zero_encoding_fails() {
+    let modulus = U256::from_limbs([0, 0, 1 << 16]);
+    let commitment = note_commitment(CHAIN_ID, note_sn(KEY), asset(), modulus);
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
@@ -426,25 +500,9 @@ fn u128_max_amounts_full_and_partial_spend() {
         n,
         asset(),
         spender(),
-        max,
+        modulus,
         0,
-        max,
-        KEY,
-        0,
-        path,
-    );
-
-    let next_key = change_key(KEY, n);
-    let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), max - 1);
-    main(
-        CHAIN_ID,
-        root,
-        n,
-        asset(),
-        spender(),
-        1,
-        change,
-        max,
+        modulus,
         KEY,
         0,
         path,

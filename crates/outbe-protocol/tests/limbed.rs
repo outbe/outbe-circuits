@@ -3,7 +3,7 @@
 //! A scalar body field folds to **exactly one** field element by default
 //! (`FieldElement::to_field`). `#[outbe(limbed)]` instead routes it through
 //! [`outbe_protocol::FieldEncode`], which yields the multiple elements its type
-//! needs (e.g. a `uint256` → `[lo, hi]`). The flag carries *intent* only — the
+//! needs (e.g. a `uint256` → `[120, 120, 16]`-bit limbs). The flag carries *intent* only — the
 //! limb count is a property of the type, not the annotation.
 //!
 //! Drift-proofing: a wide type used **without** `limbed` is bound
@@ -76,4 +76,19 @@ fn limbed_uses_field_encode_width_default_is_single() {
     let mut wide = Vec::new();
     FieldEncode::<F>::encode(&Pair(11, 22), &mut wide).unwrap();
     assert_eq!(&body[1..3], &wide[..], "limbed field != its FieldEncode");
+}
+
+#[cfg(feature = "alloy")]
+#[test]
+fn alloy_u256_uses_the_noir_bignum_limb_layout() {
+    use alloy_primitives::U256;
+    use outbe_protocol::codec::u256_limbs_be;
+
+    let value: U256 = (U256::from(1) << 200) + U256::from(100);
+    let mut encoded = Vec::new();
+    FieldEncode::<F>::encode(&value, &mut encoded).unwrap();
+
+    let limbs = u256_limbs_be(&value.to_be_bytes::<32>());
+    assert_eq!(limbs, [100, 1u128 << 80, 0]);
+    assert_eq!(encoded, limbs.map(F::from));
 }

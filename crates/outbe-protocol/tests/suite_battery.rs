@@ -22,7 +22,7 @@ use outbe_protocol::primitive::kdf::Kdf;
 use outbe_protocol::primitive::signature::{EmbeddedSignature, SignatureScheme};
 use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::key::{NftSigner, Signer};
-use outbe_protocol::{OutbeV1, Suite};
+use outbe_protocol::{Codec, OutbeV1, Suite};
 
 use mock::Mock;
 
@@ -226,4 +226,16 @@ fn outbe_suite() {
 #[test]
 fn mock_suite() {
     battery::<Mock>();
+}
+
+#[test]
+fn outbe_v1_binding_keeps_the_established_vector() {
+    let binding = OutbeV1::binding(&[1; 20], &[2; 32], 19_280_501).unwrap();
+    assert_eq!(
+        OutbeV1::field_to_be_bytes(&binding),
+        [
+            20, 131, 18, 106, 193, 198, 150, 93, 53, 84, 154, 30, 9, 26, 205, 74, 180, 1, 86, 128,
+            194, 27, 97, 249, 56, 48, 105, 112, 124, 163, 153, 136,
+        ]
+    );
 }

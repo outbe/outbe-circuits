@@ -31,7 +31,7 @@
 //!   positions must be unique. (`position` is accepted as an alias.)
 //! - `#[outbe(limbed)]` — mark a *scalar* field as **limbed**: it folds through
 //!   [`outbe_protocol::FieldEncode`] to the multiple field elements its type
-//!   needs (e.g. a `uint256` → `[lo, hi]`). Without `limbed` a scalar is
+//!   needs (e.g. a `uint256` → three `[120, 120, 16]`-bit limbs). Without `limbed` a scalar is
 //!   **single** — it folds to exactly one [`outbe_protocol::FieldElement`] (the
 //!   safe default; a wide type used without `limbed` has no `FieldElement`
 //!   impl and fails to build). The limb *count* is a property of the type, so
@@ -48,7 +48,7 @@
 //!     #[outbe(id_seed)]            su_id: Bytes32,
 //!     #[outbe(body, owner, pos=0)] derived_owner: Bytes32,
 //!     #[outbe(body, pos=1)]        attester: Address,
-//!     #[outbe(body, limbed, pos=5)] base: Uint256,  // limbed → [lo, hi]
+//!     #[outbe(body, limbed, pos=5)] base: Uint256,  // three canonical limbs
 //! }
 //! ```
 

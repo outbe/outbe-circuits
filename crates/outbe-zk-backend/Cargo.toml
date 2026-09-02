@@ -47,6 +47,7 @@ with-network-srs = ["dep:reqwest"]
 # library is generic over any circuit implementing the core seams.
 outbe-zk-canonical = { path = "../outbe-zk-canonical" }
 ark-std = { workspace = true }
+alloy-primitives = { workspace = true }
 criterion = { workspace = true }
 
 # Cross-circuit proving/verification cost. Run with: cargo bench -p outbe-zk-backend

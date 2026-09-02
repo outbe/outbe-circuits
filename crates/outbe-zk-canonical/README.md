@@ -5,16 +5,17 @@
 [![CI](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-Concrete canonical circuit + witness types for the Outbe protocol (ownership,
-flat-aggregation tiers n1–n64, full proof, Emit mint, and Paynote), built on the generic
-seams in
-`outbe-protocol` (`Circuit` / `CircuitId` / `CircuitSuite`). It is also the **in-code,
-versioned circuit registry**: the authoritative, append-only record of every
-released circuit version and its on-chain identity.
+Concrete canonical circuit, witness, and verifier-wire types for the Outbe
+protocol (ownership, flat-aggregation tiers n1–n64, full proof, Emit mint, and
+Paynote), built on the generic seams and marshaling helpers in `outbe-protocol`.
+The `full_proof`, `emit_mint`, and `paynote` modules own their circuit-specific
+combined-proof layouts and public-input decoders. This crate is also the
+**in-code, versioned circuit registry**: the authoritative, append-only record
+of every released circuit version and its on-chain identity.
 
 ## Emit mint statement
 
-`outbe.emit.mint@1.3.0` proves knowledge of a private note amount, spend key,
+`outbe.emit.mint@1.5.0` proves knowledge of a private note amount, spend key,
 depth-32 Merkle leaf index, and authentication path for a note committed under a
 public chain root. Its public statement is:
 
@@ -24,11 +25,11 @@ public chain root. Its public statement is:
 | `root` | Accepted depth-32 note-commitment root. |
 | `nullifier` | Deterministic identifier consumed to prevent a second mint. |
 | `note_owner` | 20-byte owner identity bound into the private note serial. |
-| `mint_units` | Public `u128` amount being minted from the private note. |
+| `mint_units` | Public 256-bit amount being minted from the private note. |
 | `change_commitment` | Commitment to unminted value, or zero for a full mint. |
 
-The private witness is the `u128` `note_amount`, `note_spend_key`, `leaf_index`, and
-`auth_path`. The circuit checks:
+The private witness is the 256-bit `note_amount`, `note_spend_key`, `leaf_index`,
+and `auth_path`. The circuit checks:
 
 1. `0 < mint_units <= note_amount`, with a nonzero spend key and nullifier.
 2. The owner and spend key derive the note serial.
@@ -45,6 +46,27 @@ a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`, `NULLIFIER`,
 `leaf_index` is converted to little-endian path bits inside the Emit helper:
 zero selects the current node as left; one selects it as right.
 
+### Amount encoding (256-bit)
+
+Amounts are `noir-bignum`'s `U256` — three little-endian limbs of radix 2^120
+(`limbs[0..2] < 2^120`, `limbs[2] < 2^16`) — crossing the ABI as `[u128; 3]`.
+Alloy `U256` conversions live in [`outbe_zk_canonical::u256`](src/u256.rs).
+Two encoding rules are load-bearing:
+
+- **Canonicality is enforced in-circuit.** The ABI carries raw `u128` limbs with
+  no range check; `U256::validate_in_range` in `main` is the gate that makes the
+  limb-wise ordering, subtraction, and hashing mean what they claim.
+- **The commitment hashes limbs, not a folded field element.** A 256-bit amount
+  does not fit the 254-bit proving field: folding would alias amounts differing
+  by the field modulus. The preimage is
+  `(chain_id, serial, limbs[0], limbs[1], limbs[2])`.
+
+`EMIT_DOMAIN` is unchanged from 1.4.x: `hash_multi` seeds its state with the
+preimage length, so the 3-element (u128-era) and 5-element (limb) preimages
+cannot collide. Notes committed under 1.4.x are **not** provable under 1.5.0 —
+the commitment formula changed — so the runtime must migrate note commitments
+when it adopts 1.5.0.
+
 The circuit does **not** select or authenticate the payout recipient and does not
 mutate ledger state. The verifier/runtime must bind `chain_id`, accept the
 supplied root, reject a previously consumed nullifier, record any change
@@ -52,7 +74,7 @@ commitment, and authorize and execute the payout.
 
 ## Paynote statement
 
-`outbe.paynote@1.0.0` proves the right to spend part or all of a private ERC20
+`outbe.paynote@1.1.0` proves the right to spend part or all of a private ERC20
 payment note committed under a public chain root, without revealing the note's
 total value. The note is a **bearer instrument**: spend authority is knowledge of
 `note_spend_key`. There is no owner identity, no spender allow-list, and no
@@ -65,26 +87,29 @@ action tag — the pool contract validates and routes those.
 | `nullifier` | Deterministic identifier consumed to prevent a second spend. |
 | `asset` | ERC20 token address the note is denominated in. |
 | `spender` | Address authorized to receive the payout (`msg.sender`). |
-| `spend_amount` | Public amount being spent from the private note. |
+| `spend_amount` | Public 256-bit amount being spent from the private note. |
 | `change_commitment` | Commitment to unspent value, or zero for a full spend. |
 
-The private witness is `note_amount`, `note_spend_key`, `leaf_index`, and
-`auth_path`. The circuit checks:
+The private witness is the 256-bit `note_amount`, `note_spend_key`,
+`leaf_index`, and `auth_path`. Amounts cross the ABI as noir-bignum `U256`
+limbs (`[u128; 3]`, little-endian radix $2^{120}$); both public and private
+limbs are constrained in-circuit to the canonical range $1..2^{256}-1$.
+The circuit checks:
 
 1. `asset` and `spender` are in-range (160-bit) addresses and nonzero.
 2. `0 < spend_amount <= note_amount`, with a nonzero spend key and nullifier.
 3. The spend key derives the note serial.
-4. The chain, serial, asset, and hidden amount derive a nonzero note commitment
-   included under `root` through the supplied depth-32 path. The asset and the
-   amount live in the **commitment**, not the serial, so the pool contract can
-   build a deposit leaf from the transfer it actually performed — membership then
-   attests both.
-5. The commitment and spend key derive the published `nullifier`. Deriving it from the commitment rather than the serial gives exactly one
-   nullifier per leaf, so two leaves sharing a serial stay independently
-   spendable.
-6. A partial spend rotates the spend key through that nullifier and publishes the
-   exact commitment for `note_amount - spend_amount`, inheriting the same asset;
-   a full spend publishes zero.
+4. The chain, serial, asset, and three hidden amount limbs derive a nonzero
+   note commitment included under `root` through the supplied depth-32 path.
+   Hashing limbs independently avoids aliases from folding 256 bits into the
+   254-bit proving field. The pool contract can build the same deposit leaf
+   from the transfer it actually performed.
+5. The commitment and spend key derive the published `nullifier`. Deriving it
+   from the commitment rather than the serial gives exactly one nullifier per
+   leaf, so two leaves sharing a serial stay independently spendable.
+6. A partial spend rotates the spend key through that nullifier and publishes
+   the exact commitment for `note_amount - spend_amount`, inheriting the same
+   asset; a full spend publishes zero.
 
 Every Paynote preimage is tagged with `Poseidon2(PAYNOTE_DOMAIN, TAG)`, where
 `TAG` is a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`,
@@ -102,9 +127,10 @@ missed:
   freely *transferable* — anyone can submit it verbatim. A contract that pays
   `msg.sender` instead hands the entire `spend_amount` to the first front-runner.
 - Derive the deposit leaf from the asset and amount actually transferred:
-  `leaf = hash_multi(tag(PAYNOTE_DOMAIN, COMMITMENT), [chain_id, serial, asset, amount])`, where
-  `serial` is supplied by the depositor. This is what binds the deposited value
-  to the note; accepting a caller-supplied leaf makes the pool drainable.
+  `leaf = hash_multi(tag(PAYNOTE_DOMAIN, COMMITMENT), [chain_id, serial, asset,
+  amount_limb_0, amount_limb_1, amount_limb_2])`, where `serial` is supplied by
+  the depositor. This binds the full 256-bit deposited value to the note;
+  accepting a caller-supplied leaf makes the pool drainable.
 - Deduplicate deposits on the **leaf**, not the serial. An identical
   `(key, asset, amount)` would otherwise produce a second leaf sharing one
   nullifier, permanently locking it up. Deduplicating on the serial instead

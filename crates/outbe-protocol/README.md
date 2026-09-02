@@ -5,17 +5,12 @@
 [![CI](https://github.com/outbe/outbe-protocol/actions/workflows/ci.yml/badge.svg)](https://github.com/outbe/outbe-protocol/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-**Single source of truth** for the Outbe consensus-binding protocol logic —
-the entity/owner/binding/payload hash formulas, the ownership-proof
-statement, and the witness/public-input semantics — written **once**
-against a swappable cryptographic [`Suite`].
+**Single source of truth** for Outbe's entity, owner, payload, and wire-format
+logic, written once against a swappable cryptographic [`Suite`].
 
-A `Suite` selects the curve, field hash, signature scheme, and KDF, and
-supplies the protocol formulas as overridable defaults. The production
-selection is **`OutbeV1`** (BN254 / Grumpkin, Poseidon2, Grumpkin Schnorr).
-The same logic can be re-parameterised for a future suite (`OutbeV2`, …) without
-rewriting the protocol — the `DOMAIN` constant keeps the versions from
-colliding on the wire.
+A `Suite` selects the curve, field hash, signature scheme, KDF, and key
+exchange. The production selection is **`OutbeV1`** (BN254 / Grumpkin,
+Poseidon2, Grumpkin Schnorr).
 
 ## Architecture
 
@@ -26,8 +21,8 @@ below it, so swapping a primitive never touches the protocol logic.
 | ----- | ------ | -------------- |
 | **codec** | `codec` | `Codec` byte conventions + the `FieldElement` / `FieldEncode` encoding seam — how a typed value becomes one or more field elements. |
 | **primitive** | `primitive::{curve, hash, signature, kdf, exchange}` | The swappable crypto traits and their instances: the embedded Grumpkin curve, the Poseidon2 field hash, Grumpkin Schnorr, the KDF, and the key-exchange "consent box". |
-| **protocol** | `protocol::{entity, key, imt, zk}` | The protocol logic — entity hashing, NFT keys/signers, the insertion Merkle tree, and the ZK trait seams — all generic over `S: Suite`. |
-| **suite** | `suite` (+ `OutbeV1` at the crate root) | The `Suite` trait wires one choice per primitive and supplies `derive_owner` / `nft_hash` / `signing_payload` / `binding` as default methods. |
+| **protocol** | `protocol::{entity, key, imt, zk}` | Entity hashing, NFT keys/signers, the insertion Merkle tree, and core ZK traits and proof types. |
+| **suite** | `suite` (+ `OutbeV1` at the crate root) | The `Suite` trait selects primitives and supplies `derive_owner`, `nft_hash`, `signing_payload`, and domain-separated `binding`. |
 
 ### What a `Suite` fixes
 
@@ -49,7 +44,7 @@ pub trait Suite: 'static {
 }
 ```
 
-### Identity vs submission
+### Identity vs submission context
 
 `DOMAIN` is folded into `binding` — and therefore into every signature
 (`signing_payload`) and the aggregation public inputs — so the protocol version
@@ -59,13 +54,13 @@ versions, while a submission is unambiguously tied to one version.
 
 ### The ZK boundary
 
-Everything **except** the zero-knowledge layer lives on the `Suite`. This crate
-defines only the ZK trait seams — `Circuit`, `ProofGenerator`, `ProofVerifier`
-(`protocol::zk`) — and the statement *semantics* (`derive_owner` /
-`signing_payload` / `binding`). The concrete circuits, the witness/public-input
-projection, the aggregation tier ladder, and the verification keys are keyed by
-the suite but live downstream in `outbe-circuits-canonical`, so circuit-ABI
-drift never reaches the protocol.
+This crate defines the ZK trait seams and core proof types (`protocol::zk`) plus
+generic verifier-envelope and combined-proof validation (`protocol::zkproof`).
+Concrete witness projections, circuit-specific public-input decoders, and
+verification keys live in `outbe-zk-canonical`; ACVM witness solving and
+Barretenberg proving/verifying live in `outbe-zk-backend`. This keeps concrete
+circuit implementations out of the protocol core without duplicating common
+wire validation.
 
 ## Usage
 
@@ -85,7 +80,7 @@ use outbe_protocol::{OutbeV1, Suite};
 let owner   = OutbeV1::derive_owner(&pk, nonce)?;                   // H(pk.x, pk.y, nonce)
 let binding = OutbeV1::binding(&sender, &commitment_id, chain_id)?; // H([DOMAIN, sender, cid_lo, cid_hi, chain])
 let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;  // the field the owner signs
-//  sender: &[u8; 20]   commitment_id: &[u8; 32]   chain_id: u64
+// sender: &[u8; 20]   commitment_id: &[u8; 32]   chain_id: u64
 ```
 
 ### Entity hashing with `#[derive(Entity)]`
@@ -104,7 +99,7 @@ struct SpendingUnit {
     #[outbe(id_seed)]              id: B256,
     #[outbe(body, owner, pos = 0)] derived_owner: B256,
     #[outbe(body, pos = 1)]        attester: Address,
-    #[outbe(body, pos = 2)]        amount: U256,   // a uint256 folds as [lo, hi]
+    #[outbe(body, pos = 2)]        amount: U256,   // `[120, 120, 16]`-bit limbs
 }
 
 let su = SpendingUnit { /* … */ };
@@ -124,6 +119,7 @@ let signer  = Signer::<OutbeV1>::local(&mut rng)?;     // fresh NFT key (self-is
 let pk      = signer.public_key();
 let owner   = OutbeV1::derive_owner(&pk, nonce)?;
 
+let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7)?;
 let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;
 let sig     = signer.sign(&mut rng, payload)?;       // Grumpkin Schnorr — satisfies the in-circuit verifier
 ```
@@ -144,7 +140,7 @@ impl Suite for MySuite {
     type Kdf = /* … */;
     type Exchange = /* … */;
     const DOMAIN: u64 = 2;
-    // derive_owner / binding / signing_payload inherited as defaults.
+    // derive_owner / binding / nft_hash / signing_payload inherited as defaults.
 }
 ```
 
