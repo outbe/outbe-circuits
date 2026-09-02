@@ -1,29 +1,12 @@
-//! Canonical ZK verifier wire marshaling.
+//! Generic canonical ZK verifier-wire marshaling.
 //!
-//! This module owns the consensus-visible byte layouts shared by the chain and
-//! verifier backend. It deliberately does not depend on a circuit registry or a
-//! proving backend; callers decode and validate the wire here, compare the
-//! public claim with runtime state, then dispatch the unchanged combined proof
-//! to their selected verifier.
+//! Circuit-specific layouts and public-input decoders live in
+//! `outbe-zk-canonical`.
 
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
 
 const CANONICAL_ABI_OFFSET: u64 = 64;
-
-pub const FULL_PROOF_PUBLIC_INPUT_COUNT: usize = 4;
-pub const FULL_PROOF_PROOF_WORDS: usize = 274;
-pub const FULL_PROOF_COMBINED_LEN: usize =
-    4 + (FULL_PROOF_PUBLIC_INPUT_COUNT + FULL_PROOF_PROOF_WORDS) * 32;
-
-pub const EMIT_MINT_PUBLIC_INPUT_COUNT: usize = 8;
-pub const EMIT_MINT_PROOF_WORDS: usize = 250;
-pub const EMIT_MINT_COMBINED_LEN: usize =
-    4 + (EMIT_MINT_PUBLIC_INPUT_COUNT + EMIT_MINT_PROOF_WORDS) * 32;
-
-pub const PAYNOTE_PUBLIC_INPUT_COUNT: usize = 9;
-pub const PAYNOTE_PROOF_WORDS: usize = 250;
-pub const PAYNOTE_COMBINED_LEN: usize = 4 + (PAYNOTE_PUBLIC_INPUT_COUNT + PAYNOTE_PROOF_WORDS) * 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ProofMarshalingError {
@@ -41,12 +24,6 @@ pub enum ProofMarshalingError {
     NonCanonicalPublicInput(usize),
     #[error("zk_verify: combined proof length is {actual} bytes, expected {expected}")]
     WrongCombinedProofLength { expected: usize, actual: usize },
-    #[error("zk_verify: emit chain ID word is not a right-aligned uint64")]
-    InvalidEmitChainId,
-    #[error("zk_verify: emit owner word exceeds the 160-bit address bound")]
-    InvalidEmitOwner,
-    #[error("zk_verify: emit mint limb {0} is outside its canonical range")]
-    InvalidEmitMintLimb(usize),
 }
 
 /// Canonical decoding of `abi.encode(bytes32 circuit_hash, bytes proof)`.
@@ -54,40 +31,6 @@ pub enum ProofMarshalingError {
 pub struct VerifyCall<'a> {
     pub circuit_hash: [u8; 32],
     pub combined_proof: &'a [u8],
-}
-
-/// Public claim carried by `outbe.full_proof@1.1.0`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct FullProofPublicInputs {
-    pub derived_owner: [u8; 32],
-    pub nft_hash: [u8; 32],
-    pub binding_hash: [u8; 32],
-    pub merkle_root: [u8; 32],
-}
-
-/// Public claim carried by `outbe.paynote@1.1.0` in circuit order.
-#[cfg(feature = "alloy")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PayNotePublicInputs {
-    pub chain_id: u64,
-    pub root: [u8; 32],
-    pub nullifier: [u8; 32],
-    pub asset: alloy_primitives::Address,
-    pub spender: alloy_primitives::Address,
-    pub spend_amount: alloy_primitives::U256,
-    pub change_commitment: [u8; 32],
-}
-
-/// Public claim carried by `outbe.emit.mint@1.5.0` in circuit order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct EmitMintPublicInputs {
-    pub chain_id: u64,
-    pub root: [u8; 32],
-    pub nullifier: [u8; 32],
-    pub note_owner: [u8; 20],
-    /// Three little-endian noir-bignum limbs with radix `2^120`.
-    pub mint_units: [u128; 3],
-    pub change_commitment: [u8; 32],
 }
 
 pub fn decode_verify_call(input: &[u8]) -> Result<VerifyCall<'_>, ProofMarshalingError> {
@@ -142,97 +85,8 @@ pub fn decode_verify_call(input: &[u8]) -> Result<VerifyCall<'_>, ProofMarshalin
     })
 }
 
-pub fn decode_full_proof_public_inputs(
-    combined_proof: &[u8],
-) -> Result<FullProofPublicInputs, ProofMarshalingError> {
-    let words = decode_public_words::<FULL_PROOF_PUBLIC_INPUT_COUNT>(
-        combined_proof,
-        FULL_PROOF_COMBINED_LEN,
-    )?;
-    Ok(FullProofPublicInputs {
-        derived_owner: words[0],
-        nft_hash: words[1],
-        binding_hash: words[2],
-        merkle_root: words[3],
-    })
-}
-
-#[cfg(feature = "alloy")]
-pub fn decode_paynote_public_inputs(
-    combined_proof: &[u8],
-) -> Result<PayNotePublicInputs, ProofMarshalingError> {
-    let words =
-        decode_public_words::<PAYNOTE_PUBLIC_INPUT_COUNT>(combined_proof, PAYNOTE_COMBINED_LEN)?;
-
-    let chain_id =
-        read_u64_be_padded(&words[0]).ok_or(ProofMarshalingError::NonCanonicalPublicInput(0))?;
-    let asset = read_address_be_padded(&words[3])
-        .ok_or(ProofMarshalingError::NonCanonicalPublicInput(3))?;
-    let spender = read_address_be_padded(&words[4])
-        .ok_or(ProofMarshalingError::NonCanonicalPublicInput(4))?;
-    let mut limbs = [0u128; 3];
-    for (index, limb) in limbs.iter_mut().enumerate() {
-        let word_index = 5 + index;
-        *limb = read_u128_be_padded(&words[word_index])
-            .ok_or(ProofMarshalingError::NonCanonicalPublicInput(word_index))?;
-        let limit = if index < 2 { 1u128 << 120 } else { 1u128 << 16 };
-        if *limb >= limit {
-            return Err(ProofMarshalingError::NonCanonicalPublicInput(word_index));
-        }
-    }
-    let spend_amount = alloy_primitives::U256::from_be_bytes(
-        crate::codec::u256_from_limbs_be(limbs).expect("validated canonical U256 limbs"),
-    );
-
-    Ok(PayNotePublicInputs {
-        chain_id,
-        root: words[1],
-        nullifier: words[2],
-        asset,
-        spender,
-        spend_amount,
-        change_commitment: words[8],
-    })
-}
-
-pub fn decode_emit_mint_public_inputs(
-    combined_proof: &[u8],
-) -> Result<EmitMintPublicInputs, ProofMarshalingError> {
-    let words = decode_public_words::<EMIT_MINT_PUBLIC_INPUT_COUNT>(
-        combined_proof,
-        EMIT_MINT_COMBINED_LEN,
-    )?;
-
-    let chain_id = read_u64_be_padded(&words[0]).ok_or(ProofMarshalingError::InvalidEmitChainId)?;
-    if words[3][..12].iter().any(|byte| *byte != 0) {
-        return Err(ProofMarshalingError::InvalidEmitOwner);
-    }
-    let mut note_owner = [0u8; 20];
-    note_owner.copy_from_slice(&words[3][12..]);
-
-    let mut mint_units = [0u128; 3];
-    for (index, (limb, word)) in mint_units.iter_mut().zip(&words[4..7]).enumerate() {
-        *limb =
-            read_u128_be_padded(word).ok_or(ProofMarshalingError::InvalidEmitMintLimb(index))?;
-    }
-    for (index, limb) in mint_units.iter().copied().enumerate() {
-        let limit = if index < 2 { 1u128 << 120 } else { 1u128 << 16 };
-        if limb >= limit {
-            return Err(ProofMarshalingError::InvalidEmitMintLimb(index));
-        }
-    }
-
-    Ok(EmitMintPublicInputs {
-        chain_id,
-        root: words[1],
-        nullifier: words[2],
-        note_owner,
-        mint_units,
-        change_commitment: words[7],
-    })
-}
-
-fn decode_public_words<const N: usize>(
+/// Decode and validate the public-input words prefixed to a combined proof.
+pub fn decode_public_words<const N: usize>(
     combined_proof: &[u8],
     expected_len: usize,
 ) -> Result<[[u8; 32]; N], ProofMarshalingError> {
@@ -274,28 +128,20 @@ fn decode_public_words<const N: usize>(
     Ok(words)
 }
 
-fn read_u64_be_padded(slot: &[u8]) -> Option<u64> {
+/// Decode a right-aligned `u64` from one 32-byte ABI word.
+pub fn read_u64_be_padded(slot: &[u8]) -> Option<u64> {
     if slot.len() != 32 || slot[..24].iter().any(|byte| *byte != 0) {
         return None;
     }
     Some(u64::from_be_bytes(slot[24..].try_into().ok()?))
 }
 
-fn read_u128_be_padded(slot: &[u8]) -> Option<u128> {
+/// Decode a right-aligned `u128` from one 32-byte ABI word.
+pub fn read_u128_be_padded(slot: &[u8]) -> Option<u128> {
     if slot.len() != 32 || slot[..16].iter().any(|byte| *byte != 0) {
         return None;
     }
     Some(u128::from_be_bytes(slot[16..].try_into().ok()?))
-}
-
-#[cfg(feature = "alloy")]
-fn read_address_be_padded(slot: &[u8]) -> Option<alloy_primitives::Address> {
-    if slot.len() != 32 || slot[..12].iter().any(|byte| *byte != 0) {
-        return None;
-    }
-    let mut address = [0u8; 20];
-    address.copy_from_slice(&slot[12..]);
-    Some(alloy_primitives::Address::from(address))
 }
 
 fn is_canonical_field_word(word: &[u8; 32]) -> bool {
@@ -307,37 +153,18 @@ fn is_canonical_field_word(word: &[u8; 32]) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn field_word(value: u64) -> [u8; 32] {
-        let bytes = Fr::from(value).into_bigint().to_bytes_be();
-        let mut word = [0u8; 32];
-        word[32 - bytes.len()..].copy_from_slice(&bytes);
-        word
-    }
-
-    fn u64_word(value: u64) -> [u8; 32] {
+mod test_support {
+    pub(crate) fn u64_word(value: u64) -> [u8; 32] {
         let mut word = [0u8; 32];
         word[24..].copy_from_slice(&value.to_be_bytes());
         word
     }
+}
 
-    fn u128_word(value: u128) -> [u8; 32] {
-        let mut word = [0u8; 32];
-        word[16..].copy_from_slice(&value.to_be_bytes());
-        word
-    }
-
-    fn combined<const N: usize>(words: [[u8; 32]; N], proof_words: usize) -> Vec<u8> {
-        let mut proof = Vec::with_capacity(4 + 32 * (N + proof_words));
-        proof.extend_from_slice(&(N as u32).to_be_bytes());
-        for word in words {
-            proof.extend_from_slice(&word);
-        }
-        proof.resize(proof.len() + proof_words * 32, 0);
-        proof
-    }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use test_support::u64_word;
 
     fn abi_encode(circuit_hash: [u8; 32], proof: &[u8]) -> Vec<u8> {
         let mut out = Vec::with_capacity(96 + proof.len() + 31);
@@ -347,40 +174,6 @@ mod tests {
         out.extend_from_slice(proof);
         out.resize(out.len() + (32 - proof.len() % 32) % 32, 0);
         out
-    }
-
-    fn valid_emit_words() -> [[u8; 32]; EMIT_MINT_PUBLIC_INPUT_COUNT] {
-        let mut owner = [0u8; 32];
-        owner[12..].fill(0x22);
-        [
-            u64_word(31_337),
-            field_word(102),
-            field_word(103),
-            owner,
-            u128_word(40),
-            u128_word(1u128 << 80),
-            u128_word((1u128 << 16) - 1),
-            field_word(104),
-        ]
-    }
-
-    #[cfg(feature = "alloy")]
-    fn valid_paynote_words() -> [[u8; 32]; PAYNOTE_PUBLIC_INPUT_COUNT] {
-        let mut asset = [0u8; 32];
-        asset[12..].fill(0x11);
-        let mut spender = [0u8; 32];
-        spender[12..].fill(0x22);
-        [
-            u64_word(31_337),
-            field_word(202),
-            field_word(203),
-            asset,
-            spender,
-            u128_word((1u128 << 120) - 1),
-            u128_word((1u128 << 120) - 1),
-            u128_word((1u128 << 16) - 1),
-            field_word(204),
-        ]
     }
 
     #[test]
@@ -436,47 +229,6 @@ mod tests {
     }
 
     #[test]
-    fn full_proof_inputs_decode_in_circuit_order() {
-        let words = [
-            field_word(11),
-            field_word(22),
-            field_word(33),
-            field_word(44),
-        ];
-        let proof = combined(words, FULL_PROOF_PROOF_WORDS);
-        let decoded = decode_full_proof_public_inputs(&proof).unwrap();
-        assert_eq!(decoded.derived_owner, words[0]);
-        assert_eq!(decoded.nft_hash, words[1]);
-        assert_eq!(decoded.binding_hash, words[2]);
-        assert_eq!(decoded.merkle_root, words[3]);
-    }
-
-    #[test]
-    fn full_proof_rejects_wrong_count_length_and_field_encoding() {
-        let mut wrong_count = combined([[0; 32]; 4], FULL_PROOF_PROOF_WORDS);
-        wrong_count[..4].copy_from_slice(&3u32.to_be_bytes());
-        assert!(matches!(
-            decode_full_proof_public_inputs(&wrong_count),
-            Err(ProofMarshalingError::WrongPublicInputCount { .. })
-        ));
-
-        let wrong_length = combined([[0; 32]; 4], FULL_PROOF_PROOF_WORDS - 1);
-        assert!(matches!(
-            decode_full_proof_public_inputs(&wrong_length),
-            Err(ProofMarshalingError::WrongCombinedProofLength { .. })
-        ));
-
-        let mut words = [[0; 32]; 4];
-        let modulus = Fr::MODULUS.to_bytes_be();
-        words[2][32 - modulus.len()..].copy_from_slice(&modulus);
-        let non_canonical = combined(words, FULL_PROOF_PROOF_WORDS);
-        assert_eq!(
-            decode_full_proof_public_inputs(&non_canonical),
-            Err(ProofMarshalingError::NonCanonicalPublicInput(2))
-        );
-    }
-
-    #[test]
     fn marshaling_errors_keep_chain_visible_text() {
         let cases = [
             (
@@ -516,156 +268,10 @@ mod tests {
                 },
                 "zk_verify: combined proof length is 8260 bytes, expected 8292",
             ),
-            (
-                ProofMarshalingError::InvalidEmitChainId,
-                "zk_verify: emit chain ID word is not a right-aligned uint64",
-            ),
-            (
-                ProofMarshalingError::InvalidEmitOwner,
-                "zk_verify: emit owner word exceeds the 160-bit address bound",
-            ),
-            (
-                ProofMarshalingError::InvalidEmitMintLimb(1),
-                "zk_verify: emit mint limb 1 is outside its canonical range",
-            ),
         ];
 
         for (error, expected) in cases {
             assert_eq!(error.to_string(), expected);
         }
-    }
-
-    #[cfg(feature = "alloy")]
-    #[test]
-    fn paynote_inputs_decode_current_u256_layout() {
-        let words = valid_paynote_words();
-        let proof = combined(words, PAYNOTE_PROOF_WORDS);
-        let decoded = decode_paynote_public_inputs(&proof).unwrap();
-        assert_eq!(decoded.chain_id, 31_337);
-        assert_eq!(decoded.root, words[1]);
-        assert_eq!(decoded.nullifier, words[2]);
-        assert_eq!(decoded.asset, alloy_primitives::Address::from([0x11; 20]));
-        assert_eq!(decoded.spender, alloy_primitives::Address::from([0x22; 20]));
-        assert_eq!(decoded.spend_amount, alloy_primitives::U256::MAX);
-        assert_eq!(decoded.change_commitment, words[8]);
-        assert_eq!(proof.len(), PAYNOTE_COMBINED_LEN);
-    }
-
-    #[cfg(feature = "alloy")]
-    #[test]
-    fn paynote_rejects_short_wrong_count_and_wrong_length() {
-        assert_eq!(
-            decode_paynote_public_inputs(&[0u8; 3]),
-            Err(ProofMarshalingError::CombinedProofTooShort(3))
-        );
-
-        let mut wrong_count = combined(valid_paynote_words(), PAYNOTE_PROOF_WORDS);
-        wrong_count[..4].copy_from_slice(&8u32.to_be_bytes());
-        assert_eq!(
-            decode_paynote_public_inputs(&wrong_count),
-            Err(ProofMarshalingError::WrongPublicInputCount {
-                expected: PAYNOTE_PUBLIC_INPUT_COUNT,
-                actual: 8,
-            })
-        );
-
-        let wrong_length = combined(valid_paynote_words(), PAYNOTE_PROOF_WORDS - 1);
-        assert_eq!(
-            decode_paynote_public_inputs(&wrong_length),
-            Err(ProofMarshalingError::WrongCombinedProofLength {
-                expected: PAYNOTE_COMBINED_LEN,
-                actual: PAYNOTE_COMBINED_LEN - 32,
-            })
-        );
-    }
-
-    #[cfg(feature = "alloy")]
-    #[test]
-    fn paynote_rejects_oversized_addresses_and_limbs_by_word_index() {
-        let mut invalid_address = valid_paynote_words();
-        invalid_address[3][11] = 1;
-        assert_eq!(
-            decode_paynote_public_inputs(&combined(invalid_address, PAYNOTE_PROOF_WORDS)),
-            Err(ProofMarshalingError::NonCanonicalPublicInput(3))
-        );
-
-        for (word_index, value) in [(5, 1u128 << 120), (6, 1u128 << 120), (7, 1u128 << 16)] {
-            let mut invalid_limb = valid_paynote_words();
-            invalid_limb[word_index] = u128_word(value);
-            assert_eq!(
-                decode_paynote_public_inputs(&combined(invalid_limb, PAYNOTE_PROOF_WORDS)),
-                Err(ProofMarshalingError::NonCanonicalPublicInput(word_index))
-            );
-        }
-    }
-
-    #[test]
-    fn emit_inputs_decode_current_u256_layout() {
-        let words = valid_emit_words();
-        let proof = combined(words, EMIT_MINT_PROOF_WORDS);
-        let decoded = decode_emit_mint_public_inputs(&proof).unwrap();
-        assert_eq!(decoded.chain_id, 31_337);
-        assert_eq!(decoded.root, words[1]);
-        assert_eq!(decoded.nullifier, words[2]);
-        assert_eq!(decoded.note_owner, [0x22; 20]);
-        assert_eq!(decoded.mint_units, [40, 1u128 << 80, (1u128 << 16) - 1]);
-        assert_eq!(decoded.change_commitment, words[7]);
-        assert_eq!(proof.len(), EMIT_MINT_COMBINED_LEN);
-    }
-
-    #[test]
-    fn emit_rejects_wrong_count_and_length() {
-        let mut wrong_count = combined(valid_emit_words(), EMIT_MINT_PROOF_WORDS);
-        wrong_count[..4].copy_from_slice(&7u32.to_be_bytes());
-        assert!(matches!(
-            decode_emit_mint_public_inputs(&wrong_count),
-            Err(ProofMarshalingError::WrongPublicInputCount { .. })
-        ));
-
-        let wrong_length = combined(valid_emit_words(), EMIT_MINT_PROOF_WORDS + 1);
-        assert!(matches!(
-            decode_emit_mint_public_inputs(&wrong_length),
-            Err(ProofMarshalingError::WrongCombinedProofLength { .. })
-        ));
-    }
-
-    #[test]
-    fn emit_rejects_invalid_chain_owner_and_limbs() {
-        let mut invalid_chain = valid_emit_words();
-        invalid_chain[0][23] = 1;
-        assert_eq!(
-            decode_emit_mint_public_inputs(&combined(invalid_chain, EMIT_MINT_PROOF_WORDS)),
-            Err(ProofMarshalingError::InvalidEmitChainId)
-        );
-
-        let mut invalid_owner = valid_emit_words();
-        invalid_owner[3][11] = 1;
-        assert_eq!(
-            decode_emit_mint_public_inputs(&combined(invalid_owner, EMIT_MINT_PROOF_WORDS)),
-            Err(ProofMarshalingError::InvalidEmitOwner)
-        );
-
-        for (index, value) in [(0, 1u128 << 120), (1, 1u128 << 120), (2, 1u128 << 16)] {
-            let mut invalid_limb = valid_emit_words();
-            invalid_limb[4 + index] = u128_word(value);
-            assert_eq!(
-                decode_emit_mint_public_inputs(&combined(invalid_limb, EMIT_MINT_PROOF_WORDS)),
-                Err(ProofMarshalingError::InvalidEmitMintLimb(index))
-            );
-        }
-    }
-
-    #[test]
-    fn emit_accepts_maximum_canonical_u256_limbs() {
-        let mut words = valid_emit_words();
-        words[4] = u128_word((1u128 << 120) - 1);
-        words[5] = u128_word((1u128 << 120) - 1);
-        words[6] = u128_word((1u128 << 16) - 1);
-        assert_eq!(
-            decode_emit_mint_public_inputs(&combined(words, EMIT_MINT_PROOF_WORDS))
-                .unwrap()
-                .mint_units,
-            [(1u128 << 120) - 1, (1u128 << 120) - 1, (1u128 << 16) - 1,]
-        );
     }
 }

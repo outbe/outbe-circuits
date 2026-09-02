@@ -12,10 +12,10 @@ use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::imt::Imt;
 use outbe_protocol::protocol::key::{NftSecret, Signer};
 use outbe_protocol::protocol::zk::{Circuit, ProofGenerator, ProofVerifier};
-use outbe_protocol::protocol::zkproof::{decode_full_proof_public_inputs, FULL_PROOF_COMBINED_LEN};
 use outbe_protocol::{Codec, OutbeV1, Suite};
 use outbe_zk_backend::barretenberg::Barretenberg;
 use outbe_zk_canonical::full::{full_circuit_domain, FullProvable};
+use outbe_zk_canonical::full_proof;
 use outbe_zk_canonical::noir::full_proof::FullProof;
 use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
 use outbe_zk_canonical::ownership::Provable;
@@ -53,7 +53,7 @@ fn ownership_prove_verify_round_trip() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = Fr::from(7u64);
+    let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7).unwrap();
     let td = TestNft {
         id: owner,
         owner,
@@ -93,7 +93,7 @@ fn full_proof_prove_verify_round_trip() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = Fr::from(99u64);
+    let binding = OutbeV1::binding(&[3u8; 20], &[4u8; 32], 99).unwrap();
     let td = TestNft {
         id: owner,
         owner,
@@ -116,7 +116,7 @@ fn full_proof_prove_verify_round_trip() {
     );
 
     let fields = <FullProof as Circuit<OutbeV1>>::public_inputs(&public);
-    let mut combined = Vec::with_capacity(FULL_PROOF_COMBINED_LEN);
+    let mut combined = Vec::with_capacity(full_proof::COMBINED_LEN);
     combined.extend_from_slice(&(fields.len() as u32).to_be_bytes());
     for field in fields {
         combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
@@ -124,8 +124,8 @@ fn full_proof_prove_verify_round_trip() {
     for word in proof.proof {
         combined.extend_from_slice(&word);
     }
-    assert_eq!(combined.len(), FULL_PROOF_COMBINED_LEN);
-    let decoded = decode_full_proof_public_inputs(&combined).unwrap();
+    assert_eq!(combined.len(), full_proof::COMBINED_LEN);
+    let decoded = full_proof::decode_public_inputs(&combined).unwrap();
     let owner_bytes = OutbeV1::field_to_be_bytes(&owner);
     let binding_bytes = OutbeV1::field_to_be_bytes(&binding);
     assert_eq!(decoded.derived_owner.as_slice(), owner_bytes.as_slice());

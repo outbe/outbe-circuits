@@ -19,6 +19,7 @@ ark-ff = { workspace = true }
 ark-std = { workspace = true }
 ark-bn254 = { workspace = true }
 alloy-primitives = { workspace = true }
+thiserror = { workspace = true }
 # Compile-time `hex!("..")` -> `[u8; N]` for the generated circuit/vk hashes.
 hex-literal = { workspace = true }
 

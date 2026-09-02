@@ -5,12 +5,13 @@
 [![CI](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-Concrete canonical circuit + witness types for the Outbe protocol (ownership,
-flat-aggregation tiers n1–n64, full proof, Emit mint, and Paynote), built on the generic
-seams in
-`outbe-protocol` (`Circuit` / `CircuitId` / `CircuitSuite`). It is also the **in-code,
-versioned circuit registry**: the authoritative, append-only record of every
-released circuit version and its on-chain identity.
+Concrete canonical circuit, witness, and verifier-wire types for the Outbe
+protocol (ownership, flat-aggregation tiers n1–n64, full proof, Emit mint, and
+Paynote), built on the generic seams and marshaling helpers in `outbe-protocol`.
+The `full_proof`, `emit_mint`, and `paynote` modules own their circuit-specific
+combined-proof layouts and public-input decoders. This crate is also the
+**in-code, versioned circuit registry**: the authoritative, append-only record
+of every released circuit version and its on-chain identity.
 
 ## Emit mint statement
 
