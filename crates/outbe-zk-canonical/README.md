@@ -168,6 +168,9 @@ missed:
   match a submission's `circuit_id` (`vk_hash` / `label@version`), check `status`,
   verify against `vk_bytes`. Old + new versions coexist here, so a chain can accept
   both during a rollout.
+- `pub const L2_CIRCUITS_REGISTRY: &[L2ChainEntry]` groups explicitly enabled
+  `(version, circuit_hash)` bindings by external L2 chain ID. Use
+  `outbe_zk_canonical::l2_circuits(chain_id)` for allocation-free lookup.
 
 So: **registry = all versions; codegen = latest active**.
 
@@ -185,6 +188,49 @@ noir/                                        # the .nr sources = the "head" (nex
 `manifest.toml` is the source of truth: a global `proof_system` (the bb pin) plus
 one `[[circuit]]` per `(module, version)` with `label`, `status`, and — once the
 bytecode is dropped — the preserved `circuit_hash`.
+
+### Enabling circuit versions for an L2 chain
+
+Add one `[[l2_chain]]` table per chain to `circuits/manifest.toml`. Each entry in
+`circuits` enables an exact frozen `(module, version)`. For example, a local
+development chain could enable both full-proof releases:
+
+```toml
+[[l2_chain]]
+chain_id = 31337
+circuits = [
+  { module = "full_proof", version = "1.0.0" },
+  { module = "full_proof", version = "1.1.0" },
+]
+```
+
+`version` is the circuit's frozen semver; there is no separate deployment version.
+Hashes are derived from the frozen artifacts (or preserved manifest identity for
+deprecated circuits), never entered by hand:
+
+```rust
+use outbe_zk_canonical::l2_circuits;
+
+let enabled = l2_circuits(31337); // &'static [L2CircuitVersion]
+let v1_1 = enabled.iter().find(|entry| entry.version == "1.1.0");
+let circuit_hash = v1_1.map(|entry| entry.circuit_hash);
+```
+
+The hash is `circuit_hash = keccak256(ACIR)`, not `vk_hash`; it resolves to the
+verification metadata in `noir::CIRCUIT_REGISTRY`. The generated registry is a
+static slice sorted by chain ID, with binary-search lookup and no runtime map
+allocation. Versions are sorted lexically, not by release precedence; there is
+no implicit "latest" selection. Unknown chains return an empty slice.
+
+Only declared bindings are enabled. Remove an entry to disable a circuit version;
+freezing a new circuit does not move existing bindings. Active and deprecated
+circuits may be bound, but revoked or unknown targets fail the build. Duplicate
+chain IDs and duplicate versions within one chain also fail the build. The same
+version string may be used independently on different chains.
+
+Chain `0` is an example, not a production deployment binding. Add more entries
+to enable additional circuit versions. Changing bindings requires only a normal
+Cargo rebuild, not a freeze.
 
 ## Lifecycle & storage policy
 
