@@ -264,7 +264,9 @@ impl<S: Suite> Imt<S> {
             }
             siblings.push(nodes[index ^ 1]);
             nodes = nodes
-                .chunks_exact(2)
+                .as_chunks::<2>()
+                .0
+                .iter()
                 .map(|pair| Self::node_hash(self.domain, pair[0], pair[1]))
                 .collect::<Result<Vec<_>, _>>()?;
             index >>= 1;
