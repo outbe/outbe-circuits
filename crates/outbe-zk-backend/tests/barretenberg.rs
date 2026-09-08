@@ -100,7 +100,7 @@ fn full_proof_prove_verify_round_trip() {
         fields: vec![Fr::from(978u64), Fr::from(100u64)],
     };
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
-    let tree = Imt::<OutbeV1>::new(full_circuit_domain(), INCLUSION_DEPTH).unwrap();
+    let tree = Imt::<OutbeV1>::new(full_circuit_domain(), Fr::from(0u64), INCLUSION_DEPTH).unwrap();
     let path = tree.empty_inclusion_path(0);
     let (witness, public) = td
         .derive_full_witness(&mut rng, &signer, binding, &path)

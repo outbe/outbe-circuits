@@ -397,8 +397,12 @@ fn full_proof_round_trip() {
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
 
     // Inclusion: place nft_hash at index 0 of an otherwise-empty depth-32 tree.
-    let tree =
-        Imt::<OutbeV1>::new(full_circuit_domain(), outbe_zk_canonical::INCLUSION_DEPTH).unwrap();
+    let tree = Imt::<OutbeV1>::new(
+        full_circuit_domain(),
+        Fr::from(0u64),
+        outbe_zk_canonical::INCLUSION_DEPTH,
+    )
+    .unwrap();
     let path = tree.empty_inclusion_path(0);
     let (witness, public) = td
         .derive_full_witness(&mut rng, &signer, binding, &path)
@@ -417,8 +421,12 @@ fn full_proof_round_trip() {
     );
 
     // A populated tree must keep the full-proof domain, leaf value and bit order.
-    let mut populated =
-        Imt::<OutbeV1>::new(full_circuit_domain(), outbe_zk_canonical::INCLUSION_DEPTH).unwrap();
+    let mut populated = Imt::<OutbeV1>::new(
+        full_circuit_domain(),
+        Fr::from(0u64),
+        outbe_zk_canonical::INCLUSION_DEPTH,
+    )
+    .unwrap();
     populated.append(Fr::from(17u64)).unwrap();
     let (index, _) = populated.append(public.nft_hash).unwrap();
     populated.append(Fr::from(23u64)).unwrap();

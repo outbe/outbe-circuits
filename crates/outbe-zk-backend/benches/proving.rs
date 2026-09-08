@@ -184,7 +184,7 @@ fn bench_proving(c: &mut Criterion) {
 
     // --- full proof (ownership + depth-32 Merkle inclusion) ---
     let (td, signer, binding) = sample(&mut rng);
-    let tree = Imt::<OutbeV1>::new(full_circuit_domain(), INCLUSION_DEPTH).unwrap();
+    let tree = Imt::<OutbeV1>::new(full_circuit_domain(), Fr::from(0u64), INCLUSION_DEPTH).unwrap();
     let path = tree.empty_inclusion_path(0);
     let (full_w, full_p) = td
         .derive_full_witness(&mut rng, &signer, binding, &path)

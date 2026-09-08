@@ -3,12 +3,12 @@
 //! [`Imt`] is a binary, append-only Merkle tree whose node hash is
 //! `S::Hash([domain, left, right])` (Poseidon2 for `OutbeV1`). It is generic
 //! over the suite: only the field + hash are used, no curve/signature. The
-//! caller-supplied domain separates independent trees. The empty leaf is the
-//! field zero (untagged) by default, or a caller-supplied value. [`InclusionPath`] is one membership proof (domain,
+//! caller supplies the domain, empty leaf, and depth. [`InclusionPath`] is
+//! one membership proof (domain,
 //! leaf index, and sibling hashes) that resolves a root and yields the
 //! in-circuit direction bits.
 //!
-//! This mirrors the on-chain commitment tree (`CommitmentWindowBase` in
+//! With `empty_leaf = 0`, this mirrors the on-chain commitment tree (`CommitmentWindowBase` in
 //! outbe-chain-research): same shape, same domain-separated node hash, same
 //! `empty_leaf = 0`, and the leaf stored at each position is the entity hash
 //! directly. The depth and domain are caller parameters (the canonical
@@ -173,18 +173,9 @@ impl<S: Suite> Imt<S> {
         Ok(current)
     }
 
-    /// A new empty tree of `depth` (empty leaf `0`, matching the chain).
-    pub fn new(domain: S::Field, depth: usize) -> Result<Self, Error> {
-        Self::with_empty_leaf(domain, S::Field::zero(), depth)
-    }
-
     /// A new tree with a caller-supplied empty leaf (for example, a chain-tagged
     /// PayNote or Emit empty leaf). Supports depths 1 through 63.
-    pub fn with_empty_leaf(
-        domain: S::Field,
-        empty_leaf: S::Field,
-        depth: usize,
-    ) -> Result<Self, Error> {
+    pub fn new(domain: S::Field, empty_leaf: S::Field, depth: usize) -> Result<Self, Error> {
         let zeros = Self::zero_ladder(domain, empty_leaf, depth)?;
         let root = zeros[depth];
         Ok(Self {
@@ -351,7 +342,7 @@ mod tests {
     #[test]
     fn append_matches_inclusion_path() {
         let domain = Fr::from(42u64);
-        let mut tree = Imt::<OutbeV1>::new(domain, 8).unwrap();
+        let mut tree = Imt::<OutbeV1>::new(domain, Fr::zero(), 8).unwrap();
         let path = tree.empty_inclusion_path(0);
         let leaf = Fr::from(7u64);
         let (index, append) = tree.append(leaf).unwrap();
@@ -377,7 +368,7 @@ mod retained_tree_tests {
     #[test]
     fn retained_paths_match_frontier_roots_and_history() {
         for empty_leaf in [Fr::zero(), Fr::from(99u64)] {
-            let mut tree = Imt::<OutbeV1>::with_empty_leaf(Fr::from(42u64), empty_leaf, 4).unwrap();
+            let mut tree = Imt::<OutbeV1>::new(Fr::from(42u64), empty_leaf, 4).unwrap();
             let empty_root = tree.root();
             let mut roots = vec![empty_root];
             assert!(tree.inclusion_path(0).is_err());
@@ -412,10 +403,10 @@ mod retained_tree_tests {
     }
 
     #[test]
-    fn depth_boundaries_and_default_empty_leaf() {
+    fn depth_boundaries_and_zero_empty_leaf() {
         let domain = Fr::from(42u64);
         for depth in [0, 64, usize::MAX] {
-            assert!(Imt::<OutbeV1>::new(domain, depth).is_err());
+            assert!(Imt::<OutbeV1>::new(domain, Fr::zero(), depth).is_err());
         }
         assert!(
             Imt::<OutbeV1>::frontier_append(domain, &[], 0, Fr::zero(), &[Fr::zero()]).is_err()
@@ -425,9 +416,7 @@ mod retained_tree_tests {
                 .is_err()
         );
         for depth in [1, 32, 63] {
-            let mut tree = Imt::<OutbeV1>::new(domain, depth).unwrap();
-            let custom = Imt::<OutbeV1>::with_empty_leaf(domain, Fr::zero(), depth).unwrap();
-            assert_eq!(tree.root(), custom.root());
+            let mut tree = Imt::<OutbeV1>::new(domain, Fr::zero(), depth).unwrap();
             let old_path = tree.empty_inclusion_path(0);
             tree.append(Fr::from(7u64)).unwrap();
             assert_eq!(old_path.siblings, tree.inclusion_path(0).unwrap().siblings);
