@@ -416,6 +416,30 @@ fn full_proof_round_trip() {
         "merkle root mismatch"
     );
 
+    // A populated tree must keep the full-proof domain, leaf value and bit order.
+    let mut populated =
+        Imt::<OutbeV1>::new(full_circuit_domain(), outbe_zk_canonical::INCLUSION_DEPTH).unwrap();
+    populated.append(Fr::from(17u64)).unwrap();
+    let (index, _) = populated.append(public.nft_hash).unwrap();
+    populated.append(Fr::from(23u64)).unwrap();
+    let populated_path = populated.inclusion_path(index).unwrap();
+    let (populated_witness, populated_public) = td
+        .derive_full_witness(&mut rng, &signer, binding, &populated_path)
+        .unwrap();
+    assert_eq!(populated_public.expected_merkle_root, populated.root());
+    assert!(!populated_witness.merkle_path_indices[0]);
+    assert!(populated_witness.merkle_path_indices[1..]
+        .iter()
+        .all(|bit| *bit));
+    assert_eq!(
+        populated_witness.merkle_path_siblings.as_slice(),
+        populated_path.siblings
+    );
+    assert!(mock_round_trip::<FullProof>(
+        &populated_witness,
+        &populated_public
+    ));
+
     // Round-trip through the seams.
     assert!(mock_round_trip::<FullProof>(&witness, &public));
 }
