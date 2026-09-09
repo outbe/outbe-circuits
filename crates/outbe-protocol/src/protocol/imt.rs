@@ -41,7 +41,6 @@ pub struct Imt<S: Suite> {
     /// Occupied nodes, bottom-up: leaves at level 0, root at level `depth`.
     /// Missing siblings use `zeros[level]` instead of occupying storage.
     levels: Vec<Vec<S::Field>>,
-    next_index: u64,
 }
 
 impl<S: Suite> Imt<S> {
@@ -49,7 +48,9 @@ impl<S: Suite> Imt<S> {
         if depth >= 1 && depth <= 63 {
             return Ok(());
         }
-        Err(Error::Merkle(format!("tree depth must be in 1..=63, got {depth}")))
+        Err(Error::Merkle(format!(
+            "tree depth must be in 1..=63, got {depth}"
+        )))
     }
 
     /// Parent node hash: `Hash([domain, left, right])`.
@@ -177,7 +178,6 @@ impl<S: Suite> Imt<S> {
             domain,
             depth,
             levels: vec![Vec::new(); depth + 1],
-            next_index: 0,
             zeros,
         })
     }
@@ -187,8 +187,8 @@ impl<S: Suite> Imt<S> {
         self.depth
     }
     /// Index the next appended leaf will occupy.
-    pub fn next_index(&self) -> u64 {
-        self.next_index
+    pub fn next_index(&self) -> usize {
+        self.leaves().len()
     }
     /// Current tree root, read in O(1).
     pub fn root(&self) -> S::Field {
@@ -202,7 +202,7 @@ impl<S: Suite> Imt<S> {
     /// leaf's index and the equivalent stateless frontier change.
     /// Hashing errors leave the tree unchanged.
     pub fn append(&mut self, leaf: S::Field) -> Result<(u64, Append<S::Field>), Error> {
-        let index = self.next_index;
+        let index = self.next_index() as u64;
         if index >= (1u64 << self.depth) {
             return Err(Error::Merkle("commitment tree is full".into()));
         }
@@ -247,7 +247,6 @@ impl<S: Suite> Imt<S> {
             }
             position >>= 1;
         }
-        self.next_index += 1;
         Ok((index, change))
     }
 
@@ -328,10 +327,19 @@ impl<S: Suite> InclusionPath<S> {
 
     /// Little-endian path bits: `true` means the current node is the left
     /// child; `false` means it is the right child.
-    pub fn circuit_indices(&self) -> Vec<bool> {
-        (0..self.depth())
+    /// Rejects invalid depths and leaf indices outside the path's tree.
+    pub fn circuit_indices(&self) -> Result<Vec<bool>, Error> {
+        let depth = self.depth();
+        Imt::<S>::validate_depth(depth)?;
+        if self.leaf_index >= (1u64 << depth) {
+            return Err(Error::Merkle(format!(
+                "circuit_indices: leaf_index {} overflows depth-{depth} tree",
+                self.leaf_index
+            )));
+        }
+        Ok((0..depth)
             .map(|i| (self.leaf_index >> i) & 1 == 0)
-            .collect()
+            .collect())
     }
 }
 
@@ -354,7 +362,33 @@ mod tests {
         let (index, append) = tree.append(leaf).unwrap();
         assert_eq!(index, 0);
         assert_eq!(path.root(leaf).unwrap(), append.new_root);
-        assert_eq!(path.circuit_indices(), vec![true; 8]);
+        assert_eq!(path.circuit_indices().unwrap(), vec![true; 8]);
+    }
+
+    #[test]
+    fn circuit_indices_validate_path_and_preserve_bit_order() {
+        let mut path = InclusionPath::<OutbeV1> {
+            domain: Fr::from(42u64),
+            leaf_index: 0,
+            siblings: Vec::new(),
+        };
+        for depth in [0, 64, 65] {
+            path.siblings = vec![Fr::zero(); depth];
+            assert!(path.circuit_indices().is_err());
+        }
+        for depth in [1, 32, 63] {
+            path.siblings = vec![Fr::zero(); depth];
+            path.leaf_index = (1u64 << depth) - 1;
+            assert_eq!(path.circuit_indices().unwrap(), vec![false; depth]);
+            path.leaf_index += 1;
+            assert!(path.circuit_indices().is_err());
+        }
+        path.siblings = vec![Fr::zero(); 4];
+        path.leaf_index = 0b0101;
+        assert_eq!(
+            path.circuit_indices().unwrap(),
+            vec![false, true, false, true]
+        );
     }
 
     #[test]
@@ -382,6 +416,7 @@ mod retained_tree_tests {
                 let mut frontier = vec![Fr::zero(); depth];
                 let mut saved_paths = Vec::new();
                 assert_eq!(tree.root(), zeros[depth]);
+                assert_eq!(tree.next_index(), 0);
                 assert!(tree.inclusion_path(0).is_err());
                 for i in 0..(1u64 << depth) {
                     let leaf = Fr::from(i + 7);
@@ -390,6 +425,7 @@ mod retained_tree_tests {
                             .unwrap();
                     let (index, change) = tree.append(leaf).unwrap();
                     assert_eq!(index, i);
+                    assert_eq!(tree.next_index(), (i + 1) as usize);
                     assert_eq!(change, expected);
                     assert_eq!(tree.root(), expected.new_root);
                     frontier[expected.changed_level] = expected.new_subtree;
@@ -410,7 +446,7 @@ mod retained_tree_tests {
                 assert!(tree.append(Fr::from(100u64)).is_err());
                 assert_eq!(tree.levels, levels);
                 assert_eq!(tree.root(), root);
-                assert_eq!(tree.next_index(), 1u64 << depth);
+                assert_eq!(tree.next_index(), 1usize << depth);
                 assert!(tree.inclusion_path(u64::MAX).is_err());
             }
         }
@@ -456,7 +492,7 @@ mod retained_tree_tests {
                 assert!(tree.append(Fr::from(index + 7)).is_err());
                 assert_eq!(tree.levels, levels);
                 assert_eq!(tree.root(), root);
-                assert_eq!(tree.next_index(), index);
+                assert_eq!(tree.next_index(), index as usize);
             }
             // Exactly depth hashes suffice for append, and none remain for reads.
             HASHES_LEFT.set(tree.depth());

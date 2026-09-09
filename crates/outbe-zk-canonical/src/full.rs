@@ -86,7 +86,7 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
             .try_into()
             .map_err(|_| Error::Merkle("siblings length".into()))?;
         let merkle_path_indices: [bool; 32] = path
-            .circuit_indices()
+            .circuit_indices()?
             .try_into()
             .map_err(|_| Error::Merkle("indices length".into()))?;
 
