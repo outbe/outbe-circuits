@@ -23,7 +23,7 @@ fn main(
     root: pub Field,
     nullifier: pub Field,
     asset: pub EthAddress,
-    spender: pub EthAddress,
+    owner: pub EthAddress,
     spend_amount: pub U256,
     change_commitment: pub Field,
     note_amount: U256,
@@ -42,8 +42,8 @@ fn main(
     assert(nullifier != 0);
     assert(note_spend_key != 0);
     asset.validate();
-    spender.validate();
-    assert(spender.to_field() != 0);
+    owner.validate();
+    assert(owner.to_field() != 0);
 
     let serial = note_sn(note_spend_key);
     let commitment = note_commitment(chain_id, serial, asset, note_amount);

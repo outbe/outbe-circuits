@@ -11,14 +11,14 @@ pub const PUBLIC_INPUT_COUNT: usize = 9;
 pub const PROOF_WORDS: usize = 250;
 pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;
 
-/// Public claim carried by `outbe.paynote@1.1.0` in circuit order.
+/// Public claim carried by `outbe.paynote@1.2.0` in circuit order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicInputs {
     pub chain_id: u64,
     pub root: [u8; 32],
     pub nullifier: [u8; 32],
     pub asset: Address,
-    pub spender: Address,
+    pub owner: Address,
     pub spend_amount: U256,
     pub change_commitment: [u8; 32],
 }
@@ -30,7 +30,7 @@ pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, Proof
         read_u64_be_padded(&words[0]).ok_or(ProofMarshalingError::NonCanonicalPublicInput(0))?;
     let asset = read_address_be_padded(&words[3])
         .ok_or(ProofMarshalingError::NonCanonicalPublicInput(3))?;
-    let spender = read_address_be_padded(&words[4])
+    let owner = read_address_be_padded(&words[4])
         .ok_or(ProofMarshalingError::NonCanonicalPublicInput(4))?;
     let mut limbs = [0u128; 3];
     for (index, limb) in limbs.iter_mut().enumerate() {
@@ -50,7 +50,7 @@ pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, Proof
         root: words[1],
         nullifier: words[2],
         asset,
-        spender,
+        owner,
         spend_amount,
         change_commitment: words[8],
     })
@@ -103,14 +103,14 @@ mod tests {
     fn valid_words() -> [[u8; 32]; PUBLIC_INPUT_COUNT] {
         let mut asset = [0u8; 32];
         asset[12..].fill(0x11);
-        let mut spender = [0u8; 32];
-        spender[12..].fill(0x22);
+        let mut owner = [0u8; 32];
+        owner[12..].fill(0x22);
         [
             u64_word(31_337),
             field_word(202),
             field_word(203),
             asset,
-            spender,
+            owner,
             u128_word((1u128 << 120) - 1),
             u128_word((1u128 << 120) - 1),
             u128_word((1u128 << 16) - 1),
@@ -127,7 +127,7 @@ mod tests {
         assert_eq!(decoded.root, words[1]);
         assert_eq!(decoded.nullifier, words[2]);
         assert_eq!(decoded.asset, Address::from([0x11; 20]));
-        assert_eq!(decoded.spender, Address::from([0x22; 20]));
+        assert_eq!(decoded.owner, Address::from([0x22; 20]));
         assert_eq!(decoded.spend_amount, U256::MAX);
         assert_eq!(decoded.change_commitment, words[8]);
         assert_eq!(proof.len(), COMBINED_LEN);

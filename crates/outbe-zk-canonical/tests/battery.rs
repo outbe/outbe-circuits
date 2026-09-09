@@ -561,14 +561,14 @@ fn paynote_descriptor_and_abi_layout() {
     use outbe_zk_canonical::u256;
 
     assert_eq!(pay::Paynote::LABEL, "outbe.paynote");
-    assert_eq!(pay::Paynote::VERSION, "1.1.0");
+    assert_eq!(pay::Paynote::VERSION, "1.2.0");
     assert!(!pay::Paynote::BYTECODE_B64.is_empty());
     assert_ne!(pay::Paynote::CIRCUIT_HASH, [0u8; 32]);
     assert!(!pay::Paynote::VK_BYTES.is_empty());
     assert_ne!(pay::Paynote::VK_HASH, [0u8; 32]);
 
     let asset = Fr::from_be_bytes_mod_order(&[0xa0; 20]);
-    let spender = Fr::from_be_bytes_mod_order(&[0x33; 20]);
+    let owner = Fr::from_be_bytes_mod_order(&[0x33; 20]);
     let spend_value = (U256::from(0xfu64) << 128) + U256::from((1u128 << 100) + 40);
     let note_value = spend_value + U256::from(60);
     let spend_amount = u256::to_limbs(spend_value);
@@ -578,7 +578,7 @@ fn paynote_descriptor_and_abi_layout() {
         root: Fr::from(2u64),
         nullifier: Fr::from(3u64),
         asset,
-        spender,
+        owner,
         spend_amount,
         change_commitment: Fr::from(4u64),
     };
@@ -592,11 +592,11 @@ fn paynote_descriptor_and_abi_layout() {
         flat[3], asset,
         "asset is one big-endian-packed field, not 20 byte leaves"
     );
-    assert_eq!(flat[4], spender, "spender likewise");
+    assert_eq!(flat[4], owner, "owner likewise");
     assert_eq!(
         &flat[5..8],
         spend_amount.map(Fr::from).as_slice(),
-        "u256 spend_amount follows spender as three little-endian 120-bit limbs"
+        "u256 spend_amount follows owner as three little-endian 120-bit limbs"
     );
     assert_eq!(flat[8], Fr::from(4u64), "change_commitment is last");
 

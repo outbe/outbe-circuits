@@ -3,7 +3,7 @@
 //! `test-circuits` runs every vendored Noir package through `nargo test`.
 //!
 //! `freeze-circuits` compiles the head Noir sources under
-//! `outbe-zk-canonical/noir/` and, for each circuit whose ACIR changed, mints a
+//! `outbe-zk-canonical/noir/` and, for each circuit whose ACIR or ABI changed, mints a
 //! new frozen version under `outbe-zk-canonical/resources/circuits/<module>/<version>/`
 //! and records it (status `active`) in `circuits/manifest.toml`. It is the only
 //! command that invokes `bb` or writes frozen artifacts.
@@ -14,7 +14,7 @@
 //! `circuit.vk`, since verification needs only the VK (a retired prover ships its
 //! own bytecode).
 //!
-//! Version bump: an unchanged ACIR is skipped; a changed ACIR with the same ABI
+//! Version bump: unchanged ACIR and ABI are skipped; changed ACIR with the same ABI
 //! is a patch bump; an ABI change requires `--abi-change` (minor) or `--semantic`
 //! (major) so the layout/DOMAIN decision is explicit. `cargo build` never runs
 //! this — it reads the frozen artifacts read-only.
@@ -144,10 +144,6 @@ fn freeze(flags: &[String]) {
                     .decode(cur_b64.trim())
                     .expect("active base64");
                 let cur_hash = keccak_hex(&cur_acir);
-                if cur_hash == new_hash {
-                    println!("  unchanged  {module} @ {ver}");
-                    continue;
-                }
                 // Semantic ABI compare (structural, key-order/format-insensitive)
                 // — a raw-string compare would false-positive on serializer
                 // differences (jq vs serde_json).
@@ -156,6 +152,10 @@ fn freeze(flags: &[String]) {
                         .ok()
                         .and_then(|s| serde_json::from_str(&s).ok());
                 let abi_differs = cur_abi.as_ref() != Some(&json["abi"]);
+                if cur_hash == new_hash && !abi_differs {
+                    println!("  unchanged  {module} @ {ver}");
+                    continue;
+                }
                 let nv = if abi_differs {
                     if semantic {
                         bump(ver, 0)

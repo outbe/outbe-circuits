@@ -74,10 +74,10 @@ commitment, and authorize and execute the payout.
 
 ## Paynote statement
 
-`outbe.paynote@1.1.0` proves the right to spend part or all of a private ERC20
+`outbe.paynote@1.2.0` proves the right to spend part or all of a private ERC20
 payment note committed under a public chain root, without revealing the note's
 total value. The note is a **bearer instrument**: spend authority is knowledge of
-`note_spend_key`. There is no owner identity, no spender allow-list, and no
+`note_spend_key`. There is no committed owner identity, no spender allow-list, and no
 action tag — the pool contract validates and routes those.
 
 | Input | Meaning |
@@ -86,7 +86,7 @@ action tag — the pool contract validates and routes those.
 | `root` | Accepted depth-32 note-commitment root. |
 | `nullifier` | Deterministic identifier consumed to prevent a second spend. |
 | `asset` | ERC20 token address the note is denominated in. |
-| `spender` | Address authorized to receive the payout (`msg.sender`). |
+| `owner` | Address authorized to receive the payout (`msg.sender`). |
 | `spend_amount` | Public 256-bit amount being spent from the private note. |
 | `change_commitment` | Commitment to unspent value, or zero for a full spend. |
 
@@ -96,7 +96,7 @@ limbs (`[u128; 3]`, little-endian radix $2^{120}$); both public and private
 limbs are constrained in-circuit to the canonical range $1..2^{256}-1$.
 The circuit checks:
 
-1. `asset` and `spender` are in-range (160-bit) addresses and nonzero.
+1. `asset` and `owner` are in-range (160-bit) addresses and nonzero.
 2. `0 < spend_amount <= note_amount`, with a nonzero spend key and nullifier.
 3. The spend key derives the note serial.
 4. The chain, serial, asset, and three hidden amount limbs derive a nonzero
@@ -122,8 +122,8 @@ Every Paynote preimage is tagged with `Poseidon2(PAYNOTE_DOMAIN, TAG)`, where
 The circuit cannot enforce any of these, and each is a real vulnerability if
 missed:
 
-- **Pay out to the public `spender`, or require `msg.sender == spender`.**
-  Binding `spender` into the public inputs stops *redirection*, but the proof is
+- **Pay out to the public `owner`, or require `msg.sender == owner`.**
+  Binding `owner` into the public inputs stops *redirection*, but the proof is
   freely *transferable* — anyone can submit it verbatim. A contract that pays
   `msg.sender` instead hands the entire `spend_amount` to the first front-runner.
 - Derive the deposit leaf from the asset and amount actually transferred:
@@ -209,9 +209,9 @@ versions are frozen. Minting a new version is a deliberate step:
 cargo xtask freeze-circuits          # the only step that runs nargo/bb
 ```
 
-For each circuit whose ACIR changed it mints a new frozen version:
+For each circuit whose ACIR or ABI changed it mints a new frozen version:
 
-- **unchanged ACIR** → skipped (the freeze detects true ACIR equivalence — even a
+- **unchanged ACIR and ABI** → skipped (the freeze detects true ACIR equivalence — even a
   source edit that the noir optimizer removes is a no-op here).
 - **changed ACIR, same ABI** → patch bump (e.g. `1.0.0 → 1.0.1`).
 - **ABI changed** → pass `--abi-change` (minor) or `--semantic` (major + a new
