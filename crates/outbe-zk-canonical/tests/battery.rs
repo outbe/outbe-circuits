@@ -583,6 +583,24 @@ fn emit_mint_descriptor_and_abi_layout() {
     );
 }
 
+#[test]
+fn l2_chain_zero_enables_full_proof() {
+    use outbe_zk_canonical::{l2_circuits, noir, L2CircuitVersion};
+
+    let full_proof = noir::CIRCUIT_REGISTRY
+        .iter()
+        .find(|entry| entry.label == "outbe.full_proof" && entry.version == "1.1.0")
+        .expect("the example's pinned full-proof release must remain registered");
+    assert_eq!(
+        l2_circuits(0),
+        &[L2CircuitVersion {
+            version: "1.1.0",
+            circuit_hash: full_proof.circuit_hash,
+        }]
+    );
+    assert!(l2_circuits(u64::MAX).is_empty());
+}
+
 /// Paynote's descriptor and ABI layout. Mirrors the Emit mint case: the two
 /// addresses cross as `EthAddress` newtypes, so each is a single packed field
 /// rather than 20 byte leaves.

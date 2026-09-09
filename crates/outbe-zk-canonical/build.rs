@@ -18,6 +18,8 @@
 //!     `CircuitId` impls (the prover-facing API; carries `BYTECODE_B64`).
 //!   * `pub const CIRCUIT_REGISTRY: &[crate::RegistryEntry]` over **every** entry
 //!     (all versions) — the verification view (VK only, no bytecode).
+//!   * `pub const L2_CIRCUITS_REGISTRY: &[crate::L2ChainEntry]` — explicitly
+//!     enabled circuit versions per L2 chain, declared in `[[l2_chain]]`.
 
 use std::collections::BTreeMap;
 use std::env;
@@ -165,9 +167,81 @@ fn main() {
     }
     registry.push_str("];\n");
     generated.push_str(&registry);
+    generated.push_str(&gen_l2_registry(&manifest, &loaded));
 
     fs::write(out_dir.join("noir_generated.rs"), generated)
         .expect("failed to write noir_generated.rs");
+}
+
+/// Resolve explicit L2 bindings, never the moving latest-active circuit head.
+fn gen_l2_registry(manifest: &toml::Value, loaded: &[Loaded]) -> String {
+    let chains = manifest.get("l2_chain").map_or(&[][..], |value| {
+        value
+            .as_array()
+            .expect("manifest: l2_chain must be an array of tables")
+            .as_slice()
+    });
+    let mut bindings = BTreeMap::new();
+    for chain in chains {
+        let chain_id = chain
+            .get("chain_id")
+            .and_then(|value| value.as_integer())
+            .and_then(|id| u64::try_from(id).ok())
+            .expect("l2_chain.chain_id must be a non-negative integer");
+        let circuits = chain
+            .get("circuits")
+            .and_then(|value| value.as_array())
+            .expect("l2_chain.circuits must be an array");
+        let mut versions = BTreeMap::new();
+        for circuit in circuits {
+            let version = circuit
+                .get("version")
+                .and_then(|value| value.as_str())
+                .filter(|version| !version.trim().is_empty())
+                .expect("l2_chain.circuits.version must be a non-empty string");
+            let module = circuit
+                .get("module")
+                .and_then(|value| value.as_str())
+                .expect("l2_chain.circuits.module must be a string");
+            let target = loaded
+                .iter()
+                .find(|entry| entry.module == module && entry.version == version)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "L2 chain {chain_id} version {version:?}: \
+                         unknown or revoked circuit {module}@{version}"
+                    )
+                });
+            assert!(
+                versions.insert(target.version.as_str(), target).is_none(),
+                "L2 chain {chain_id}: duplicate version {version:?}"
+            );
+        }
+        assert!(
+            bindings.insert(chain_id, versions).is_none(),
+            "duplicate L2 chain {chain_id}"
+        );
+    }
+
+    let mut generated = String::from(
+        "/// Enabled circuit versions per L2 chain, sorted by chain ID.\n\
+         /// Declared in `[[l2_chain]]` in `circuits/manifest.toml`.\n\
+         pub const L2_CIRCUITS_REGISTRY: &[crate::L2ChainEntry] = &[\n",
+    );
+    for (chain_id, versions) in bindings {
+        generated.push_str(&format!(
+            "    crate::L2ChainEntry {{ chain_id: {chain_id}, circuits: &[\n"
+        ));
+        for (version, target) in versions {
+            generated.push_str(&format!(
+                "        crate::L2CircuitVersion {{ version: {version:?}, circuit_hash: {} }},\n",
+                hex_lit(&target.circuit_hash)
+            ));
+        }
+        generated.push_str("    ] },\n");
+    }
+    generated.push_str("];\n");
+    generated
 }
 
 /// keccak256 (Ethereum variant), used for both `circuit_hash` and `vk_hash`.

@@ -12,6 +12,19 @@
 # changes the wire format gets a new proof_system + re-frozen circuits.
 proof_system = "bb-keccak-v1"
 
+# L2 enablement is explicit and separate from circuit releases. Add one
+# [[l2_chain]] per chain, with any number of enabled circuit versions.
+# `module` + `version` pin a frozen circuit. Hashes are derived by build.rs,
+# not copied here. Active and deprecated
+# circuits can be bound; remove bindings before revoking their target.
+# Chain 0 is an example, not a production deployment binding.
+
+[[l2_chain]]
+chain_id = 0
+circuits = [
+  { module = "full_proof", version = "1.1.0" },
+]
+
 [[circuit]]
 module = "ownership_proof"
 label = "outbe.ownership"
