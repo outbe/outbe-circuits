@@ -220,6 +220,7 @@ impl<S: Suite> Imt<S> {
     }
 
     /// Root after exactly `leaf_count` appends, including the empty prefix.
+    /// For testing purposes.
     pub fn root_at(&self, leaf_count: usize) -> Result<S::Field, Error> {
         if leaf_count > self.leaves.len() {
             return Err(Error::Merkle("leaf count exceeds retained history".into()));
