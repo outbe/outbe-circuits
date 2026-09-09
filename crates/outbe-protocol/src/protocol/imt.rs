@@ -36,16 +36,17 @@ pub struct Append<F> {
 pub struct Imt<S: Suite> {
     domain: S::Field,
     depth: usize,
-    /// Zero-subtree ladder, `depth + 1` entries.
-    zeros: Vec<S::Field>,
+    /// Empty subtree roots by height, `depth + 1` entries.
+    /// `empty_roots[0]` is the empty leaf.
+    empty_roots: Vec<S::Field>,
     /// Occupied nodes, bottom-up: leaves at level 0, root at level `depth`.
-    /// Missing siblings use `zeros[level]` instead of occupying storage.
+    /// Missing siblings use `empty_roots[level]` instead of occupying storage.
     levels: Vec<Vec<S::Field>>,
 }
 
 impl<S: Suite> Imt<S> {
     fn validate_depth(depth: usize) -> Result<(), Error> {
-        if depth >= 1 && depth <= 63 {
+        if (1..=63).contains(&depth) {
             return Ok(());
         }
         Err(Error::Merkle(format!(
@@ -58,22 +59,26 @@ impl<S: Suite> Imt<S> {
         S::Hash::hash(&[domain, left, right])
     }
 
-    /// Build the zero-subtree ladder: `zeros[0] = empty_leaf`,
-    /// `zeros[i] = Hash([domain, zeros[i-1], zeros[i-1]])`. `zeros[level]` is
-    /// the root of an all-empty subtree of height `level`. Has `depth + 1`
-    /// entries.
-    pub fn zero_ladder(
+    /// Build `depth + 1` empty subtree roots: `empty_roots[h]` is the root
+    /// of an empty subtree of height `h`; `empty_roots[0] = empty_leaf`.
+    /// Each higher root hashes two copies of the preceding root:
+    /// `empty_roots[h] = Hash([domain, empty_roots[h-1], empty_roots[h-1]])`.
+    pub fn empty_roots(
         domain: S::Field,
         empty_leaf: S::Field,
         depth: usize,
     ) -> Result<Vec<S::Field>, Error> {
         Self::validate_depth(depth)?;
-        let mut zeros = Vec::with_capacity(depth + 1);
-        zeros.push(empty_leaf);
+        let mut empty_roots = Vec::with_capacity(depth + 1);
+        empty_roots.push(empty_leaf);
         for level in 1..=depth {
-            zeros.push(Self::node_hash(domain, zeros[level - 1], zeros[level - 1])?);
+            empty_roots.push(Self::node_hash(
+                domain,
+                empty_roots[level - 1],
+                empty_roots[level - 1],
+            )?);
         }
-        Ok(zeros)
+        Ok(empty_roots)
     }
 
     /// Root of an empty depth-`depth` tree.
@@ -82,25 +87,25 @@ impl<S: Suite> Imt<S> {
         empty_leaf: S::Field,
         depth: usize,
     ) -> Result<S::Field, Error> {
-        Ok(Self::zero_ladder(domain, empty_leaf, depth)?[depth])
+        Ok(Self::empty_roots(domain, empty_leaf, depth)?[depth])
     }
 
     /// Stateless frontier append (the `0x0204` precompile kernel): append `leaf`
-    /// at `next_index` to the given `frontier` + `zeros` ladder, returning the
-    /// single changed slot and the new root.
+    /// at `next_index` using the given `frontier` and `empty_roots`, returning
+    /// the single changed slot and the new root.
     pub fn frontier_append(
         domain: S::Field,
         frontier: &[S::Field],
         next_index: u64,
         leaf: S::Field,
-        zeros: &[S::Field],
+        empty_roots: &[S::Field],
     ) -> Result<Append<S::Field>, Error> {
         let depth = frontier.len();
         Self::validate_depth(depth)?;
-        if zeros.len() != depth + 1 {
+        if empty_roots.len() != depth + 1 {
             return Err(Error::Merkle(format!(
-                "frontier_append: zeros.len() ({}) must be frontier.len()+1 ({})",
-                zeros.len(),
+                "frontier_append: empty_roots.len() ({}) must be frontier.len()+1 ({})",
+                empty_roots.len(),
                 depth + 1
             )));
         }
@@ -116,11 +121,11 @@ impl<S: Suite> Imt<S> {
         for level in 0..depth {
             if index & 1 == 0 {
                 // Left child: the accumulated subtree becomes the new frontier
-                // entry the first time we hit a zero bit; pair with the zeros.
+                // entry the first time we hit a zero bit; pair with the empty subtree.
                 if changed.is_none() {
                     changed = Some((level, current));
                 }
-                current = Self::node_hash(domain, current, zeros[level])?;
+                current = Self::node_hash(domain, current, empty_roots[level])?;
             } else {
                 // Right child: merge with the waiting left sibling.
                 current = Self::node_hash(domain, frontier[level], current)?;
@@ -173,12 +178,12 @@ impl<S: Suite> Imt<S> {
     /// A new tree with a caller-supplied empty leaf (for example, a chain-tagged
     /// PayNote or Emit empty leaf). Supports depths 1 through 63.
     pub fn new(domain: S::Field, empty_leaf: S::Field, depth: usize) -> Result<Self, Error> {
-        let zeros = Self::zero_ladder(domain, empty_leaf, depth)?;
+        let empty_roots = Self::empty_roots(domain, empty_leaf, depth)?;
         Ok(Self {
             domain,
             depth,
             levels: vec![Vec::new(); depth + 1],
-            zeros,
+            empty_roots,
         })
     }
 
@@ -195,7 +200,7 @@ impl<S: Suite> Imt<S> {
         self.levels[self.depth]
             .first()
             .copied()
-            .unwrap_or(self.zeros[self.depth])
+            .unwrap_or(self.empty_roots[self.depth])
     }
 
     /// Append `leaf`, updating only its ancestors in O(depth). Returns the
@@ -212,7 +217,7 @@ impl<S: Suite> Imt<S> {
         updates.push(current);
         for level in 0..self.depth {
             current = if position & 1 == 0 {
-                Self::node_hash(self.domain, current, self.zeros[level])?
+                Self::node_hash(self.domain, current, self.empty_roots[level])?
             } else {
                 Self::node_hash(self.domain, self.levels[level][position - 1], current)?
             };
@@ -269,7 +274,7 @@ impl<S: Suite> Imt<S> {
                 self.levels[level]
                     .get(index ^ 1)
                     .copied()
-                    .unwrap_or(self.zeros[level]),
+                    .unwrap_or(self.empty_roots[level]),
             );
             index >>= 1;
         }
@@ -287,7 +292,7 @@ impl<S: Suite> Imt<S> {
         InclusionPath {
             domain: self.domain,
             leaf_index,
-            siblings: self.zeros[..self.depth].to_vec(),
+            siblings: self.empty_roots[..self.depth].to_vec(),
         }
     }
 }
@@ -412,16 +417,16 @@ mod retained_tree_tests {
             for empty_leaf in [Fr::zero(), Fr::from(99u64)] {
                 let domain = Fr::from(42u64);
                 let mut tree = Imt::<OutbeV1>::new(domain, empty_leaf, depth).unwrap();
-                let zeros = Imt::<OutbeV1>::zero_ladder(domain, empty_leaf, depth).unwrap();
+                let empty_roots = Imt::<OutbeV1>::empty_roots(domain, empty_leaf, depth).unwrap();
                 let mut frontier = vec![Fr::zero(); depth];
                 let mut saved_paths = Vec::new();
-                assert_eq!(tree.root(), zeros[depth]);
+                assert_eq!(tree.root(), empty_roots[depth]);
                 assert_eq!(tree.next_index(), 0);
                 assert!(tree.inclusion_path(0).is_err());
                 for i in 0..(1u64 << depth) {
                     let leaf = Fr::from(i + 7);
                     let expected =
-                        Imt::<OutbeV1>::frontier_append(domain, &frontier, i, leaf, &zeros)
+                        Imt::<OutbeV1>::frontier_append(domain, &frontier, i, leaf, &empty_roots)
                             .unwrap();
                     let (index, change) = tree.append(leaf).unwrap();
                     assert_eq!(index, i);
