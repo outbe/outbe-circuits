@@ -46,12 +46,10 @@ pub struct Imt<S: Suite> {
 
 impl<S: Suite> Imt<S> {
     fn validate_depth(depth: usize) -> Result<(), Error> {
-        if !(1..=63).contains(&depth) {
-            return Err(Error::Merkle(format!(
-                "tree depth must be in 1..=63, got {depth}"
-            )));
+        if depth >= 1 && depth <= 63 {
+            return Ok(());
         }
-        Ok(())
+        Err(Error::Merkle(format!("tree depth must be in 1..=63, got {depth}")))
     }
 
     /// Parent node hash: `Hash([domain, left, right])`.
