@@ -19,13 +19,13 @@
 
 use alloy_primitives::U256;
 use outbe_protocol::{
-    codec::u256_limbs_be,
+    codec::{field_from_be_bytes, u256_limbs_be},
     error::Error,
     protocol::{imt::Imt, shielded_pool::ShieldedPool},
-    OutbeV1,
+    OutbeV1, Suite,
 };
 
-pub use crate::field::{address_field, field_from_be_bytes, field_to_be_bytes, Field};
+pub type Field = <OutbeV1 as Suite>::Field;
 
 type Pool = ShieldedPool<OutbeV1>;
 type Tree = Imt<OutbeV1>;
@@ -64,7 +64,10 @@ pub fn tag_empty() -> Result<Field, Error> {
 
 /// `note_sn = P(EMIT_NOTE_SN, [owner, spend_key])`.
 pub fn note_sn(note_owner: [u8; 20], note_spend_key: Field) -> Result<Field, Error> {
-    Pool::hash_multi(tag_note_sn()?, &[address_field(note_owner), note_spend_key])
+    Pool::hash_multi(
+        tag_note_sn()?,
+        &[field_from_be_bytes(&note_owner), note_spend_key],
+    )
 }
 
 /// `C = P(EMIT_COMMITMENT, [chain_id, note_sn, amount_limb_0,

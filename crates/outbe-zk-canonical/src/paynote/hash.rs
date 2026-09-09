@@ -24,13 +24,13 @@
 
 use alloy_primitives::U256;
 use outbe_protocol::{
-    codec::u256_limbs_be,
+    codec::{field_from_be_bytes, u256_limbs_be},
     error::Error,
     protocol::{imt::Imt, shielded_pool::ShieldedPool},
-    OutbeV1,
+    OutbeV1, Suite,
 };
 
-pub use crate::field::{address_field, field_from_be_bytes, field_to_be_bytes, Field};
+pub type Field = <OutbeV1 as Suite>::Field;
 
 type Pool = ShieldedPool<OutbeV1>;
 type Tree = Imt<OutbeV1>;
@@ -70,7 +70,7 @@ pub fn note_commitment(
         &[
             Field::from(chain_id),
             note_sn,
-            address_field(asset),
+            field_from_be_bytes(&asset),
             Field::from(limbs[0]),
             Field::from(limbs[1]),
             Field::from(limbs[2]),

@@ -1,6 +1,7 @@
 //! Existing frozen Emit vector, now checked at the shared formula source.
 
 use alloy_primitives::{B256, U256};
+use outbe_protocol::{codec::field_from_be_bytes_canonical, Codec, OutbeV1};
 use outbe_zk_canonical::{
     emit_mint::hash::{note_sn as derive_note_sn, nullifier as derive_nullifier, *},
     INCLUSION_DEPTH,
@@ -61,7 +62,10 @@ fn formulas_match_pinned_circuit_vector() {
     ];
     for (actual, expected) in cases {
         assert_eq!(
-            format!("{:#x}", B256::new(field_to_be_bytes(actual))),
+            format!(
+                "{:#x}",
+                B256::from_slice(&OutbeV1::field_to_be_bytes(&actual))
+            ),
             expected
         );
     }
@@ -71,9 +75,13 @@ fn formulas_match_pinned_circuit_vector() {
 fn field_words_remain_canonical() {
     use ark_ff::{BigInteger, PrimeField};
     for value in [Field::from(0u64), Field::from(1u64), -Field::from(1u64)] {
-        assert_eq!(field_from_be_bytes(&field_to_be_bytes(value)), Some(value));
+        assert_eq!(
+            field_from_be_bytes_canonical::<Field>(&OutbeV1::field_to_be_bytes(&value), "field")
+                .unwrap(),
+            value
+        );
     }
     let modulus: [u8; 32] = Field::MODULUS.to_bytes_be().try_into().unwrap();
-    assert!(field_from_be_bytes(&modulus).is_none());
-    assert!(field_from_be_bytes(&[0xff; 32]).is_none());
+    assert!(field_from_be_bytes_canonical::<Field>(&modulus, "field").is_err());
+    assert!(field_from_be_bytes_canonical::<Field>(&[0xff; 32], "field").is_err());
 }

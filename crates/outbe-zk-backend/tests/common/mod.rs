@@ -11,7 +11,9 @@ type Tree = Imt<OutbeV1>;
 pub type Fr = <OutbeV1 as Suite>::Field;
 pub type AuthPath = [Fr; INCLUSION_DEPTH];
 
-pub use outbe_zk_canonical::field::address_field as address;
+pub fn address(bytes: [u8; 20]) -> Fr {
+    outbe_protocol::codec::field_from_be_bytes(&bytes)
+}
 
 /// Raw fields let negative tests construct out-of-range circuit witnesses.
 pub fn hash_tagged(domain: u128, base: Fr, values: &[Fr]) -> Fr {
