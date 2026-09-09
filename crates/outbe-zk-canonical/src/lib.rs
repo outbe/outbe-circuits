@@ -26,6 +26,7 @@
 
 pub mod aggregation;
 pub mod emit_mint;
+pub mod field;
 pub mod full;
 pub mod full_proof;
 pub mod ownership;

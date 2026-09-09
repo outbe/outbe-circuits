@@ -49,8 +49,8 @@ pub struct Poseidon2;
 impl FieldHasher<ark_bn254::Fr> for Poseidon2 {
     fn hash(inputs: &[ark_bn254::Fr]) -> Result<ark_bn254::Fr, Error> {
         use outbe_poseidon::PoseidonHasher as _;
-        Ok(outbe_poseidon::Poseidon2::new()
+        outbe_poseidon::Poseidon2::new()
             .hash(inputs)
-            .expect("poseidon2 sponge is infallible"))
+            .map_err(|error| Error::Hash(error.to_string()))
     }
 }
