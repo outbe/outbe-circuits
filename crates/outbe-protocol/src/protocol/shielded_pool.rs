@@ -4,17 +4,37 @@
 
 use crate::{error::Error, primitive::hash::FieldHasher, Suite};
 
-// Big-endian ASCII, matching outbe-circuit-core/src/tags.nr. Each value
-// fits in u128 (at most 10 ASCII bytes), without field-modulus reduction.
-pub const TAG_NOTE_SN: u128 = 0x4e4f54455f534e;
-pub const TAG_COMMITMENT: u128 = 0x434f4d4d49544d454e54;
-pub const TAG_NULLIFIER: u128 = 0x4e554c4c4946494552;
-pub const TAG_CHANGE_KEY: u128 = 0x4348414e47455f4b4559;
-pub const TAG_EMPTY: u128 = 0x454d505459;
+// Base purpose tags, shared across circuits and folded with the domain above.
+const TAG_NOTE_SN: &str = "NOTE_SN";
+const TAG_COMMITMENT: &str = "COMMITMENT";
+const TAG_NULLIFIER: &str = "NULLIFIER";
+const TAG_CHANGE_KEY: &str = "CHANGE_KEY";
+const TAG_EMPTY: &str = "EMPTY";
+
 
 /// Fold a base purpose tag with its owning domain.
-pub fn tag<S: Suite>(domain: S::Field, base: u128) -> Result<S::Field, Error> {
-    S::Hash::hash(&[domain, S::Field::from(base)])
+pub fn tag<S: Suite>(domain: S::Field, base: S::Field) -> Result<S::Field, Error> {
+    S::Hash::hash(&[domain, base])
+}
+
+pub fn tag_note_sn<S: Suite>() -> S::Field {
+    S::ascii_field(TAG_NOTE_SN)
+}
+
+pub fn tag_commitment<S: Suite>() -> S::Field {
+    S::ascii_field(TAG_COMMITMENT)
+}
+
+pub fn tag_nullifier<S: Suite>() -> S::Field {
+    S::ascii_field(TAG_NULLIFIER)
+}
+
+pub fn tag_change_key<S: Suite>() -> S::Field {
+    S::ascii_field(TAG_CHANGE_KEY)
+}
+
+pub fn tag_empty<S: Suite>() -> S::Field {
+    S::ascii_field(TAG_EMPTY)
 }
 
 /// Noir's hash_multi: absorb the folded tag, tuple length, then each value.
