@@ -134,5 +134,4 @@ pub trait Suite: 'static {
     fn ascii_field(value: &str) -> Self::Field {
         Self::Field::from_be_bytes_mod_order(value.as_bytes())
     }
-
 }

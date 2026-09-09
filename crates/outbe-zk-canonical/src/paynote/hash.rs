@@ -28,9 +28,7 @@ use outbe_protocol::{
     error::Error,
     protocol::{
         imt::Imt,
-        shielded_pool::{
-            self, hash_multi, TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
-        },
+        shielded_pool::{self, hash_multi},
     },
     OutbeV1,
 };
@@ -45,7 +43,7 @@ pub fn paynote_domain() -> Field {
     Field::from(PAYNOTE_DOMAIN)
 }
 
-fn tag(base: u128) -> Result<Field, Error> {
+fn tag(base: Field) -> Result<Field, Error> {
     shielded_pool::tag::<OutbeV1>(paynote_domain(), base)
 }
 
@@ -53,7 +51,10 @@ fn tag(base: u128) -> Result<Field, Error> {
 /// key. Chain-, asset- and amount-independent, so the pool can accept one at
 /// deposit time and build the leaf around it.
 pub fn note_sn(note_spend_key: Field) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(tag(TAG_NOTE_SN)?, &[note_spend_key])
+    hash_multi::<OutbeV1>(
+        tag(shielded_pool::tag_note_sn::<OutbeV1>())?,
+        &[note_spend_key],
+    )
 }
 
 /// `C = P(COMMITMENT, [chain_id, note_sn, asset, amount_limb_0,
@@ -68,7 +69,7 @@ pub fn note_commitment(
 ) -> Result<Field, Error> {
     let limbs = u256_limbs_be(&note_amount.to_be_bytes::<32>());
     hash_multi::<OutbeV1>(
-        tag(TAG_COMMITMENT)?,
+        tag(shielded_pool::tag_commitment::<OutbeV1>())?,
         &[
             Field::from(chain_id),
             note_sn,
@@ -85,20 +86,29 @@ pub fn note_commitment(
 /// nullifier. Two leaves sharing a serial carry different amounts, hence
 /// different commitments and different nullifiers, and both stay spendable.
 pub fn note_nullifier(note_commitment: Field, note_spend_key: Field) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(tag(TAG_NULLIFIER)?, &[note_commitment, note_spend_key])
+    hash_multi::<OutbeV1>(
+        tag(shielded_pool::tag_nullifier::<OutbeV1>())?,
+        &[note_commitment, note_spend_key],
+    )
 }
 
 /// `next_key = P(CHANGE_KEY, [spend_key, nullifier])` — the circuit-ratcheted
 /// successor key of a partial spend.
 pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(tag(TAG_CHANGE_KEY)?, &[note_spend_key, note_nullifier])
+    hash_multi::<OutbeV1>(
+        tag(shielded_pool::tag_change_key::<OutbeV1>())?,
+        &[note_spend_key, note_nullifier],
+    )
 }
 
 /// Chain-specific empty leaf: `P(EMPTY, [chain_id])`. Deliberately not zero —
 /// the circuit's `commitment != 0` assert is what blocks spending a
 /// zero-padded slot, and this keeps empty slots distinguishable per chain.
 pub fn empty_leaf(chain_id: u64) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(tag(TAG_EMPTY)?, &[Field::from(chain_id)])
+    hash_multi::<OutbeV1>(
+        tag(shielded_pool::tag_empty::<OutbeV1>())?,
+        &[Field::from(chain_id)],
+    )
 }
 
 /// Tagged Merkle inner node: `H3(PAYNOTE_DOMAIN, left, right)`.

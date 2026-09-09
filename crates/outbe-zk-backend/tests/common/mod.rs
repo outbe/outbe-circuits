@@ -3,7 +3,7 @@
 use outbe_protocol::protocol::zk::{Circuit, CircuitId, ProofGenerator, ProofVerifier};
 use outbe_protocol::protocol::{
     imt::Imt,
-    shielded_pool::{self, TAG_EMPTY},
+    shielded_pool::{self, tag_empty},
 };
 use outbe_protocol::{OutbeV1, Suite};
 use outbe_zk_backend::barretenberg::{Barretenberg, Proof};
@@ -15,13 +15,13 @@ pub type AuthPath = [Fr; INCLUSION_DEPTH];
 pub use outbe_zk_canonical::field::address_field as address;
 
 /// Raw fields let negative tests construct out-of-range circuit witnesses.
-pub fn hash_tagged(domain: u128, base: u128, values: &[Fr]) -> Fr {
+pub fn hash_tagged(domain: u128, base: Fr, values: &[Fr]) -> Fr {
     let tag = shielded_pool::tag::<OutbeV1>(Fr::from(domain), base).unwrap();
     shielded_pool::hash_multi::<OutbeV1>(tag, values).unwrap()
 }
 
 pub fn single_leaf_path(domain: u128, chain_id: u64) -> AuthPath {
-    let empty = hash_tagged(domain, TAG_EMPTY, &[Fr::from(chain_id)]);
+    let empty = hash_tagged(domain, tag_empty::<OutbeV1>(), &[Fr::from(chain_id)]);
     let zeros = Imt::<OutbeV1>::empty_roots(Fr::from(domain), empty, INCLUSION_DEPTH).unwrap();
     zeros[..INCLUSION_DEPTH].try_into().unwrap()
 }

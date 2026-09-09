@@ -23,9 +23,7 @@ use outbe_protocol::{
     error::Error,
     protocol::{
         imt::Imt,
-        shielded_pool::{
-            self, hash_multi, TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
-        },
+        shielded_pool::{self, hash_multi},
     },
     OutbeV1,
 };
@@ -40,28 +38,28 @@ pub fn emit_domain() -> Field {
     Field::from(EMIT_DOMAIN)
 }
 
-fn tag(base: u128) -> Result<Field, Error> {
+fn tag(base: Field) -> Result<Field, Error> {
     shielded_pool::tag::<OutbeV1>(emit_domain(), base)
 }
 
 pub fn tag_note_sn() -> Result<Field, Error> {
-    tag(TAG_NOTE_SN)
+    tag(shielded_pool::tag_note_sn::<OutbeV1>())
 }
 
 pub fn tag_commitment() -> Result<Field, Error> {
-    tag(TAG_COMMITMENT)
+    tag(shielded_pool::tag_commitment::<OutbeV1>())
 }
 
 pub fn tag_nullifier() -> Result<Field, Error> {
-    tag(TAG_NULLIFIER)
+    tag(shielded_pool::tag_nullifier::<OutbeV1>())
 }
 
 pub fn tag_change_key() -> Result<Field, Error> {
-    tag(TAG_CHANGE_KEY)
+    tag(shielded_pool::tag_change_key::<OutbeV1>())
 }
 
 pub fn tag_empty() -> Result<Field, Error> {
-    tag(TAG_EMPTY)
+    tag(shielded_pool::tag_empty::<OutbeV1>())
 }
 
 /// `note_sn = P(EMIT_NOTE_SN, [owner, spend_key])`.
