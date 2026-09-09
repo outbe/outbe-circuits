@@ -14,8 +14,6 @@
 //! directly. The depth and domain are caller parameters (the canonical
 //! commitment tree fixes both).
 
-use ark_ff::Zero;
-
 use crate::error::Error;
 use crate::primitive::hash::FieldHasher;
 use crate::suite::Suite;
@@ -33,17 +31,17 @@ pub struct Append<F> {
 }
 
 /// A binary, append-only incremental Merkle tree over `S`'s field + hash
-/// with a frontier for O(depth) appends and retained leaves for membership paths.
+/// with stored node levels for O(depth) appends and membership paths,
+/// O(1) root reads, and O(leaves + depth) storage.
 pub struct Imt<S: Suite> {
     domain: S::Field,
     depth: usize,
     /// Zero-subtree ladder, `depth + 1` entries.
     zeros: Vec<S::Field>,
-    /// Filled left-subtree hash per level, `depth` entries.
-    frontier: Vec<S::Field>,
-    leaves: Vec<S::Field>,
+    /// Occupied nodes, bottom-up: leaves at level 0, root at level `depth`.
+    /// Missing siblings use `zeros[level]` instead of occupying storage.
+    levels: Vec<Vec<S::Field>>,
     next_index: u64,
-    root: S::Field,
 }
 
 impl<S: Suite> Imt<S> {
@@ -177,15 +175,12 @@ impl<S: Suite> Imt<S> {
     /// PayNote or Emit empty leaf). Supports depths 1 through 63.
     pub fn new(domain: S::Field, empty_leaf: S::Field, depth: usize) -> Result<Self, Error> {
         let zeros = Self::zero_ladder(domain, empty_leaf, depth)?;
-        let root = zeros[depth];
         Ok(Self {
             domain,
             depth,
-            frontier: vec![S::Field::zero(); depth],
-            leaves: Vec::new(),
+            levels: vec![Vec::new(); depth + 1],
             next_index: 0,
             zeros,
-            root,
         })
     }
 
@@ -197,79 +192,88 @@ impl<S: Suite> Imt<S> {
     pub fn next_index(&self) -> u64 {
         self.next_index
     }
-    /// Current tree root.
+    /// Current tree root, read in O(1).
     pub fn root(&self) -> S::Field {
-        self.root
+        self.levels[self.depth]
+            .first()
+            .copied()
+            .unwrap_or(self.zeros[self.depth])
     }
 
-    /// Append `leaf` at the next index, updating the frontier + root. Returns
-    /// the leaf's index and the frontier change.
+    /// Append `leaf`, updating only its ancestors in O(depth). Returns the
+    /// leaf's index and the equivalent stateless frontier change.
+    /// Hashing errors leave the tree unchanged.
     pub fn append(&mut self, leaf: S::Field) -> Result<(u64, Append<S::Field>), Error> {
         let index = self.next_index;
-        let ins = Self::frontier_append(self.domain, &self.frontier, index, leaf, &self.zeros)?;
-        self.leaves.push(leaf);
-        self.frontier[ins.changed_level] = ins.new_subtree;
-        self.root = ins.new_root;
+        if index >= (1u64 << self.depth) {
+            return Err(Error::Merkle("commitment tree is full".into()));
+        }
+        let mut position = self.leaves().len();
+        let mut current = leaf;
+        let mut updates = Vec::with_capacity(self.depth + 1);
+        updates.push(current);
+        for level in 0..self.depth {
+            current = if position & 1 == 0 {
+                Self::node_hash(self.domain, current, self.zeros[level])?
+            } else {
+                Self::node_hash(self.domain, self.levels[level][position - 1], current)?
+            };
+            updates.push(current);
+            position >>= 1;
+        }
+
+        // Match frontier_append's single-slot result without retaining a frontier.
+        let changed_level = index.trailing_ones() as usize;
+        let change = if changed_level == self.depth {
+            // A full tree leaves the top frontier slot (its left subtree) unchanged.
+            Append {
+                changed_level: self.depth - 1,
+                new_subtree: self.levels[self.depth - 1][0],
+                new_root: current,
+            }
+        } else {
+            Append {
+                changed_level,
+                new_subtree: updates[changed_level],
+                new_root: current,
+            }
+        };
+
+        // All fallible hashing is complete before any stored nodes change.
+        position = self.leaves().len();
+        for (nodes, value) in self.levels.iter_mut().zip(updates) {
+            if position == nodes.len() {
+                nodes.push(value);
+            } else {
+                nodes[position] = value;
+            }
+            position >>= 1;
+        }
         self.next_index += 1;
-        Ok((index, ins))
+        Ok((index, change))
     }
 
-    /// Leaves in append order, retained in O(leaves + depth) storage.
+    /// Leaves in append order.
     pub fn leaves(&self) -> &[S::Field] {
-        &self.leaves
-    }
-
-    /// Root after exactly `leaf_count` appends, including the empty prefix.
-    /// For testing purposes.
-    pub fn root_at(&self, leaf_count: usize) -> Result<S::Field, Error> {
-        if leaf_count > self.leaves.len() {
-            return Err(Error::Merkle("leaf count exceeds retained history".into()));
-        }
-        if leaf_count == self.leaves.len() {
-            return Ok(self.root);
-        }
-        if leaf_count == 0 {
-            return Ok(self.zeros[self.depth]);
-        }
-        let index = u64::try_from(leaf_count - 1)
-            .map_err(|_| Error::Merkle("leaf index exceeds u64".into()))?;
-        self.inclusion_path_at(index, leaf_count)?
-            .root(self.leaves[leaf_count - 1])
+        &self.levels[0]
     }
 
     /// Membership path for an appended leaf under the current root.
+    /// Reads O(depth) stored siblings without hashing.
     pub fn inclusion_path(&self, leaf_index: u64) -> Result<InclusionPath<S>, Error> {
-        self.inclusion_path_at(leaf_index, self.leaves.len())
-    }
-
-    /// Membership path under the root after exactly `leaf_count` appends.
-    /// Rejects leaves that did not yet exist in that prefix.
-    pub fn inclusion_path_at(
-        &self,
-        leaf_index: u64,
-        leaf_count: usize,
-    ) -> Result<InclusionPath<S>, Error> {
         let mut index = usize::try_from(leaf_index)
             .map_err(|_| Error::Merkle("leaf index exceeds usize".into()))?;
-        if leaf_count > self.leaves.len() || index >= leaf_count {
-            return Err(Error::Merkle(
-                "leaf index or count outside retained history".into(),
-            ));
+        if index >= self.leaves().len() {
+            return Err(Error::Merkle("leaf index outside tree".into()));
         }
-        // ponytail: O(leaves) work and temporary memory per path; cache levels if pool size warrants it.
-        let mut nodes = self.leaves[..leaf_count].to_vec();
         let mut siblings = Vec::with_capacity(self.depth);
         for level in 0..self.depth {
-            if nodes.len() % 2 == 1 {
-                nodes.push(self.zeros[level]);
-            }
-            siblings.push(nodes[index ^ 1]);
-            nodes = nodes
-                .as_chunks::<2>()
-                .0
-                .iter()
-                .map(|pair| Self::node_hash(self.domain, pair[0], pair[1]))
-                .collect::<Result<Vec<_>, _>>()?;
+            siblings.push(
+                self.levels[level]
+                    .get(index ^ 1)
+                    .copied()
+                    .unwrap_or(self.zeros[level]),
+            );
             index >>= 1;
         }
         Ok(InclusionPath {
@@ -337,6 +341,7 @@ impl<S: Suite> InclusionPath<S> {
 mod tests {
     use super::*;
     use crate::OutbeV1;
+    use ark_ff::Zero;
 
     type Fr = <OutbeV1 as Suite>::Field;
 
@@ -366,42 +371,103 @@ mod tests {
 mod retained_tree_tests {
     use super::*;
     use crate::OutbeV1;
+    use ark_ff::Zero;
     type Fr = <OutbeV1 as Suite>::Field;
 
     #[test]
-    fn retained_paths_match_frontier_roots_and_history() {
-        for empty_leaf in [Fr::zero(), Fr::from(99u64)] {
-            let mut tree = Imt::<OutbeV1>::new(Fr::from(42u64), empty_leaf, 4).unwrap();
-            let empty_root = tree.root();
-            let mut roots = vec![empty_root];
-            assert!(tree.inclusion_path(0).is_err());
-            for i in 0..16u64 {
-                let (index, change) = tree.append(Fr::from(i + 7)).unwrap();
-                assert_eq!(index, i);
-                assert_eq!(change.new_root, tree.root());
-                roots.push(tree.root());
-                for j in 0..=i {
-                    let path = tree.inclusion_path(j).unwrap();
-                    assert_eq!(path.root(tree.leaves()[j as usize]).unwrap(), tree.root());
+    fn stored_paths_and_appends_match_frontier() {
+        for depth in [1, 4] {
+            for empty_leaf in [Fr::zero(), Fr::from(99u64)] {
+                let domain = Fr::from(42u64);
+                let mut tree = Imt::<OutbeV1>::new(domain, empty_leaf, depth).unwrap();
+                let zeros = Imt::<OutbeV1>::zero_ladder(domain, empty_leaf, depth).unwrap();
+                let mut frontier = vec![Fr::zero(); depth];
+                let mut saved_paths = Vec::new();
+                assert_eq!(tree.root(), zeros[depth]);
+                assert!(tree.inclusion_path(0).is_err());
+                for i in 0..(1u64 << depth) {
+                    let leaf = Fr::from(i + 7);
+                    let expected =
+                        Imt::<OutbeV1>::frontier_append(domain, &frontier, i, leaf, &zeros)
+                            .unwrap();
+                    let (index, change) = tree.append(leaf).unwrap();
+                    assert_eq!(index, i);
+                    assert_eq!(change, expected);
+                    assert_eq!(tree.root(), expected.new_root);
+                    frontier[expected.changed_level] = expected.new_subtree;
+                    for j in 0..=i {
+                        let path = tree.inclusion_path(j).unwrap();
+                        let leaf = tree.leaves()[j as usize];
+                        assert_eq!(path.root(leaf).unwrap(), tree.root());
+                        saved_paths.push((path, leaf, tree.root()));
+                    }
+                    assert!(tree.inclusion_path(i + 1).is_err());
                 }
-            }
-            for (count, root) in roots.iter().enumerate() {
-                assert_eq!(tree.root_at(count).unwrap(), *root);
-                for i in 0..count {
-                    let path = tree.inclusion_path_at(i as u64, count).unwrap();
-                    assert_eq!(path.root(tree.leaves()[i]).unwrap(), *root);
+                // A captured path still proves its original root after later appends.
+                for (path, leaf, root) in saved_paths {
+                    assert_eq!(path.root(leaf).unwrap(), root);
                 }
-                assert!(tree.inclusion_path_at(count as u64, count).is_err());
+                let levels = tree.levels.clone();
+                let root = tree.root();
+                assert!(tree.append(Fr::from(100u64)).is_err());
+                assert_eq!(tree.levels, levels);
+                assert_eq!(tree.root(), root);
+                assert_eq!(tree.next_index(), 1u64 << depth);
+                assert!(tree.inclusion_path(u64::MAX).is_err());
             }
-            let leaves = tree.leaves().to_vec();
+        }
+    }
+
+    #[test]
+    fn hash_failures_are_atomic_and_path_reads_do_not_hash() {
+        use std::cell::Cell;
+
+        thread_local! {
+            static HASHES_LEFT: Cell<usize> = const { Cell::new(usize::MAX) };
+        }
+        struct FallibleHash;
+        impl FieldHasher<Fr> for FallibleHash {
+            fn hash(inputs: &[Fr]) -> Result<Fr, Error> {
+                HASHES_LEFT.with(|left| {
+                    let remaining = left
+                        .get()
+                        .checked_sub(1)
+                        .ok_or_else(|| Error::Merkle("injected hash failure".into()))?;
+                    left.set(remaining);
+                    <OutbeV1 as Suite>::Hash::hash(inputs)
+                })
+            }
+        }
+        struct FallibleSuite;
+        impl Suite for FallibleSuite {
+            type Field = Fr;
+            type Curve = <OutbeV1 as Suite>::Curve;
+            type Hash = FallibleHash;
+            type Signature = <OutbeV1 as Suite>::Signature;
+            type Kdf = <OutbeV1 as Suite>::Kdf;
+            type Exchange = <OutbeV1 as Suite>::Exchange;
+        }
+
+        let mut tree = Imt::<FallibleSuite>::new(Fr::from(42u64), Fr::zero(), 4).unwrap();
+        // Exercise both creating nodes and replacing existing ancestors.
+        for index in 0..4 {
+            let levels = tree.levels.clone();
             let root = tree.root();
-            assert!(tree.append(Fr::from(100u64)).is_err());
-            assert_eq!(tree.leaves(), leaves);
-            assert_eq!(tree.root(), root);
-            assert_eq!(tree.next_index(), 16);
-            assert!(tree.root_at(17).is_err());
-            assert!(tree.inclusion_path_at(0, 17).is_err());
-            assert!(tree.inclusion_path(u64::MAX).is_err());
+            for failure_at in 0..tree.depth() {
+                HASHES_LEFT.set(failure_at);
+                assert!(tree.append(Fr::from(index + 7)).is_err());
+                assert_eq!(tree.levels, levels);
+                assert_eq!(tree.root(), root);
+                assert_eq!(tree.next_index(), index);
+            }
+            // Exactly depth hashes suffice for append, and none remain for reads.
+            HASHES_LEFT.set(tree.depth());
+            tree.append(Fr::from(index + 7)).unwrap();
+            assert_eq!(HASHES_LEFT.get(), 0);
+            let root = tree.root();
+            let path = tree.inclusion_path(index).unwrap();
+            HASHES_LEFT.set(tree.depth());
+            assert_eq!(path.root(Fr::from(index + 7)).unwrap(), root);
         }
     }
 
