@@ -13,12 +13,12 @@ use outbe_zk_canonical::emit_mint;
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
 
-use common::{address, hash_tagged, AuthPath, Fr};
+use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
-const EMIT: &str = "OUTBE_EMIT";
+use outbe_zk_canonical::emit_mint::hash::EMIT_DOMAIN as EMIT;
 
 fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
-    hash_tagged(EMIT, "NOTE_SN", &[owner, spend_key])
+    hash_tagged(EMIT, Pool::tag_note_sn(), &[owner, spend_key])
 }
 
 /// Mirror of `emit::note_commitment`: the preimage is
@@ -28,7 +28,7 @@ fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
 fn note_commitment(chain_id: u64, serial: Fr, amount: [u128; 3]) -> Fr {
     hash_tagged(
         EMIT,
-        "COMMITMENT",
+        Pool::tag_commitment(),
         &[
             Fr::from(chain_id),
             serial,
@@ -40,7 +40,7 @@ fn note_commitment(chain_id: u64, serial: Fr, amount: [u128; 3]) -> Fr {
 }
 
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_tagged(EMIT, "NULLIFIER", &[commitment, spend_key])
+    hash_tagged(EMIT, Pool::tag_nullifier(), &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> AuthPath {
@@ -63,16 +63,33 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let mint_units = u256::to_limbs(mint_units);
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
+    assert_eq!(
+        serial,
+        emit_mint::hash::note_sn([0x22; 20], spend_key).unwrap()
+    );
+    assert_eq!(
+        commitment,
+        emit_mint::hash::note_commitment(chain_id, serial, u256::from_limbs(note_amount).unwrap())
+            .unwrap()
+    );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
     let spent_nullifier = nullifier(commitment, spend_key);
-    let next_key = hash_tagged(EMIT, "CHANGE_KEY", &[spend_key, spent_nullifier]);
+    let next_key = hash_tagged(EMIT, Pool::tag_change_key(), &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(
         chain_id,
         note_serial(owner, next_key),
         u256::to_limbs(U256::from(60)),
     );
 
+    assert_eq!(
+        spent_nullifier,
+        emit_mint::hash::nullifier(commitment, spend_key).unwrap()
+    );
+    assert_eq!(
+        next_key,
+        emit_mint::hash::change_key(spend_key, spent_nullifier).unwrap()
+    );
     let public = PublicInputs {
         chain_id,
         root,

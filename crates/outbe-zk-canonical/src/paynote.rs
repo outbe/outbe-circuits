@@ -1,5 +1,7 @@
 //! Paynote combined-proof layout and public-input decoding.
 
+pub mod hash;
+
 use alloy_primitives::{Address, U256};
 use outbe_protocol::codec::u256_from_limbs_be;
 

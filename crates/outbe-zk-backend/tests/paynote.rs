@@ -1,9 +1,7 @@
 //! Real barretenberg prove→verify round-trip for the canonical Paynote circuit.
 //!
-//! The formulas are reimplemented off-circuit (here and in `common`) on purpose:
-//! the point of the test is that Rust-computed public inputs match the
-//! in-circuit ones, which only means something if the two derivations are
-//! independent.
+//! Rust public inputs use the shared protocol formulas and are checked against
+//! the frozen Noir circuit, including deliberately invalid raw witnesses.
 
 mod common;
 
@@ -17,12 +15,12 @@ use outbe_zk_canonical::paynote;
 use outbe_zk_canonical::noir::paynote::{Paynote, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
 
-use common::{address, hash_tagged, AuthPath, Fr};
+use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
-const PAYNOTE: &str = "OUTBE_PAYNOTE";
+use outbe_zk_canonical::paynote::hash::PAYNOTE_DOMAIN as PAYNOTE;
 
 fn note_serial(spend_key: Fr) -> Fr {
-    hash_tagged(PAYNOTE, "NOTE_SN", &[spend_key])
+    hash_tagged(PAYNOTE, Pool::tag_note_sn(), &[spend_key])
 }
 
 /// Mirror of `paynote::note_commitment`: the amount is hashed as three
@@ -30,7 +28,7 @@ fn note_serial(spend_key: Fr) -> Fr {
 fn note_commitment(chain_id: u64, serial: Fr, asset: Fr, amount: [u128; 3]) -> Fr {
     hash_tagged(
         PAYNOTE,
-        "COMMITMENT",
+        Pool::tag_commitment(),
         &[
             Fr::from(chain_id),
             serial,
@@ -45,7 +43,7 @@ fn note_commitment(chain_id: u64, serial: Fr, asset: Fr, amount: [u128; 3]) -> F
 /// Derived from the commitment, not the serial — so every leaf has exactly one
 /// nullifier, and `chain_id` needs no separate input.
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_tagged(PAYNOTE, "NULLIFIER", &[commitment, spend_key])
+    hash_tagged(PAYNOTE, Pool::tag_nullifier(), &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> AuthPath {
@@ -67,13 +65,22 @@ fn paynote_partial_spend_prove_verify_round_trip() {
     let spend_amount = u256::to_limbs(spend_value);
     let serial = note_serial(spend_key);
     let commitment = note_commitment(chain_id, serial, asset, note_amount);
+    assert_eq!(serial, paynote::hash::note_sn(spend_key).unwrap());
+    assert_eq!(
+        commitment,
+        paynote::hash::note_commitment(chain_id, serial, [0xa0; 20], note_value).unwrap()
+    );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(PAYNOTE, commitment, 0, &auth_path);
     let spent_nullifier = nullifier(commitment, spend_key);
 
     // The change note inherits the same asset, so it stays spendable in the
     // same token.
-    let next_key = hash_tagged(PAYNOTE, "CHANGE_KEY", &[spend_key, spent_nullifier]);
+    let next_key = hash_tagged(
+        PAYNOTE,
+        Pool::tag_change_key(),
+        &[spend_key, spent_nullifier],
+    );
     let change_commitment = note_commitment(
         chain_id,
         note_serial(next_key),
@@ -81,6 +88,14 @@ fn paynote_partial_spend_prove_verify_round_trip() {
         u256::to_limbs(note_value - spend_value),
     );
 
+    assert_eq!(
+        spent_nullifier,
+        paynote::hash::note_nullifier(commitment, spend_key).unwrap()
+    );
+    assert_eq!(
+        next_key,
+        paynote::hash::change_key(spend_key, spent_nullifier).unwrap()
+    );
     let public = PublicInputs {
         chain_id,
         root,

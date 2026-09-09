@@ -130,4 +130,8 @@ pub trait Suite: 'static {
         let high = crate::codec::field_from_be_bytes::<Self::Field>(&commitment_id[..16]);
         Self::Hash::hash(&[domain, sender, low, high, Self::Field::from(chain_id)])
     }
+
+    fn ascii_field(value: &str) -> Self::Field {
+        Self::Field::from_be_bytes_mod_order(value.as_bytes())
+    }
 }

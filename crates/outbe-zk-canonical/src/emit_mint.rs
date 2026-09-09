@@ -1,5 +1,7 @@
 //! Emit mint combined-proof layout and public-input decoding.
 
+pub mod hash;
+
 use outbe_protocol::protocol::zkproof::{
     decode_public_words, read_u128_be_padded, read_u64_be_padded,
     ProofMarshalingError as WireMarshalingError,
