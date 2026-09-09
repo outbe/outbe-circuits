@@ -30,12 +30,12 @@ pub type Field = <OutbeV1 as Suite>::Field;
 type Pool = ShieldedPool<OutbeV1>;
 type Tree = Imt<OutbeV1>;
 
-/// Big-endian ASCII `OUTBE_EMIT`; 9 bytes fit in u128 and BN254.
-pub const EMIT_DOMAIN: u128 = 0x4f555442455f454d4954;
+/// Big-endian ASCII domain; 9 bytes fit in the proving field.
+pub const EMIT_DOMAIN: &str = "OUTBE_EMIT";
 
 /// The circuit's domain as a field element.
 pub fn emit_domain() -> Field {
-    Field::from(EMIT_DOMAIN)
+    OutbeV1::ascii_field(EMIT_DOMAIN)
 }
 
 fn tag(base: Field) -> Result<Field, Error> {

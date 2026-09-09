@@ -35,12 +35,12 @@ pub type Field = <OutbeV1 as Suite>::Field;
 type Pool = ShieldedPool<OutbeV1>;
 type Tree = Imt<OutbeV1>;
 
-/// Big-endian ASCII `OUTBE_PAYNOTE`; 12 bytes fit in u128 and BN254.
-pub const PAYNOTE_DOMAIN: u128 = 0x4f555442455f5041594e4f5445;
+/// Big-endian ASCII domain; 12 bytes fit in the proving field.
+pub const PAYNOTE_DOMAIN: &str = "OUTBE_PAYNOTE";
 
 /// The circuit's domain as a field element.
 pub fn paynote_domain() -> Field {
-    Field::from(PAYNOTE_DOMAIN)
+    OutbeV1::ascii_field(PAYNOTE_DOMAIN)
 }
 
 fn tag(base: Field) -> Result<Field, Error> {

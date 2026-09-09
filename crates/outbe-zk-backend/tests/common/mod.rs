@@ -16,19 +16,25 @@ pub fn address(bytes: [u8; 20]) -> Fr {
 }
 
 /// Raw fields let negative tests construct out-of-range circuit witnesses.
-pub fn hash_tagged(domain: u128, base: Fr, values: &[Fr]) -> Fr {
-    let tag = Pool::tag(Fr::from(domain), base).unwrap();
+pub fn hash_tagged(domain: &str, base: Fr, values: &[Fr]) -> Fr {
+    let tag = Pool::tag(OutbeV1::ascii_field(domain), base).unwrap();
     Pool::hash_multi(tag, values).unwrap()
 }
 
-pub fn single_leaf_path(domain: u128, chain_id: u64) -> AuthPath {
+pub fn single_leaf_path(domain: &str, chain_id: u64) -> AuthPath {
     let empty = hash_tagged(domain, Pool::tag_empty(), &[Fr::from(chain_id)]);
-    let zeros = Tree::empty_roots(Fr::from(domain), empty, INCLUSION_DEPTH).unwrap();
+    let zeros = Tree::empty_roots(OutbeV1::ascii_field(domain), empty, INCLUSION_DEPTH).unwrap();
     zeros[..INCLUSION_DEPTH].try_into().unwrap()
 }
 
-pub fn root_from_path(domain: u128, leaf: Fr, leaf_index: u32, path: &AuthPath) -> Fr {
-    Tree::root_from_inclusion_path(Fr::from(domain), leaf, u64::from(leaf_index), path).unwrap()
+pub fn root_from_path(domain: &str, leaf: Fr, leaf_index: u32, path: &AuthPath) -> Fr {
+    Tree::root_from_inclusion_path(
+        OutbeV1::ascii_field(domain),
+        leaf,
+        u64::from(leaf_index),
+        path,
+    )
+    .unwrap()
 }
 
 /// Prove, assert the honest claim verifies, then assert each tampered claim —
