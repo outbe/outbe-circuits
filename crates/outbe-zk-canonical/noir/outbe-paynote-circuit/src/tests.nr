@@ -23,7 +23,7 @@ fn other_asset() -> EthAddress {
     EthAddress::from_field(0x2260fac5e5542a773aa44fbcfedf7c193bc2c599)
 }
 
-fn spender() -> EthAddress {
+fn owner() -> EthAddress {
     EthAddress::from_field(0x3333333333333333333333333333333333333333)
 }
 
@@ -68,7 +68,7 @@ fn full_spend_uses_zero_change_sentinel() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -87,7 +87,7 @@ fn partial_spend_rotates_change_key_and_inherits_asset() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(40),
         change,
         U256::from(AMOUNT),
@@ -107,7 +107,7 @@ fn wrong_asset_fails_membership() {
         root,
         n,
         other_asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -126,7 +126,7 @@ fn change_note_cannot_switch_asset() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(40),
         change,
         U256::from(AMOUNT),
@@ -145,7 +145,7 @@ fn zero_asset_fails() {
         root,
         n,
         zero,
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -156,7 +156,7 @@ fn zero_asset_fails() {
 }
 
 #[test(should_fail)]
-fn zero_spender_fails() {
+fn zero_owner_fails() {
     let (root, n, path) = fixture();
     let zero = EthAddress::from_field(0);
     main(
@@ -182,7 +182,7 @@ fn zero_spend_amount_fails() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(0),
         0,
         U256::from(AMOUNT),
@@ -200,7 +200,7 @@ fn overspend_fails() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT + 1),
         0,
         U256::from(AMOUNT),
@@ -224,7 +224,7 @@ fn wrong_tree_domain_fails_membership() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -239,7 +239,7 @@ fn wrong_tree_domain_fails_membership() {
 #[test(should_fail)]
 fn zero_key_fails() {
     let path = single_leaf_path(CHAIN_ID);
-    main(CHAIN_ID, 1, 1, asset(), spender(), U256::from(1), 0, U256::from(1), 0, 0, path);
+    main(CHAIN_ID, 1, 1, asset(), owner(), U256::from(1), 0, U256::from(1), 0, 0, path);
 }
 
 #[test(should_fail)]
@@ -250,7 +250,7 @@ fn wrong_private_key_fails_membership() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -268,7 +268,7 @@ fn wrong_amount_fails_membership() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(99),
         0,
         U256::from(99),
@@ -288,7 +288,7 @@ fn wrong_path_fails_membership() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -306,7 +306,7 @@ fn wrong_leaf_index_fails_membership() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -324,7 +324,7 @@ fn wrong_nullifier_fails() {
         root,
         n + 1,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -344,7 +344,7 @@ fn wrong_change_amount_fails() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(41),
         change,
         U256::from(AMOUNT),
@@ -362,7 +362,7 @@ fn full_spend_rejects_nonzero_change_sentinel() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         1,
         U256::from(AMOUNT),
@@ -380,7 +380,7 @@ fn partial_spend_rejects_zero_change_commitment() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(40),
         0,
         U256::from(AMOUNT),
@@ -407,7 +407,7 @@ fn max_leaf_index_boundary_proves() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -427,7 +427,7 @@ fn u256_max_amounts_full_and_partial_spend() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), spender(), max, 0, max, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), owner(), max, 0, max, KEY, 0, path);
 
     let next_key = change_key(KEY, n);
     let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), max - U256::from(1));
@@ -436,7 +436,7 @@ fn u256_max_amounts_full_and_partial_spend() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         U256::from(1),
         change,
         max,
@@ -456,11 +456,11 @@ fn amounts_above_u128_full_and_partial_spend() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), spender(), note, 0, note, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), owner(), note, 0, note, KEY, 0, path);
 
     let next_key = change_key(KEY, n);
     let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), remaining);
-    main(CHAIN_ID, root, n, asset(), spender(), spend, change, note, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), owner(), spend, change, note, KEY, 0, path);
 }
 
 /// Limb hashing must distinguish values that folding into one `Field` aliases.
@@ -484,7 +484,7 @@ fn non_canonical_amount_limb_fails() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), spender(), bad, 0, bad, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), owner(), bad, 0, bad, KEY, 0, path);
 }
 
 #[test(should_fail)]
@@ -499,7 +499,7 @@ fn modulus_zero_encoding_fails() {
         root,
         n,
         asset(),
-        spender(),
+        owner(),
         modulus,
         0,
         modulus,
@@ -511,7 +511,7 @@ fn modulus_zero_encoding_fails() {
 
 /// `EthAddress::from_field` is what bounds a constructed address at 160 bits --
 /// check it actually bites. The ABI-supplied path is different: `asset` and
-/// `spender` arrive as structs, so no constructor runs on them and
+/// `owner` arrive as structs, so no constructor runs on them and
 /// `validate()` in `main` is the only guard. That one cannot be reached from
 /// Noir (`inner` is private), so it is covered by `oversized_asset_is_rejected`
 /// in `outbe-zk-backend/tests/paynote.rs`.

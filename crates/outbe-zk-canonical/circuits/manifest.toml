@@ -146,4 +146,11 @@ status = "active"
 module = "paynote"
 label = "outbe.paynote"
 version = "1.1.0"
+status = "deprecated"
+circuit_hash = "3154da6976ca8ee5f00b228fe821ce0868b189ff73cefb1a9a562d2768a9f9cc"
+
+[[circuit]]
+module = "paynote"
+label = "outbe.paynote"
+version = "1.2.0"
 status = "active"
