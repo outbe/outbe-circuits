@@ -15,15 +15,12 @@ use outbe_zk_canonical::paynote;
 use outbe_zk_canonical::noir::paynote::{Paynote, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
 
-use common::{address, hash_tagged, AuthPath, Fr};
+use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
-use outbe_protocol::protocol::shielded_pool::{
-    tag_change_key, tag_commitment, tag_note_sn, tag_nullifier,
-};
 use outbe_zk_canonical::paynote::hash::PAYNOTE_DOMAIN as PAYNOTE;
 
 fn note_serial(spend_key: Fr) -> Fr {
-    hash_tagged(PAYNOTE, tag_note_sn::<OutbeV1>(), &[spend_key])
+    hash_tagged(PAYNOTE, Pool::tag_note_sn(), &[spend_key])
 }
 
 /// Mirror of `paynote::note_commitment`: the amount is hashed as three
@@ -31,7 +28,7 @@ fn note_serial(spend_key: Fr) -> Fr {
 fn note_commitment(chain_id: u64, serial: Fr, asset: Fr, amount: [u128; 3]) -> Fr {
     hash_tagged(
         PAYNOTE,
-        tag_commitment::<OutbeV1>(),
+        Pool::tag_commitment(),
         &[
             Fr::from(chain_id),
             serial,
@@ -46,11 +43,7 @@ fn note_commitment(chain_id: u64, serial: Fr, asset: Fr, amount: [u128; 3]) -> F
 /// Derived from the commitment, not the serial — so every leaf has exactly one
 /// nullifier, and `chain_id` needs no separate input.
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_tagged(
-        PAYNOTE,
-        tag_nullifier::<OutbeV1>(),
-        &[commitment, spend_key],
-    )
+    hash_tagged(PAYNOTE, Pool::tag_nullifier(), &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> AuthPath {
@@ -85,7 +78,7 @@ fn paynote_partial_spend_prove_verify_round_trip() {
     // same token.
     let next_key = hash_tagged(
         PAYNOTE,
-        tag_change_key::<OutbeV1>(),
+        Pool::tag_change_key(),
         &[spend_key, spent_nullifier],
     );
     let change_commitment = note_commitment(

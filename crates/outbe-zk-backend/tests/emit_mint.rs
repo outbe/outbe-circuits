@@ -13,15 +13,12 @@ use outbe_zk_canonical::emit_mint;
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
 use outbe_zk_canonical::u256;
 
-use common::{address, hash_tagged, AuthPath, Fr};
+use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
-use outbe_protocol::protocol::shielded_pool::{
-    tag_change_key, tag_commitment, tag_note_sn, tag_nullifier,
-};
 use outbe_zk_canonical::emit_mint::hash::EMIT_DOMAIN as EMIT;
 
 fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
-    hash_tagged(EMIT, tag_note_sn::<OutbeV1>(), &[owner, spend_key])
+    hash_tagged(EMIT, Pool::tag_note_sn(), &[owner, spend_key])
 }
 
 /// Mirror of `emit::note_commitment`: the preimage is
@@ -31,7 +28,7 @@ fn note_serial(owner: Fr, spend_key: Fr) -> Fr {
 fn note_commitment(chain_id: u64, serial: Fr, amount: [u128; 3]) -> Fr {
     hash_tagged(
         EMIT,
-        tag_commitment::<OutbeV1>(),
+        Pool::tag_commitment(),
         &[
             Fr::from(chain_id),
             serial,
@@ -43,7 +40,7 @@ fn note_commitment(chain_id: u64, serial: Fr, amount: [u128; 3]) -> Fr {
 }
 
 fn nullifier(commitment: Fr, spend_key: Fr) -> Fr {
-    hash_tagged(EMIT, tag_nullifier::<OutbeV1>(), &[commitment, spend_key])
+    hash_tagged(EMIT, Pool::tag_nullifier(), &[commitment, spend_key])
 }
 
 fn single_leaf_path(chain_id: u64) -> AuthPath {
@@ -78,11 +75,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
     let spent_nullifier = nullifier(commitment, spend_key);
-    let next_key = hash_tagged(
-        EMIT,
-        tag_change_key::<OutbeV1>(),
-        &[spend_key, spent_nullifier],
-    );
+    let next_key = hash_tagged(EMIT, Pool::tag_change_key(), &[spend_key, spent_nullifier]);
     let change_commitment = note_commitment(
         chain_id,
         note_serial(owner, next_key),

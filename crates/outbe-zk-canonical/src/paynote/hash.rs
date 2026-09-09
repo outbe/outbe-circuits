@@ -26,14 +26,14 @@ use alloy_primitives::U256;
 use outbe_protocol::{
     codec::u256_limbs_be,
     error::Error,
-    protocol::{
-        imt::Imt,
-        shielded_pool::{self, hash_multi},
-    },
+    protocol::{imt::Imt, shielded_pool::ShieldedPool},
     OutbeV1,
 };
 
 pub use crate::field::{address_field, field_from_be_bytes, field_to_be_bytes, Field};
+
+type Pool = ShieldedPool<OutbeV1>;
+type Tree = Imt<OutbeV1>;
 
 /// Big-endian ASCII `OUTBE_PAYNOTE`; 12 bytes fit in u128 and BN254.
 pub const PAYNOTE_DOMAIN: u128 = 0x4f555442455f5041594e4f5445;
@@ -44,17 +44,14 @@ pub fn paynote_domain() -> Field {
 }
 
 fn tag(base: Field) -> Result<Field, Error> {
-    shielded_pool::tag::<OutbeV1>(paynote_domain(), base)
+    Pool::tag(paynote_domain(), base)
 }
 
 /// `note_sn = P(NOTE_SN, [spend_key])` — a hiding commitment to the spend
 /// key. Chain-, asset- and amount-independent, so the pool can accept one at
 /// deposit time and build the leaf around it.
 pub fn note_sn(note_spend_key: Field) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(
-        tag(shielded_pool::tag_note_sn::<OutbeV1>())?,
-        &[note_spend_key],
-    )
+    Pool::hash_multi(tag(Pool::tag_note_sn())?, &[note_spend_key])
 }
 
 /// `C = P(COMMITMENT, [chain_id, note_sn, asset, amount_limb_0,
@@ -68,8 +65,8 @@ pub fn note_commitment(
     note_amount: U256,
 ) -> Result<Field, Error> {
     let limbs = u256_limbs_be(&note_amount.to_be_bytes::<32>());
-    hash_multi::<OutbeV1>(
-        tag(shielded_pool::tag_commitment::<OutbeV1>())?,
+    Pool::hash_multi(
+        tag(Pool::tag_commitment())?,
         &[
             Field::from(chain_id),
             note_sn,
@@ -86,8 +83,8 @@ pub fn note_commitment(
 /// nullifier. Two leaves sharing a serial carry different amounts, hence
 /// different commitments and different nullifiers, and both stay spendable.
 pub fn note_nullifier(note_commitment: Field, note_spend_key: Field) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(
-        tag(shielded_pool::tag_nullifier::<OutbeV1>())?,
+    Pool::hash_multi(
+        tag(Pool::tag_nullifier())?,
         &[note_commitment, note_spend_key],
     )
 }
@@ -95,8 +92,8 @@ pub fn note_nullifier(note_commitment: Field, note_spend_key: Field) -> Result<F
 /// `next_key = P(CHANGE_KEY, [spend_key, nullifier])` — the circuit-ratcheted
 /// successor key of a partial spend.
 pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(
-        tag(shielded_pool::tag_change_key::<OutbeV1>())?,
+    Pool::hash_multi(
+        tag(Pool::tag_change_key())?,
         &[note_spend_key, note_nullifier],
     )
 }
@@ -105,15 +102,12 @@ pub fn change_key(note_spend_key: Field, note_nullifier: Field) -> Result<Field,
 /// the circuit's `commitment != 0` assert is what blocks spending a
 /// zero-padded slot, and this keeps empty slots distinguishable per chain.
 pub fn empty_leaf(chain_id: u64) -> Result<Field, Error> {
-    hash_multi::<OutbeV1>(
-        tag(shielded_pool::tag_empty::<OutbeV1>())?,
-        &[Field::from(chain_id)],
-    )
+    Pool::hash_multi(tag(Pool::tag_empty())?, &[Field::from(chain_id)])
 }
 
 /// Tagged Merkle inner node: `H3(PAYNOTE_DOMAIN, left, right)`.
 pub fn merkle_node(left: Field, right: Field) -> Result<Field, Error> {
-    Imt::<OutbeV1>::node_hash(paynote_domain(), left, right)
+    Tree::node_hash(paynote_domain(), left, right)
 }
 
 /// The complete chain-specific empty ladder `zeros[0..=depth]`:
@@ -121,5 +115,5 @@ pub fn merkle_node(left: Field, right: Field) -> Result<Field, Error> {
 /// `zeros[i + 1] = H3(PAYNOTE_DOMAIN, zeros[i], zeros[i])`.
 /// Derived in memory on every request; never persisted.
 pub fn empty_subtrees(chain_id: u64, depth: usize) -> Result<Vec<Field>, Error> {
-    Imt::<OutbeV1>::empty_roots(paynote_domain(), empty_leaf(chain_id)?, depth)
+    Tree::empty_roots(paynote_domain(), empty_leaf(chain_id)?, depth)
 }

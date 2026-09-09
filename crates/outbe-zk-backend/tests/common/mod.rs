@@ -1,14 +1,13 @@
 //! Shared tree and proving helpers for note-circuit round trips.
 
 use outbe_protocol::protocol::zk::{Circuit, CircuitId, ProofGenerator, ProofVerifier};
-use outbe_protocol::protocol::{
-    imt::Imt,
-    shielded_pool::{self, tag_empty},
-};
+use outbe_protocol::protocol::{imt::Imt, shielded_pool::ShieldedPool};
 use outbe_protocol::{OutbeV1, Suite};
 use outbe_zk_backend::barretenberg::{Barretenberg, Proof};
 use outbe_zk_canonical::INCLUSION_DEPTH;
 
+pub type Pool = ShieldedPool<OutbeV1>;
+type Tree = Imt<OutbeV1>;
 pub type Fr = <OutbeV1 as Suite>::Field;
 pub type AuthPath = [Fr; INCLUSION_DEPTH];
 
@@ -16,19 +15,18 @@ pub use outbe_zk_canonical::field::address_field as address;
 
 /// Raw fields let negative tests construct out-of-range circuit witnesses.
 pub fn hash_tagged(domain: u128, base: Fr, values: &[Fr]) -> Fr {
-    let tag = shielded_pool::tag::<OutbeV1>(Fr::from(domain), base).unwrap();
-    shielded_pool::hash_multi::<OutbeV1>(tag, values).unwrap()
+    let tag = Pool::tag(Fr::from(domain), base).unwrap();
+    Pool::hash_multi(tag, values).unwrap()
 }
 
 pub fn single_leaf_path(domain: u128, chain_id: u64) -> AuthPath {
-    let empty = hash_tagged(domain, tag_empty::<OutbeV1>(), &[Fr::from(chain_id)]);
-    let zeros = Imt::<OutbeV1>::empty_roots(Fr::from(domain), empty, INCLUSION_DEPTH).unwrap();
+    let empty = hash_tagged(domain, Pool::tag_empty(), &[Fr::from(chain_id)]);
+    let zeros = Tree::empty_roots(Fr::from(domain), empty, INCLUSION_DEPTH).unwrap();
     zeros[..INCLUSION_DEPTH].try_into().unwrap()
 }
 
 pub fn root_from_path(domain: u128, leaf: Fr, leaf_index: u32, path: &AuthPath) -> Fr {
-    Imt::<OutbeV1>::root_from_inclusion_path(Fr::from(domain), leaf, u64::from(leaf_index), path)
-        .unwrap()
+    Tree::root_from_inclusion_path(Fr::from(domain), leaf, u64::from(leaf_index), path).unwrap()
 }
 
 /// Prove, assert the honest claim verifies, then assert each tampered claim —
