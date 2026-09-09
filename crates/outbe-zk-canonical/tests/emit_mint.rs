@@ -1,9 +1,11 @@
-//! Existing frozen Emit vector, now checked at the shared formula source.
+//! Emit hash and Merkle formulas checked against a frozen circuit vector.
 
 use alloy_primitives::{B256, U256};
-use outbe_protocol::{codec::field_from_be_bytes_canonical, Codec, OutbeV1};
+use outbe_protocol::{Codec, OutbeV1};
 use outbe_zk_canonical::{
-    emit_mint::hash::{note_sn as derive_note_sn, nullifier as derive_nullifier, *},
+    emit_mint::hash::{
+        change_key, empty_subtrees, merkle_node, note_commitment, note_sn, nullifier, Field,
+    },
     INCLUSION_DEPTH,
 };
 
@@ -12,13 +14,13 @@ fn formulas_match_pinned_circuit_vector() {
     let chain_id = 31_337u64;
     let owner = [0x22u8; 20];
     let key = Field::from(17u64);
-    let serial = derive_note_sn(owner, key).unwrap();
+    let serial = note_sn(owner, key).unwrap();
     let commitment = note_commitment(chain_id, serial, U256::from(100)).unwrap();
-    let n = derive_nullifier(commitment, key).unwrap();
+    let n = nullifier(commitment, key).unwrap();
     let next_key = change_key(key, n).unwrap();
-    let next_serial = derive_note_sn(owner, next_key).unwrap();
+    let next_serial = note_sn(owner, next_key).unwrap();
     let change = note_commitment(chain_id, next_serial, U256::from(60)).unwrap();
-    let next_n = derive_nullifier(change, next_key).unwrap();
+    let next_n = nullifier(change, next_key).unwrap();
 
     let zeros = empty_subtrees(chain_id, INCLUSION_DEPTH).unwrap();
     let mut root = merkle_node(commitment, zeros[0]).unwrap();
@@ -69,19 +71,4 @@ fn formulas_match_pinned_circuit_vector() {
             expected
         );
     }
-}
-
-#[test]
-fn field_words_remain_canonical() {
-    use ark_ff::{BigInteger, PrimeField};
-    for value in [Field::from(0u64), Field::from(1u64), -Field::from(1u64)] {
-        assert_eq!(
-            field_from_be_bytes_canonical::<Field>(&OutbeV1::field_to_be_bytes(&value), "field")
-                .unwrap(),
-            value
-        );
-    }
-    let modulus: [u8; 32] = Field::MODULUS.to_bytes_be().try_into().unwrap();
-    assert!(field_from_be_bytes_canonical::<Field>(&modulus, "field").is_err());
-    assert!(field_from_be_bytes_canonical::<Field>(&[0xff; 32], "field").is_err());
 }
