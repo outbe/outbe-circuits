@@ -13,6 +13,18 @@ combined-proof layouts and public-input decoders. This crate is also the
 **in-code, versioned circuit registry**: the authoritative, append-only record
 of every released circuit version and its on-chain identity.
 
+Alloy support is optional and disabled by default. Enable `features = ["alloy"]`
+to use the Emit mint and Paynote `PublicInputs` and `decode_public_inputs` APIs
+and their Alloy hash helpers. Decoders return `Address`, `B256`, and `U256`
+values. Alloy hash helpers serialize addresses with `FieldElement` and amounts
+with `Codec::fields_from_u256`. The always-available `_raw` functions use
+`[u8; 20]` addresses and field elements; `note_commitment_raw` accepts
+`[Field; 3]` amount limbs. Hash helpers retain field elements
+for serials, keys, and results. Byte/ABI limb conversions are available directly
+in `outbe_protocol::codec::{u256_limbs_be, u256_from_limbs_be}`. Generated Noir
+witness types retain their ABI layout, including three `[120, 120, 16]`-bit limbs for
+each amount.
+
 ## Emit mint statement
 
 `outbe.emit.mint@1.5.0` proves knowledge of a private note amount, spend key,

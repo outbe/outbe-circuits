@@ -2,7 +2,7 @@
 
 mod common;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use ark_ff::PrimeField;
 
 use outbe_protocol::protocol::zk::Circuit;
@@ -10,8 +10,8 @@ use outbe_protocol::{Codec, OutbeV1};
 use outbe_zk_backend::barretenberg::verify_circuit;
 use outbe_zk_canonical::emit_mint;
 
+use outbe_protocol::codec::u256_limbs_be;
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
-use outbe_zk_canonical::u256;
 
 use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
@@ -57,20 +57,24 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let chain_id = 31_337u64;
     // Above the old u128 ceiling: the upper limbs carry real value through
     // the commitment preimage and the change arithmetic.
-    let note_amount = (U256::from(0xabu64) << 128) + U256::from((1u128 << 100) + 100);
-    let mint_units = (U256::from(0xabu64) << 128) + U256::from((1u128 << 100) + 40);
-    let note_amount = u256::to_limbs(note_amount);
-    let mint_units = u256::to_limbs(mint_units);
+    let note_amount = (U256::from(0xabu64) << 128usize) + U256::from((1u128 << 100) + 100);
+    let mint_units = (U256::from(0xabu64) << 128usize) + U256::from((1u128 << 100) + 40);
+    let note_amount = u256_limbs_be(&note_amount.to_be_bytes());
+    let mint_units = u256_limbs_be(&mint_units.to_be_bytes());
     let serial = note_serial(owner, spend_key);
     let commitment = note_commitment(chain_id, serial, note_amount);
     assert_eq!(
         serial,
-        emit_mint::hash::note_sn([0x22; 20], spend_key).unwrap()
+        emit_mint::hash::note_sn(Address::from([0x22; 20]), spend_key).unwrap()
     );
     assert_eq!(
         commitment,
-        emit_mint::hash::note_commitment(chain_id, serial, u256::from_limbs(note_amount).unwrap())
-            .unwrap()
+        emit_mint::hash::note_commitment(
+            chain_id,
+            serial,
+            OutbeV1::fields_to_u256(&note_amount.map(Fr::from)).unwrap()
+        )
+        .unwrap()
     );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
@@ -79,7 +83,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let change_commitment = note_commitment(
         chain_id,
         note_serial(owner, next_key),
-        u256::to_limbs(U256::from(60)),
+        u256_limbs_be(&U256::from(60).to_be_bytes()),
     );
 
     assert_eq!(
@@ -111,8 +115,9 @@ fn emit_partial_mint_prove_verify_round_trip() {
         &[(
             "a different mint amount",
             PublicInputs {
-                mint_units: u256::to_limbs(
-                    (U256::from(0xabu64) << 128) + U256::from((1u128 << 100) + 41),
+                mint_units: u256_limbs_be(
+                    &((U256::from(0xabu64) << 128usize) + U256::from((1u128 << 100) + 41))
+                        .to_be_bytes(),
                 ),
                 ..public.clone()
             },
@@ -131,8 +136,11 @@ fn emit_partial_mint_prove_verify_round_trip() {
     assert_eq!(combined.len(), emit_mint::COMBINED_LEN);
     let decoded = emit_mint::decode_public_inputs(&combined).unwrap();
     assert_eq!(decoded.chain_id, chain_id);
-    assert_eq!(decoded.note_owner, [0x22; 20]);
-    assert_eq!(decoded.mint_units, mint_units);
+    assert_eq!(decoded.note_owner, Address::from([0x22; 20]));
+    assert_eq!(
+        decoded.mint_units,
+        OutbeV1::fields_to_u256(&mint_units.map(Fr::from)).unwrap()
+    );
     assert!(verify_circuit::<EmitMint>(&combined).unwrap());
 }
 
@@ -152,7 +160,11 @@ fn oversized_owner_is_rejected() {
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
     let serial = note_serial(owner, spend_key);
-    let commitment = note_commitment(chain_id, serial, u256::to_limbs(U256::from(100)));
+    let commitment = note_commitment(
+        chain_id,
+        serial,
+        u256_limbs_be(&U256::from(100).to_be_bytes()),
+    );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
 
@@ -161,11 +173,11 @@ fn oversized_owner_is_rejected() {
         root,
         nullifier: nullifier(commitment, spend_key),
         note_owner: owner,
-        mint_units: u256::to_limbs(U256::from(100)),
+        mint_units: u256_limbs_be(&U256::from(100).to_be_bytes()),
         change_commitment: Fr::from(0u64),
     };
     let witness = Witness {
-        note_amount: u256::to_limbs(U256::from(100)),
+        note_amount: u256_limbs_be(&U256::from(100).to_be_bytes()),
         note_spend_key: spend_key,
         leaf_index: 0,
         auth_path,
@@ -189,7 +201,11 @@ fn non_canonical_mint_limb_is_rejected() {
     let spend_key = Fr::from(17u64);
     let chain_id = 31_337u64;
     let serial = note_serial(owner, spend_key);
-    let commitment = note_commitment(chain_id, serial, u256::to_limbs(U256::from(200)));
+    let commitment = note_commitment(
+        chain_id,
+        serial,
+        u256_limbs_be(&U256::from(200).to_be_bytes()),
+    );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(EMIT, commitment, 0, &auth_path);
 
@@ -204,7 +220,7 @@ fn non_canonical_mint_limb_is_rejected() {
         change_commitment: Fr::from(0u64),
     };
     let witness = Witness {
-        note_amount: u256::to_limbs(U256::from(200)),
+        note_amount: u256_limbs_be(&U256::from(200).to_be_bytes()),
         note_spend_key: spend_key,
         leaf_index: 0,
         auth_path,

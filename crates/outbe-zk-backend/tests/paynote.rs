@@ -5,15 +5,15 @@
 
 mod common;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use ark_ff::PrimeField;
 use outbe_protocol::protocol::zk::Circuit;
 use outbe_protocol::{Codec, OutbeV1};
 use outbe_zk_backend::barretenberg::verify_circuit;
 use outbe_zk_canonical::paynote;
 
+use outbe_protocol::codec::u256_limbs_be;
 use outbe_zk_canonical::noir::paynote::{Paynote, PublicInputs, Witness};
-use outbe_zk_canonical::u256;
 
 use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
@@ -59,16 +59,17 @@ fn paynote_partial_spend_prove_verify_round_trip() {
 
     // Above the old u128 ceiling: upper limbs must survive the commitment,
     // public ABI, comparison, subtraction, and change commitment.
-    let note_value = (U256::from(1) << 200) + U256::from(100);
-    let spend_value = (U256::from(1) << 199) + U256::from(40);
-    let note_amount = u256::to_limbs(note_value);
-    let spend_amount = u256::to_limbs(spend_value);
+    let note_value = (U256::from(1) << 200usize) + U256::from(100);
+    let spend_value = (U256::from(1) << 199usize) + U256::from(40);
+    let note_amount = u256_limbs_be(&note_value.to_be_bytes());
+    let spend_amount = u256_limbs_be(&spend_value.to_be_bytes());
     let serial = note_serial(spend_key);
     let commitment = note_commitment(chain_id, serial, asset, note_amount);
     assert_eq!(serial, paynote::hash::note_sn(spend_key).unwrap());
     assert_eq!(
         commitment,
-        paynote::hash::note_commitment(chain_id, serial, [0xa0; 20], note_value).unwrap()
+        paynote::hash::note_commitment(chain_id, serial, Address::from([0xa0; 20]), note_value)
+            .unwrap()
     );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(PAYNOTE, commitment, 0, &auth_path);
@@ -85,7 +86,7 @@ fn paynote_partial_spend_prove_verify_round_trip() {
         chain_id,
         note_serial(next_key),
         asset,
-        u256::to_limbs(note_value - spend_value),
+        u256_limbs_be(&(note_value - spend_value).to_be_bytes()),
     );
 
     assert_eq!(
@@ -119,7 +120,7 @@ fn paynote_partial_spend_prove_verify_round_trip() {
             (
                 "a different spend amount",
                 PublicInputs {
-                    spend_amount: u256::to_limbs(spend_value + U256::from(1)),
+                    spend_amount: u256_limbs_be(&(spend_value + U256::from(1)).to_be_bytes()),
                     ..public.clone()
                 },
             ),
@@ -171,7 +172,12 @@ fn oversized_asset_is_rejected() {
     let chain_id = 31_337u64;
     let spend_key = Fr::from(17u64);
     let serial = note_serial(spend_key);
-    let commitment = note_commitment(chain_id, serial, asset, u256::to_limbs(U256::from(100)));
+    let commitment = note_commitment(
+        chain_id,
+        serial,
+        asset,
+        u256_limbs_be(&U256::from(100).to_be_bytes()),
+    );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(PAYNOTE, commitment, 0, &auth_path);
 
@@ -181,11 +187,11 @@ fn oversized_asset_is_rejected() {
         nullifier: nullifier(commitment, spend_key),
         asset,
         owner: address([0x33; 20]),
-        spend_amount: u256::to_limbs(U256::from(100)),
+        spend_amount: u256_limbs_be(&U256::from(100).to_be_bytes()),
         change_commitment: Fr::from(0u64),
     };
     let witness = Witness {
-        note_amount: u256::to_limbs(U256::from(100)),
+        note_amount: u256_limbs_be(&U256::from(100).to_be_bytes()),
         note_spend_key: spend_key,
         leaf_index: 0,
         auth_path,

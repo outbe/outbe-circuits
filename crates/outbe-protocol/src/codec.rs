@@ -28,6 +28,8 @@
 //!    at the type level (`Codec::Bytes`). Blanket conventions every FFI / chain
 //!    boundary uses; bring it into scope with `use outbe_protocol::Codec`.
 
+#[cfg(feature = "alloy")]
+use alloy_primitives::{B256, U256};
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -49,6 +51,12 @@ pub trait FieldElement<F: PrimeField> {
     /// The single field element this value encodes to, or
     /// [`Error::NonCanonical`] if it has no canonical element.
     fn to_field(&self) -> Result<F, Error>;
+
+    /// Recover this type from a field's canonical value, rejecting values
+    /// outside the target's range with [`Error::NonCanonical`].
+    fn from_field(value: &F) -> Result<Self, Error>
+    where
+        Self: Sized;
 }
 
 /// A value that encodes into zero or more field elements, in canonical
@@ -84,8 +92,28 @@ pub fn field_from_be_bytes_canonical<F: PrimeField>(
         .iter()
         .flat_map(|byte| (0..8).rev().map(move |i| (byte >> i) & 1 == 1))
         .collect();
+    // The block rejects nonzero overflow bits while allowing extra leading zeros
+    let excess = bits.len().saturating_sub(F::BigInt::NUM_LIMBS * 64);
+    if bits[..excess].iter().any(|bit| *bit) {
+        return Err(Error::NonCanonical(what));
+    }
     let repr = <F::BigInt as BigInteger>::from_bits_be(&bits);
     F::from_bigint(repr).ok_or(Error::NonCanonical(what))
+}
+
+fn field_to_be_array<F: PrimeField, const N: usize>(
+    value: &F,
+    what: &'static str,
+) -> Result<[u8; N], Error> {
+    let value = value.into_bigint();
+    if value.num_bits() as usize > N * 8 {
+        return Err(Error::NonCanonical(what));
+    }
+    let bytes = value.to_bytes_be();
+    let len = bytes.len().min(N);
+    let mut out = [0u8; N];
+    out[N - len..].copy_from_slice(&bytes[bytes.len() - len..]);
+    Ok(out)
 }
 
 /// Split a big-endian `uint256` into the canonical noir-bignum representation:
@@ -125,6 +153,9 @@ macro_rules! scalar_field_element {
     ($($t:ty),*) => {$(
         impl<F: PrimeField> FieldElement<F> for $t {
             fn to_field(&self) -> Result<F, Error> { Ok(F::from(*self)) }
+            fn from_field(value: &F) -> Result<Self, Error> {
+                Ok(Self::from_be_bytes(field_to_be_array(value, stringify!($t))?))
+            }
         }
         impl<F: PrimeField> FieldEncode<F> for $t {
             fn encode(&self, out: &mut Vec<F>) -> Result<(), Error> {
@@ -134,7 +165,28 @@ macro_rules! scalar_field_element {
         }
     )*};
 }
-scalar_field_element!(u8, u16, u32, u64, u128, bool);
+scalar_field_element!(u8, u16, u32, u64, u128);
+
+impl<F: PrimeField> FieldElement<F> for bool {
+    fn to_field(&self) -> Result<F, Error> {
+        Ok(F::from(*self))
+    }
+
+    fn from_field(value: &F) -> Result<Self, Error> {
+        match field_to_be_array::<F, 1>(value, "bool")?[0] {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(Error::NonCanonical("bool")),
+        }
+    }
+}
+
+impl<F: PrimeField> FieldEncode<F> for bool {
+    fn encode(&self, out: &mut Vec<F>) -> Result<(), Error> {
+        out.push(self.to_field()?);
+        Ok(())
+    }
+}
 
 /// An entity vector field viewed as a canonical **set**.
 ///
@@ -258,8 +310,8 @@ impl<F: PrimeField, T: FieldEncode<F>, const N: usize> FieldEncode<F> for [T; N]
 #[cfg(feature = "alloy")]
 mod alloy_impls {
     use super::{
-        field_from_be_bytes, field_from_be_bytes_canonical, u256_limbs_be, Error, FieldElement,
-        FieldEncode,
+        field_from_be_bytes, field_from_be_bytes_canonical, field_to_be_array, u256_limbs_be,
+        Error, FieldElement, FieldEncode,
     };
     use alloy_primitives::{Address, FixedBytes, U16, U256, U32, U64};
     use ark_ff::PrimeField;
@@ -268,6 +320,10 @@ mod alloy_impls {
     impl<F: PrimeField> FieldElement<F> for Address {
         fn to_field(&self) -> Result<F, Error> {
             Ok(field_from_be_bytes(self.as_slice()))
+        }
+
+        fn from_field(value: &F) -> Result<Self, Error> {
+            field_to_be_array::<F, 20>(value, "address").map(Self::from)
         }
     }
     impl<F: PrimeField> FieldEncode<F> for Address {
@@ -282,6 +338,10 @@ mod alloy_impls {
     impl<F: PrimeField> FieldElement<F> for FixedBytes<32> {
         fn to_field(&self) -> Result<F, Error> {
             field_from_be_bytes_canonical(self.as_slice(), "bytes32")
+        }
+
+        fn from_field(value: &F) -> Result<Self, Error> {
+            field_to_be_array::<F, 32>(value, "bytes32").map(Self::from)
         }
     }
     impl<F: PrimeField> FieldEncode<F> for FixedBytes<32> {
@@ -298,6 +358,10 @@ mod alloy_impls {
             impl<F: PrimeField> FieldElement<F> for $t {
                 fn to_field(&self) -> Result<F, Error> {
                     Ok(F::from(self.as_limbs()[0]))
+                }
+                fn from_field(value: &F) -> Result<Self, Error> {
+                    Self::checked_from_limbs_slice(value.into_bigint().as_ref())
+                        .ok_or(Error::NonCanonical(stringify!($t)))
                 }
             }
             impl<F: PrimeField> FieldEncode<F> for $t {
@@ -367,6 +431,45 @@ pub trait Codec: Suite {
     /// 32-byte big-endian → field element (reduced mod order).
     fn field_from_be32(b: &[u8; 32]) -> Self::Field {
         Self::Field::from_be_bytes_mod_order(b)
+    }
+
+    /// Decode a big-endian field word, rejecting values >= the field modulus.
+    #[cfg(feature = "alloy")]
+    fn field_from_b256(value: &B256) -> Result<Self::Field, Error> {
+        value.to_field()
+    }
+
+    /// Encode a field as a zero-padded big-endian word; reject values over 256 bits.
+    #[cfg(feature = "alloy")]
+    fn field_to_b256(value: &Self::Field) -> Result<B256, Error> {
+        B256::from_field(value)
+    }
+
+    /// Encode a full-width amount as three little-endian `[120, 120, 16]`-bit
+    /// field limbs, using the same [`FieldEncode`] implementation as entities.
+    #[cfg(feature = "alloy")]
+    fn fields_from_u256(value: &U256) -> Result<[Self::Field; 3], Error> {
+        let mut fields = Vec::with_capacity(3);
+        value.encode(&mut fields)?;
+        fields
+            .try_into()
+            .map_err(|_| Error::NonCanonical("uint256 requires three field limbs"))
+    }
+
+    /// Recombine exactly three canonical `[120, 120, 16]`-bit field limbs.
+    #[cfg(feature = "alloy")]
+    fn fields_to_u256(fields: &[Self::Field]) -> Result<U256, Error> {
+        let [lo, mid, hi] = fields else {
+            return Err(Error::NonCanonical("uint256 requires three field limbs"));
+        };
+        let limbs = [
+            u128::from_field(lo)?,
+            u128::from_field(mid)?,
+            u128::from_field(hi)?,
+        ];
+        u256_from_limbs_be(limbs)
+            .map(U256::from_be_bytes)
+            .ok_or(Error::NonCanonical("uint256 limbs"))
     }
 
     /// Embedded-curve secret scalar → its type-sized byte block.

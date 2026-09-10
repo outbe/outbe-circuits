@@ -505,9 +505,7 @@ fn witness_inputs_layout_is_canonical() {
 /// three 120-bit `U256` limbs of `mint_units`, and the change commitment.
 #[test]
 fn emit_mint_descriptor_and_abi_layout() {
-    use alloy_primitives::U256;
     use outbe_zk_canonical::noir::emit_mint as emit;
-    use outbe_zk_canonical::u256;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
     assert_eq!(emit::EmitMint::VERSION, "1.5.0");
@@ -517,10 +515,8 @@ fn emit_mint_descriptor_and_abi_layout() {
     assert_ne!(emit::EmitMint::VK_HASH, [0u8; 32]);
 
     // Above the old u128 ceiling, so the upper limbs must carry value.
-    let public_amount = (U256::from(0xfu64) << 128) + U256::from((1u128 << 100) + 40);
-    let private_amount = public_amount + U256::from(60);
-    let public_limbs = u256::to_limbs(public_amount);
-    let private_limbs = u256::to_limbs(private_amount);
+    let public_limbs = [(1u128 << 100) + 40, 0xf << 8, 0];
+    let private_limbs = [(1u128 << 100) + 100, 0xf << 8, 0];
     let public = emit::PublicInputs {
         chain_id: 1,
         root: Fr::from(2u64),
@@ -606,9 +602,7 @@ fn l2_chain_zero_enables_full_proof() {
 /// rather than 20 byte leaves.
 #[test]
 fn paynote_descriptor_and_abi_layout() {
-    use alloy_primitives::U256;
     use outbe_zk_canonical::noir::paynote as pay;
-    use outbe_zk_canonical::u256;
 
     assert_eq!(pay::Paynote::LABEL, "outbe.paynote");
     assert_eq!(pay::Paynote::VERSION, "1.2.0");
@@ -619,10 +613,8 @@ fn paynote_descriptor_and_abi_layout() {
 
     let asset = Fr::from_be_bytes_mod_order(&[0xa0; 20]);
     let owner = Fr::from_be_bytes_mod_order(&[0x33; 20]);
-    let spend_value = (U256::from(0xfu64) << 128) + U256::from((1u128 << 100) + 40);
-    let note_value = spend_value + U256::from(60);
-    let spend_amount = u256::to_limbs(spend_value);
-    let note_amount = u256::to_limbs(note_value);
+    let spend_amount = [(1u128 << 100) + 40, 0xf << 8, 0];
+    let note_amount = [(1u128 << 100) + 100, 0xf << 8, 0];
     let public = pay::PublicInputs {
         chain_id: 1,
         root: Fr::from(2u64),

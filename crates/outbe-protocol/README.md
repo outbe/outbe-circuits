@@ -83,6 +83,25 @@ let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;  // the field
 // sender: &[u8; 20]   commitment_id: &[u8; 32]   chain_id: u64
 ```
 
+### Converting field values
+
+`FieldElement::from_field` reverses single-field encoding and rejects values
+outside the target type's range. Custom `FieldElement` implementations must
+provide both `to_field` and `from_field`.
+
+```rust
+use outbe_protocol::{FieldElement, OutbeV1, Suite};
+
+let field: <OutbeV1 as Suite>::Field = 42u64.to_field()?;
+let value = u64::from_field(&field)?;
+// With the alloy feature: B256::from_field(&field), Address::from_field(&field).
+```
+
+With the `alloy` feature, `Codec::fields_from_u256` and `Codec::fields_to_u256`
+convert full-width amounts using the same three `[120, 120, 16]`-bit limbs as
+`FieldEncode` and `u256_limbs_be`. They replace the singular `field_from_u256`
+and `field_to_u256` helpers. `B256` remains the type for a single field word.
+
 ### Entity hashing with `#[derive(Entity)]`
 
 Annotate a typed (e.g. Solidity-mirroring) struct; the macro reads the canonical

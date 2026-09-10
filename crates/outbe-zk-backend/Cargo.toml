@@ -45,7 +45,7 @@ with-network-srs = ["dep:reqwest"]
 [dev-dependencies]
 # The concrete canonical circuits — only the tests/benches need them; the
 # library is generic over any circuit implementing the core seams.
-outbe-zk-canonical = { path = "../outbe-zk-canonical" }
+outbe-zk-canonical = { path = "../outbe-zk-canonical", features = ["alloy"] }
 ark-std = { workspace = true }
 alloy-primitives = { workspace = true }
 criterion = { workspace = true }

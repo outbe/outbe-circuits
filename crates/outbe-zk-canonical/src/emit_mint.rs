@@ -2,10 +2,24 @@
 
 pub mod hash;
 
-use outbe_protocol::protocol::zkproof::{
-    decode_public_words, read_u128_be_padded, read_u64_be_padded,
-    ProofMarshalingError as WireMarshalingError,
-};
+#[cfg(feature = "alloy")]
+use alloy_primitives::{Address, B256, U256};
+#[cfg(feature = "alloy")]
+use ark_ff::{BigInteger, PrimeField};
+use outbe_protocol::protocol::shielded_pool::ShieldedPool;
+use outbe_protocol::protocol::zkproof::ProofMarshalingError as WireMarshalingError;
+#[cfg(feature = "alloy")]
+use outbe_protocol::{protocol::zkproof::decode_public_words, Codec, FieldElement};
+use outbe_protocol::{OutbeV1, Suite};
+
+/// Cryptographic suite used by Emit.
+pub type EmitSuite = OutbeV1;
+pub type Field = <EmitSuite as Suite>::Field;
+
+pub type Pool = ShieldedPool<OutbeV1>;
+
+/// In-memory commitment tree for Emit clients.
+pub type Tree = outbe_protocol::protocol::imt::Imt<EmitSuite>;
 
 pub const PUBLIC_INPUT_COUNT: usize = 8;
 pub const PROOF_WORDS: usize = 250;
@@ -24,49 +38,48 @@ pub enum MarshalingError {
 }
 
 /// Public claim carried by `outbe.emit.mint@1.5.0` in circuit order.
+#[cfg(feature = "alloy")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicInputs {
     pub chain_id: u64,
-    pub root: [u8; 32],
-    pub nullifier: [u8; 32],
-    pub note_owner: [u8; 20],
-    /// Three little-endian noir-bignum limbs with radix `2^120`.
-    pub mint_units: [u128; 3],
-    pub change_commitment: [u8; 32],
+    pub root: B256,
+    pub nullifier: B256,
+    pub note_owner: Address,
+    /// Full-width amount decoded from three canonical radix-`2^120` limbs.
+    pub mint_units: U256,
+    pub change_commitment: B256,
 }
 
+/// Decode public inputs using Alloy address, hash, and amount types.
+#[cfg(feature = "alloy")]
 pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, MarshalingError> {
     let words = decode_public_words::<PUBLIC_INPUT_COUNT>(combined_proof, COMBINED_LEN)?;
 
-    let chain_id = read_u64_be_padded(&words[0]).ok_or(MarshalingError::InvalidChainId)?;
-    if words[3][..12].iter().any(|byte| *byte != 0) {
-        return Err(MarshalingError::InvalidOwner);
-    }
-    let mut note_owner = [0u8; 20];
-    note_owner.copy_from_slice(&words[3][12..]);
-
-    let mut mint_units = [0u128; 3];
-    for (index, (limb, word)) in mint_units.iter_mut().zip(&words[4..7]).enumerate() {
-        *limb = read_u128_be_padded(word).ok_or(MarshalingError::InvalidMintLimb(index))?;
-    }
-    for (index, limb) in mint_units.iter().copied().enumerate() {
-        let limit = if index < 2 { 1u128 << 120 } else { 1u128 << 16 };
-        if limb >= limit {
-            return Err(MarshalingError::InvalidMintLimb(index));
-        }
-    }
+    // decode_public_words has already checked every word for canonicality.
+    let fields = words.map(|word| OutbeV1::field_from_be32(&word));
+    let chain_id = u64::from_field(&fields[0]).map_err(|_| MarshalingError::InvalidChainId)?;
+    let note_owner = Address::from_field(&fields[3]).map_err(|_| MarshalingError::InvalidOwner)?;
+    let mint_units = OutbeV1::fields_to_u256(&fields[4..7]).map_err(|_| {
+        // Preserve the offending limb index in the wire error.
+        let index = fields[4..7]
+            .iter()
+            .zip([120, 120, 16])
+            .position(|(limb, bits)| limb.into_bigint().num_bits() > bits)
+            .expect("invalid U256 limb");
+        MarshalingError::InvalidMintLimb(index)
+    })?;
 
     Ok(PublicInputs {
         chain_id,
-        root: words[1],
-        nullifier: words[2],
+        root: words[1].into(),
+        nullifier: words[2].into(),
         note_owner,
         mint_units,
-        change_commitment: words[7],
+        change_commitment: words[7].into(),
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloy"))]
 mod tests {
     use super::*;
     use ark_bn254::Fr;
@@ -124,8 +137,12 @@ mod tests {
         assert_eq!(decoded.chain_id, 31_337);
         assert_eq!(decoded.root, words[1]);
         assert_eq!(decoded.nullifier, words[2]);
-        assert_eq!(decoded.note_owner, [0x22; 20]);
-        assert_eq!(decoded.mint_units, [40, 1u128 << 80, (1u128 << 16) - 1]);
+        assert_eq!(decoded.note_owner, Address::from([0x22; 20]));
+        let mut amount = [0u8; 32];
+        amount[..2].fill(0xff);
+        amount[6] = 1; // 2^200.
+        amount[31] = 40;
+        assert_eq!(decoded.mint_units, U256::from_be_bytes(amount));
         assert_eq!(decoded.change_commitment, words[7]);
         assert_eq!(proof.len(), COMBINED_LEN);
     }
@@ -174,6 +191,15 @@ mod tests {
                 Err(MarshalingError::InvalidMintLimb(index))
             );
         }
+
+        for index in 0..3 {
+            let mut invalid_limb = valid_words();
+            invalid_limb[4 + index][6] = 1; // 2^200, wider than u128.
+            assert_eq!(
+                decode_public_inputs(&combined(invalid_limb, PROOF_WORDS)),
+                Err(MarshalingError::InvalidMintLimb(index))
+            );
+        }
     }
 
     #[test]
@@ -186,7 +212,7 @@ mod tests {
             decode_public_inputs(&combined(words, PROOF_WORDS))
                 .unwrap()
                 .mint_units,
-            [(1u128 << 120) - 1, (1u128 << 120) - 1, (1u128 << 16) - 1,]
+            U256::MAX
         );
     }
 
