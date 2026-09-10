@@ -25,9 +25,8 @@ pub enum Error {
     #[error("aggregation of {0} slots exceeds the requested tier")]
     TierOverflow(usize),
 
-    /// Bytes meant to be a field element were not canonical: their value
-    /// is >= the field modulus, so decoding them would silently reduce
-    /// (alias) them onto a different element.
+    /// A value is outside the field modulus or the target type's range;
+    /// converting it would silently reduce or truncate it.
     #[error("non-canonical field encoding: {0}")]
     NonCanonical(&'static str),
 
