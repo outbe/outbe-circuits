@@ -5,7 +5,7 @@
 
 mod common;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use ark_ff::PrimeField;
 use outbe_protocol::protocol::zk::Circuit;
 use outbe_protocol::{Codec, OutbeV1};
@@ -68,7 +68,8 @@ fn paynote_partial_spend_prove_verify_round_trip() {
     assert_eq!(serial, paynote::hash::note_sn(spend_key).unwrap());
     assert_eq!(
         commitment,
-        paynote::hash::note_commitment(chain_id, serial, [0xa0; 20], note_value).unwrap()
+        paynote::hash::note_commitment(chain_id, serial, Address::from([0xa0; 20]), note_value)
+            .unwrap()
     );
     let auth_path = single_leaf_path(chain_id);
     let root = common::root_from_path(PAYNOTE, commitment, 0, &auth_path);

@@ -13,6 +13,12 @@ combined-proof layouts and public-input decoders. This crate is also the
 **in-code, versioned circuit registry**: the authoritative, append-only record
 of every released circuit version and its on-chain identity.
 
+The Emit mint and Paynote decoders return Alloy `B256` field words, `Address`
+addresses, and `U256` amounts. Their hash helpers accept `Address` and `U256`,
+using the protocol's `FieldElement` and `Codec` conversions; hash inputs and
+results remain field elements. Generated Noir witness types retain their ABI
+layout, including three `[120, 120, 16]`-bit limbs for each amount.
+
 ## Emit mint statement
 
 `outbe.emit.mint@1.5.0` proves knowledge of a private note amount, spend key,

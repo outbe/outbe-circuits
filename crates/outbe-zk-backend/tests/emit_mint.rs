@@ -2,7 +2,7 @@
 
 mod common;
 
-use alloy_primitives::U256;
+use alloy_primitives::{Address, U256};
 use ark_ff::PrimeField;
 
 use outbe_protocol::protocol::zk::Circuit;
@@ -65,7 +65,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     let commitment = note_commitment(chain_id, serial, note_amount);
     assert_eq!(
         serial,
-        emit_mint::hash::note_sn([0x22; 20], spend_key).unwrap()
+        emit_mint::hash::note_sn(Address::from([0x22; 20]), spend_key).unwrap()
     );
     assert_eq!(
         commitment,
@@ -131,8 +131,8 @@ fn emit_partial_mint_prove_verify_round_trip() {
     assert_eq!(combined.len(), emit_mint::COMBINED_LEN);
     let decoded = emit_mint::decode_public_inputs(&combined).unwrap();
     assert_eq!(decoded.chain_id, chain_id);
-    assert_eq!(decoded.note_owner, [0x22; 20]);
-    assert_eq!(decoded.mint_units, mint_units);
+    assert_eq!(decoded.note_owner, Address::from([0x22; 20]));
+    assert_eq!(decoded.mint_units, u256::from_limbs(mint_units).unwrap());
     assert!(verify_circuit::<EmitMint>(&combined).unwrap());
 }
 

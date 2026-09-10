@@ -14,7 +14,7 @@ base64 = { workspace = true }
 toml = { workspace = true }
 
 [dependencies]
-outbe-protocol = { workspace = true }
+outbe-protocol = { workspace = true, features = ["alloy"] }
 ark-ff = { workspace = true }
 ark-std = { workspace = true }
 ark-bn254 = { workspace = true }

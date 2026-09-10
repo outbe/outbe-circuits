@@ -22,18 +22,9 @@
 //! user-supplied and unverifiable, letting a depositor fund a note in a cheap
 //! token and spend it as an expensive one.
 
-use alloy_primitives::U256;
-use outbe_protocol::{
-    codec::{field_from_be_bytes, u256_limbs_be},
-    error::Error,
-    protocol::{imt::Imt, shielded_pool::ShieldedPool},
-    OutbeV1, Suite,
-};
-
-pub type Field = <OutbeV1 as Suite>::Field;
-
-type Pool = ShieldedPool<OutbeV1>;
-type Tree = Imt<OutbeV1>;
+use crate::paynote::{Field, Pool, Tree};
+use alloy_primitives::{Address, U256};
+use outbe_protocol::{error::Error, Codec, FieldElement, OutbeV1, Suite};
 
 /// Big-endian ASCII domain; 12 bytes fit in the proving field.
 pub const PAYNOTE_DOMAIN: &str = "OUTBE_PAYNOTE";
@@ -61,19 +52,19 @@ pub fn note_sn(note_spend_key: Field) -> Result<Field, Error> {
 pub fn note_commitment(
     chain_id: u64,
     note_sn: Field,
-    asset: [u8; 20],
+    asset: Address,
     note_amount: U256,
 ) -> Result<Field, Error> {
-    let limbs = u256_limbs_be(&note_amount.to_be_bytes::<32>());
+    let [lo, mid, hi] = OutbeV1::fields_from_u256(&note_amount)?;
     Pool::hash_multi(
         tag(Pool::tag_commitment())?,
         &[
             Field::from(chain_id),
             note_sn,
-            field_from_be_bytes(&asset),
-            Field::from(limbs[0]),
-            Field::from(limbs[1]),
-            Field::from(limbs[2]),
+            asset.to_field()?,
+            lo,
+            mid,
+            hi,
         ],
     )
 }

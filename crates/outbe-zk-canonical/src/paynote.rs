@@ -2,12 +2,22 @@
 
 pub mod hash;
 
-use alloy_primitives::{Address, U256};
-use outbe_protocol::codec::u256_from_limbs_be;
-
-use outbe_protocol::protocol::zkproof::{
-    decode_public_words, read_u128_be_padded, read_u64_be_padded, ProofMarshalingError,
+use alloy_primitives::{Address, B256, U256};
+use ark_ff::{BigInteger, PrimeField};
+use outbe_protocol::protocol::shielded_pool::ShieldedPool;
+use outbe_protocol::{
+    protocol::zkproof::{decode_public_words, ProofMarshalingError},
+    Codec, FieldElement, OutbeV1, Suite,
 };
+
+/// Cryptographic suite used by Paynote.
+pub type PayNoteSuite = OutbeV1;
+pub type Field = <PayNoteSuite as Suite>::Field;
+
+pub type Pool = ShieldedPool<OutbeV1>;
+
+/// In-memory commitment tree for Paynote clients.
+pub type Tree = outbe_protocol::protocol::imt::Imt<PayNoteSuite>;
 
 pub const PUBLIC_INPUT_COUNT: usize = 9;
 pub const PROOF_WORDS: usize = 250;
@@ -17,54 +27,44 @@ pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicInputs {
     pub chain_id: u64,
-    pub root: [u8; 32],
-    pub nullifier: [u8; 32],
+    pub root: B256,
+    pub nullifier: B256,
     pub asset: Address,
     pub owner: Address,
     pub spend_amount: U256,
-    pub change_commitment: [u8; 32],
+    pub change_commitment: B256,
 }
 
 pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, ProofMarshalingError> {
     let words = decode_public_words::<PUBLIC_INPUT_COUNT>(combined_proof, COMBINED_LEN)?;
 
-    let chain_id =
-        read_u64_be_padded(&words[0]).ok_or(ProofMarshalingError::NonCanonicalPublicInput(0))?;
-    let asset = read_address_be_padded(&words[3])
-        .ok_or(ProofMarshalingError::NonCanonicalPublicInput(3))?;
-    let owner = read_address_be_padded(&words[4])
-        .ok_or(ProofMarshalingError::NonCanonicalPublicInput(4))?;
-    let mut limbs = [0u128; 3];
-    for (index, limb) in limbs.iter_mut().enumerate() {
-        let word_index = 5 + index;
-        *limb = read_u128_be_padded(&words[word_index])
-            .ok_or(ProofMarshalingError::NonCanonicalPublicInput(word_index))?;
-        let limit = if index < 2 { 1u128 << 120 } else { 1u128 << 16 };
-        if *limb >= limit {
-            return Err(ProofMarshalingError::NonCanonicalPublicInput(word_index));
-        }
-    }
-    let spend_amount =
-        U256::from_be_bytes(u256_from_limbs_be(limbs).expect("validated canonical U256 limbs"));
+    // decode_public_words has already checked every word for canonicality.
+    let fields = words.map(|word| OutbeV1::field_from_be32(&word));
+    let chain_id = u64::from_field(&fields[0])
+        .map_err(|_| ProofMarshalingError::NonCanonicalPublicInput(0))?;
+    let asset = Address::from_field(&fields[3])
+        .map_err(|_| ProofMarshalingError::NonCanonicalPublicInput(3))?;
+    let owner = Address::from_field(&fields[4])
+        .map_err(|_| ProofMarshalingError::NonCanonicalPublicInput(4))?;
+    let spend_amount = OutbeV1::fields_to_u256(&fields[5..8]).map_err(|_| {
+        // Preserve the offending word index in the wire error.
+        let index = fields[5..8]
+            .iter()
+            .zip([120, 120, 16])
+            .position(|(limb, bits)| limb.into_bigint().num_bits() > bits)
+            .expect("invalid U256 limb");
+        ProofMarshalingError::NonCanonicalPublicInput(5 + index)
+    })?;
 
     Ok(PublicInputs {
         chain_id,
-        root: words[1],
-        nullifier: words[2],
+        root: words[1].into(),
+        nullifier: words[2].into(),
         asset,
         owner,
         spend_amount,
-        change_commitment: words[8],
+        change_commitment: words[8].into(),
     })
-}
-
-fn read_address_be_padded(slot: &[u8]) -> Option<Address> {
-    if slot.len() != 32 || slot[..12].iter().any(|byte| *byte != 0) {
-        return None;
-    }
-    let mut address = [0u8; 20];
-    address.copy_from_slice(&slot[12..]);
-    Some(Address::from(address))
 }
 
 #[cfg(test)]
@@ -164,16 +164,27 @@ mod tests {
 
     #[test]
     fn rejects_oversized_addresses_and_limbs_by_word_index() {
-        let mut invalid_address = valid_words();
-        invalid_address[3][11] = 1;
-        assert_eq!(
-            decode_public_inputs(&combined(invalid_address, PROOF_WORDS)),
-            Err(ProofMarshalingError::NonCanonicalPublicInput(3))
-        );
+        for (word_index, byte_index) in [(0, 23), (3, 11), (4, 11)] {
+            let mut invalid_word = valid_words();
+            invalid_word[word_index][byte_index] = 1;
+            assert_eq!(
+                decode_public_inputs(&combined(invalid_word, PROOF_WORDS)),
+                Err(ProofMarshalingError::NonCanonicalPublicInput(word_index))
+            );
+        }
 
         for (word_index, value) in [(5, 1u128 << 120), (6, 1u128 << 120), (7, 1u128 << 16)] {
             let mut invalid_limb = valid_words();
             invalid_limb[word_index] = u128_word(value);
+            assert_eq!(
+                decode_public_inputs(&combined(invalid_limb, PROOF_WORDS)),
+                Err(ProofMarshalingError::NonCanonicalPublicInput(word_index))
+            );
+        }
+
+        for word_index in 5..8 {
+            let mut invalid_limb = valid_words();
+            invalid_limb[word_index][6] = 1; // 2^200, wider than u128.
             assert_eq!(
                 decode_public_inputs(&combined(invalid_limb, PROOF_WORDS)),
                 Err(ProofMarshalingError::NonCanonicalPublicInput(word_index))
