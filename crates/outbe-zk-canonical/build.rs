@@ -374,6 +374,10 @@ fn gen_module(l: &Loaded) -> String {
     m.push_str(&public_fields);
     m.push_str("    }\n\n");
 
+    if module == "paynote" {
+        m.push_str(&gen_alloy_public_inputs(params, module));
+    }
+
     m.push_str("    /// Canonical dotted label (matches `outbe-zk-canonical`).\n");
     m.push_str(&format!("    pub const LABEL: &str = {:?};\n", l.label));
     m.push_str("    /// Semver-style version string. Not authoritative.\n");
@@ -460,6 +464,92 @@ fn gen_module(l: &Loaded) -> String {
 
     m.push_str("}\n\n");
     m
+}
+
+/// Alloy public claims use B256 for bare Fields, and preserve the semantic
+/// EthAddress / U256 types recorded in the ABI. Other shapes fail closed until
+/// their wire representation is explicitly supported here.
+fn gen_alloy_public_inputs(params: &[Value], module: &str) -> String {
+    let mut declarations = String::new();
+    let mut decoded = String::new();
+    let mut index = 0;
+    for p in params {
+        if p["visibility"].as_str() != Some("public") {
+            continue;
+        }
+        let name = p["name"].as_str().expect("ABI parameter name");
+        let ty = &p["type"];
+        let (rust, width) = match ty["kind"].as_str() {
+            Some("field") => ("B256".to_string(), 1),
+            Some("integer")
+                if ty["sign"] == "unsigned"
+                    && matches!(ty["width"].as_u64(), Some(8 | 16 | 32 | 64 | 128)) =>
+            {
+                (rust_type(ty, module), 1)
+            }
+            Some("struct") => match ty["path"].as_str() {
+                Some("outbe_circuit_core::types::EthAddress") => {
+                    assert_eq!(rust_type(ty, module), "Fr", "EthAddress ABI changed");
+                    ("Address".to_string(), 1)
+                }
+                Some("bignum::fields::U256::U256") => {
+                    assert_eq!(rust_type(ty, module), "[u128; 3]", "U256 ABI changed");
+                    ("U256".to_string(), 3)
+                }
+                _ => panic!("{module}: unsupported Alloy ABI type for {name}: {ty}"),
+            },
+            _ => panic!("{module}: unsupported Alloy ABI type for {name}: {ty}"),
+        };
+        declarations.push_str(&format!("        pub {name}: {rust},\n"));
+        let value = match rust.as_str() {
+            "B256" => format!("words[{index}].into()"),
+            "U256" => {
+                let end = index + width;
+                format!(
+                    r#"OutbeV1::fields_to_u256(&fields[{index}..{end}]).map_err(|_| {{
+                    // Preserve the offending limb index in the wire error.
+                    let offset = fields[{index}..{end}].iter().zip([120, 120, 16])
+                        .position(|(limb, bits)| limb.into_bigint().num_bits() > bits)
+                        .expect("invalid U256 limb");
+                    ProofMarshalingError::NonCanonicalPublicInput({index} + offset)
+                }})?"#
+                )
+            }
+            _ => format!(
+                "{rust}::from_field(&fields[{index}]).map_err(|_| ProofMarshalingError::NonCanonicalPublicInput({index}))?"
+            ),
+        };
+        decoded.push_str(&format!("                {name}: {value},\n"));
+        index += width;
+    }
+    format!(
+        r#"
+    /// Number of public field words in the frozen ABI.
+    pub const PUBLIC_INPUT_COUNT: usize = {index};
+
+    #[cfg(feature = "alloy")]
+    pub mod alloy {{
+        use alloy_primitives::{{Address, B256, U256}};
+        use ark_ff::{{BigInteger, PrimeField}};
+        use outbe_protocol::{{Codec, FieldElement, OutbeV1}};
+        use outbe_protocol::protocol::zkproof::{{decode_public_words, ProofMarshalingError}};
+
+        /// Public claim in circuit order, with bare Fields represented as B256.
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub struct PublicInputs {{
+{declarations}        }}
+
+        /// Decode public inputs using Alloy address, hash, and amount types.
+        pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, ProofMarshalingError> {{
+            let words = decode_public_words::<{{super::PUBLIC_INPUT_COUNT}}>(combined_proof, crate::{module}::COMBINED_LEN)?;
+            // decode_public_words has checked every word for canonicality.
+            let fields = words.map(|word| OutbeV1::field_from_be32(&word));
+            Ok(PublicInputs {{
+{decoded}            }})
+        }}
+    }}
+"#
+    )
 }
 
 /// Flatten one ABI parameter into the running `Vec<S::Field> v` in ABI order.
