@@ -21,9 +21,7 @@ pub type Pool = ShieldedPool<OutbeV1>;
 /// In-memory commitment tree for Emit clients.
 pub type Tree = outbe_protocol::protocol::imt::Imt<EmitSuite>;
 
-pub const PUBLIC_INPUT_COUNT: usize = 8;
-pub const PROOF_WORDS: usize = 250;
-pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;
+pub use crate::noir::emit_mint::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MarshalingError {

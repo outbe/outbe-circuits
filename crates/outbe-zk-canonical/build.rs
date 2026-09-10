@@ -39,6 +39,7 @@ struct Loaded {
     status: String,
     circuit_hash: [u8; 32],
     vk_hash: [u8; 32],
+    vk: Vec<u8>,
     abi: Option<Value>,
     has_bytecode: bool,
 }
@@ -124,6 +125,7 @@ fn main() {
             status,
             circuit_hash,
             vk_hash,
+            vk,
             abi,
             has_bytecode,
         });
@@ -154,7 +156,7 @@ fn main() {
             .or_insert(l);
     }
     for l in head.values() {
-        generated.push_str(&gen_module(l));
+        generated.push_str(&gen_module(l, &proof_system));
     }
 
     // The in-code registry over every entry (all versions). VK-only view.
@@ -330,7 +332,7 @@ fn gen_registry_entry(l: &Loaded, proof_system: &str) -> String {
 }
 
 /// Generate `pub mod <module> { … }` for the head (latest active) version.
-fn gen_module(l: &Loaded) -> String {
+fn gen_module(l: &Loaded, proof_system: &str) -> String {
     let module = &l.module;
     let version = &l.version;
     let params = l.abi.as_ref().expect("head module has ABI")["parameters"]
@@ -373,6 +375,21 @@ fn gen_module(l: &Loaded) -> String {
     m.push_str("    pub struct PublicInputs {\n");
     m.push_str(&public_fields);
     m.push_str("    }\n\n");
+
+    let public_input_count: usize = params
+        .iter()
+        .filter(|p| p["visibility"] == "public")
+        .map(|p| abi_field_count(&p["type"]))
+        .sum();
+    let proof_words = proof_words(&l.vk, public_input_count, proof_system);
+    m.push_str(&format!(
+        "    /// Number of public field words in the frozen ABI.\n\
+         \x20   pub const PUBLIC_INPUT_COUNT: usize = {public_input_count};\n\
+         \x20   /// ZK proof words for the pinned proof system and frozen circuit size.\n\
+         \x20   pub const PROOF_WORDS: usize = {proof_words};\n\
+         \x20   /// Combined proof: four-byte count, public inputs, then proof words.\n\
+         \x20   pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;\n\n"
+    ));
 
     if module == "paynote" {
         m.push_str(&gen_alloy_public_inputs(params, module));
@@ -466,6 +483,44 @@ fn gen_module(l: &Loaded) -> String {
     m
 }
 
+/// Count ABI leaves, including array elements and transparent struct fields.
+fn abi_field_count(ty: &Value) -> usize {
+    match ty["kind"].as_str() {
+        Some("field" | "integer" | "boolean") => 1,
+        Some("array") => {
+            ty["length"].as_u64().expect("array length") as usize * abi_field_count(&ty["type"])
+        }
+        Some("struct") => ty["fields"]
+            .as_array()
+            .expect("struct fields")
+            .iter()
+            .map(|f| abi_field_count(&f["type"]))
+            .sum(),
+        _ => panic!("unsupported ABI type: {ty}"),
+    }
+}
+
+/// UltraKeccakZK, bb 5.0.0-nightly.20260522 (U256Codec, no round padding).
+/// Upstream at 87aa5283d5b0cab6632ed49fdd25f6548d2ba91f:
+/// barretenberg/cpp/src/barretenberg/{honk/proof_length.hpp,flavor/flavor.hpp}.
+fn proof_words(vk: &[u8], public_input_count: usize, proof_system: &str) -> usize {
+    assert_eq!(proof_system, "bb-keccak-v1", "unsupported proof layout");
+    // Three metadata words followed by 28 two-word commitments.
+    assert_eq!(vk.len(), (3 + 28 * 2) * 32, "unexpected Keccak VK size");
+    let header = |index: usize| {
+        let word = &vk[index * 32..(index + 1) * 32];
+        assert!(word[..28].iter().all(|&b| b == 0), "invalid VK header");
+        u32::from_be_bytes(word[28..].try_into().unwrap()) as usize
+    };
+    let log_n = header(0);
+    assert!((1..=28).contains(&log_n), "invalid VK log circuit size");
+    // The API proof retains the eight DefaultIO pairing-accumulator words.
+    assert_eq!(header(1), public_input_count + 8, "VK/ABI input mismatch");
+    // DefaultIO (8) + Oink (18) + Sumcheck (9*log_n + 50)
+    // + Shplemini (3*log_n + 6), including ZK masking data.
+    82 + 12 * log_n
+}
+
 /// Alloy public claims use B256 for bare Fields, and preserve the semantic
 /// EthAddress / U256 types recorded in the ABI. Other shapes fail closed until
 /// their wire representation is explicitly supported here.
@@ -524,9 +579,6 @@ fn gen_alloy_public_inputs(params: &[Value], module: &str) -> String {
     }
     format!(
         r#"
-    /// Number of public field words in the frozen ABI.
-    pub const PUBLIC_INPUT_COUNT: usize = {index};
-
     #[cfg(feature = "alloy")]
     pub mod alloy {{
         use alloy_primitives::{{Address, B256, U256}};
@@ -541,7 +593,7 @@ fn gen_alloy_public_inputs(params: &[Value], module: &str) -> String {
 
         /// Decode public inputs using Alloy address, hash, and amount types.
         pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, ProofMarshalingError> {{
-            let words = decode_public_words::<{{super::PUBLIC_INPUT_COUNT}}>(combined_proof, crate::{module}::COMBINED_LEN)?;
+            let words = decode_public_words::<{{super::PUBLIC_INPUT_COUNT}}>(combined_proof, super::COMBINED_LEN)?;
             // decode_public_words has checked every word for canonicality.
             let fields = words.map(|word| OutbeV1::field_from_be32(&word));
             Ok(PublicInputs {{

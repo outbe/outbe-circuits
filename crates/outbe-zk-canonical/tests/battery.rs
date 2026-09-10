@@ -33,6 +33,37 @@ use outbe_zk_canonical::CircuitId;
 
 type Fr = <OutbeV1 as Suite>::Field;
 
+#[test]
+fn generated_combined_proof_lengths_match_frozen_layouts() {
+    use outbe_zk_canonical::{emit_mint, full_proof, paynote};
+
+    // Released wire sizes: Paynote/Emit have log_n=14; FullProof has log_n=16.
+    assert_eq!(
+        (
+            paynote::PUBLIC_INPUT_COUNT,
+            paynote::PROOF_WORDS,
+            paynote::COMBINED_LEN
+        ),
+        (9, 250, 8292)
+    );
+    assert_eq!(
+        (
+            emit_mint::PUBLIC_INPUT_COUNT,
+            emit_mint::PROOF_WORDS,
+            emit_mint::COMBINED_LEN
+        ),
+        (8, 250, 8260)
+    );
+    assert_eq!(
+        (
+            full_proof::PUBLIC_INPUT_COUNT,
+            full_proof::PROOF_WORDS,
+            full_proof::COMBINED_LEN
+        ),
+        (4, 274, 8900)
+    );
+}
+
 /// Minimal owned entity for exercising the protocol: a stored id seed and a
 /// flat body. The real entity types live in `outbe-integration`.
 struct TestNft {

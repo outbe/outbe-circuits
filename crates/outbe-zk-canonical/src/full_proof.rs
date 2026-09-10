@@ -2,9 +2,7 @@
 
 use outbe_protocol::protocol::zkproof::{decode_public_words, ProofMarshalingError};
 
-pub const PUBLIC_INPUT_COUNT: usize = 4;
-pub const PROOF_WORDS: usize = 274;
-pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;
+pub use crate::noir::full_proof::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
 /// Public claim carried by `outbe.full_proof@1.1.0`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

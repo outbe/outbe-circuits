@@ -7,7 +7,7 @@ use outbe_protocol::{OutbeV1, Suite};
 
 #[cfg(feature = "alloy")]
 pub use crate::noir::paynote::alloy::{decode_public_inputs, PublicInputs};
-pub use crate::noir::paynote::PUBLIC_INPUT_COUNT;
+pub use crate::noir::paynote::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
 /// Cryptographic suite used by Paynote.
 pub type PayNoteSuite = OutbeV1;
@@ -17,9 +17,6 @@ pub type Pool = ShieldedPool<OutbeV1>;
 
 /// In-memory commitment tree for Paynote clients.
 pub type Tree = outbe_protocol::protocol::imt::Imt<PayNoteSuite>;
-
-pub const PROOF_WORDS: usize = 250;
-pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;
 
 #[cfg(all(test, feature = "alloy"))]
 mod tests {
