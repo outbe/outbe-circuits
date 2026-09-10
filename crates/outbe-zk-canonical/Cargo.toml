@@ -7,6 +7,9 @@ repository.workspace = true
 description = "Concrete canonical circuit/witness types for the Outbe protocol (ownership + flat aggregation), built on the generic outbe-protocol traits."
 readme = "README.md"
 
+[features]
+alloy = ["dep:alloy-primitives", "outbe-protocol/alloy"]
+
 [build-dependencies]
 serde_json = { workspace = true }
 tiny-keccak = { workspace = true }
@@ -14,11 +17,11 @@ base64 = { workspace = true }
 toml = { workspace = true }
 
 [dependencies]
-outbe-protocol = { workspace = true, features = ["alloy"] }
+outbe-protocol = { workspace = true }
 ark-ff = { workspace = true }
 ark-std = { workspace = true }
 ark-bn254 = { workspace = true }
-alloy-primitives = { workspace = true }
+alloy-primitives = { workspace = true, optional = true }
 thiserror = { workspace = true }
 # Compile-time `hex!("..")` -> `[u8; N]` for the generated circuit/vk hashes.
 hex-literal = { workspace = true }

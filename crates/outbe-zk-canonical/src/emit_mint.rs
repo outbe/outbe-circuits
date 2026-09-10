@@ -2,13 +2,15 @@
 
 pub mod hash;
 
+#[cfg(feature = "alloy")]
 use alloy_primitives::{Address, B256, U256};
+#[cfg(feature = "alloy")]
 use ark_ff::{BigInteger, PrimeField};
 use outbe_protocol::protocol::shielded_pool::ShieldedPool;
-use outbe_protocol::{
-    protocol::zkproof::{decode_public_words, ProofMarshalingError as WireMarshalingError},
-    Codec, FieldElement, OutbeV1, Suite,
-};
+use outbe_protocol::protocol::zkproof::ProofMarshalingError as WireMarshalingError;
+#[cfg(feature = "alloy")]
+use outbe_protocol::{protocol::zkproof::decode_public_words, Codec, FieldElement};
+use outbe_protocol::{OutbeV1, Suite};
 
 /// Cryptographic suite used by Emit.
 pub type EmitSuite = OutbeV1;
@@ -36,6 +38,7 @@ pub enum MarshalingError {
 }
 
 /// Public claim carried by `outbe.emit.mint@1.5.0` in circuit order.
+#[cfg(feature = "alloy")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicInputs {
     pub chain_id: u64,
@@ -47,6 +50,8 @@ pub struct PublicInputs {
     pub change_commitment: B256,
 }
 
+/// Decode public inputs using Alloy address, hash, and amount types.
+#[cfg(feature = "alloy")]
 pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, MarshalingError> {
     let words = decode_public_words::<PUBLIC_INPUT_COUNT>(combined_proof, COMBINED_LEN)?;
 
@@ -74,7 +79,7 @@ pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, Marsh
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloy"))]
 mod tests {
     use super::*;
     use ark_bn254::Fr;
@@ -133,10 +138,11 @@ mod tests {
         assert_eq!(decoded.root, words[1]);
         assert_eq!(decoded.nullifier, words[2]);
         assert_eq!(decoded.note_owner, Address::from([0x22; 20]));
-        assert_eq!(
-            decoded.mint_units,
-            U256::from(40) + (U256::from(1) << 200) + (U256::from(u16::MAX) << 240)
-        );
+        let mut amount = [0u8; 32];
+        amount[..2].fill(0xff);
+        amount[6] = 1; // 2^200.
+        amount[31] = 40;
+        assert_eq!(decoded.mint_units, U256::from_be_bytes(amount));
         assert_eq!(decoded.change_commitment, words[7]);
         assert_eq!(proof.len(), COMBINED_LEN);
     }

@@ -23,8 +23,11 @@
 //! token and spend it as an expensive one.
 
 use crate::paynote::{Field, Pool, Tree};
+#[cfg(feature = "alloy")]
 use alloy_primitives::{Address, U256};
-use outbe_protocol::{error::Error, Codec, FieldElement, OutbeV1, Suite};
+use outbe_protocol::{codec::field_from_be_bytes, error::Error, OutbeV1, Suite};
+#[cfg(feature = "alloy")]
+use outbe_protocol::{Codec, FieldElement};
 
 /// Big-endian ASCII domain; 12 bytes fit in the proving field.
 pub const PAYNOTE_DOMAIN: &str = "OUTBE_PAYNOTE";
@@ -49,6 +52,7 @@ pub fn note_sn(note_spend_key: Field) -> Result<Field, Error> {
 /// amount_limb_1, amount_limb_2])` — the Merkle leaf and the only commitment
 /// form the runtime appends. Hashing all canonical radix-2^120 limbs binds the
 /// full uint256 amount without field-modulus aliases.
+#[cfg(feature = "alloy")]
 pub fn note_commitment(
     chain_id: u64,
     note_sn: Field,
@@ -59,9 +63,31 @@ pub fn note_commitment(
     Pool::hash_multi(
         tag(Pool::tag_commitment())?,
         &[
-            Field::from(chain_id),
+            chain_id.to_field()?,
             note_sn,
             asset.to_field()?,
+            lo,
+            mid,
+            hi,
+        ],
+    )
+}
+
+/// Commit to a note with a 20-byte asset address and three radix-`2^120` amount fields.
+/// Limbs must be inside the `[120, 120, 16]`-bit bounds.
+pub fn note_commitment_raw(
+    chain_id: u64,
+    note_sn: Field,
+    asset: [u8; 20],
+    note_amount: [Field; 3],
+) -> Result<Field, Error> {
+    let [lo, mid, hi] = note_amount;
+    Pool::hash_multi(
+        tag(Pool::tag_commitment())?,
+        &[
+            Field::from(chain_id),
+            note_sn,
+            field_from_be_bytes(&asset),
             lo,
             mid,
             hi,
@@ -107,4 +133,45 @@ pub fn merkle_node(left: Field, right: Field) -> Result<Field, Error> {
 /// Derived in memory on every request; never persisted.
 pub fn empty_subtrees(chain_id: u64, depth: usize) -> Result<Vec<Field>, Error> {
     Tree::empty_roots(paynote_domain(), empty_leaf(chain_id)?, depth)
+}
+
+#[cfg(all(test, feature = "alloy"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn alloy_hashes_match_raw() {
+        let amounts = [
+            (U256::ZERO, [0, 0, 0]),
+            (U256::from(1), [1, 0, 0]),
+            (U256::from(1) << 120usize, [0, 1, 0]),
+            (U256::from(1) << 240usize, [0, 0, 1]),
+            (
+                (U256::from(1) << 200usize) + U256::from(7),
+                [7, 1u128 << 80, 0],
+            ),
+            (
+                U256::MAX,
+                [(1u128 << 120) - 1, (1u128 << 120) - 1, u16::MAX as u128],
+            ),
+        ];
+        for (chain_id, key, address) in [
+            (0, Field::from(0u64), [0; 20]),
+            (
+                31_337,
+                Field::from(17u64),
+                core::array::from_fn(|i| i as u8),
+            ),
+            (u64::MAX, -Field::from(1u64), [0xff; 20]),
+        ] {
+            let serial = note_sn(key).unwrap();
+            for (amount, limbs) in amounts {
+                assert_eq!(
+                    note_commitment(chain_id, serial, Address::from(address), amount).unwrap(),
+                    note_commitment_raw(chain_id, serial, address, limbs.map(Field::from)).unwrap(),
+                    "chain_id={chain_id}, amount={amount}",
+                );
+            }
+        }
+    }
 }

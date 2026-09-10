@@ -2,13 +2,17 @@
 
 pub mod hash;
 
+#[cfg(feature = "alloy")]
 use alloy_primitives::{Address, B256, U256};
+#[cfg(feature = "alloy")]
 use ark_ff::{BigInteger, PrimeField};
 use outbe_protocol::protocol::shielded_pool::ShieldedPool;
+#[cfg(feature = "alloy")]
 use outbe_protocol::{
     protocol::zkproof::{decode_public_words, ProofMarshalingError},
-    Codec, FieldElement, OutbeV1, Suite,
+    Codec, FieldElement,
 };
+use outbe_protocol::{OutbeV1, Suite};
 
 /// Cryptographic suite used by Paynote.
 pub type PayNoteSuite = OutbeV1;
@@ -24,6 +28,7 @@ pub const PROOF_WORDS: usize = 250;
 pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;
 
 /// Public claim carried by `outbe.paynote@1.2.0` in circuit order.
+#[cfg(feature = "alloy")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct PublicInputs {
     pub chain_id: u64,
@@ -35,6 +40,8 @@ pub struct PublicInputs {
     pub change_commitment: B256,
 }
 
+/// Decode public inputs using Alloy address, hash, and amount types.
+#[cfg(feature = "alloy")]
 pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, ProofMarshalingError> {
     let words = decode_public_words::<PUBLIC_INPUT_COUNT>(combined_proof, COMBINED_LEN)?;
 
@@ -47,7 +54,7 @@ pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, Proof
     let owner = Address::from_field(&fields[4])
         .map_err(|_| ProofMarshalingError::NonCanonicalPublicInput(4))?;
     let spend_amount = OutbeV1::fields_to_u256(&fields[5..8]).map_err(|_| {
-        // Preserve the offending word index in the wire error.
+        // Preserve the offending limb index in the wire error.
         let index = fields[5..8]
             .iter()
             .zip([120, 120, 16])
@@ -67,7 +74,7 @@ pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, Proof
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "alloy"))]
 mod tests {
     use super::*;
     use ark_bn254::Fr;
