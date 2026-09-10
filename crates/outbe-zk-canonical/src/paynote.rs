@@ -6,7 +6,7 @@ use outbe_protocol::protocol::shielded_pool::ShieldedPool;
 use outbe_protocol::{OutbeV1, Suite};
 
 #[cfg(feature = "alloy")]
-pub use crate::noir::paynote::alloy::{decode_public_inputs, PublicInputs};
+pub use crate::noir::paynote::alloy::{decode_public_inputs, PublicInputs, Witness};
 pub use crate::noir::paynote::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
 /// Cryptographic suite used by Paynote.
@@ -22,7 +22,7 @@ pub type Tree = outbe_protocol::protocol::imt::Imt<PayNoteSuite>;
 mod tests {
     use super::*;
     use alloy_primitives::{Address, B256, U256};
-    use outbe_protocol::protocol::zkproof::ProofMarshalingError;
+    use outbe_protocol::error::Error;
 
     fn combined() -> Vec<u8> {
         let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
@@ -61,16 +61,23 @@ mod tests {
     }
 
     #[test]
-    fn generated_decoder_reports_the_offending_word() {
-        for (index, bits) in [(0, 64), (3, 160), (4, 160), (5, 120), (6, 120), (7, 16)] {
+    fn generated_decoder_preserves_noncanonical_errors() {
+        for (index, bits, expected) in [
+            (0, 64, "u64"),
+            (3, 160, "address"),
+            (4, 160, "address"),
+            (5, 120, "uint256 limbs"),
+            (6, 120, "uint256 limbs"),
+            (7, 16, "uint256 limbs"),
+        ] {
             let mut proof = combined();
             let start = 4 + index * 32;
             let invalid: U256 = U256::from(1) << bits;
             proof[start..start + 32].copy_from_slice(&invalid.to_be_bytes::<32>());
-            assert_eq!(
+            assert!(matches!(
                 decode_public_inputs(&proof),
-                Err(ProofMarshalingError::NonCanonicalPublicInput(index))
-            );
+                Err(Error::NonCanonical(what)) if what == expected
+            ));
         }
     }
 }

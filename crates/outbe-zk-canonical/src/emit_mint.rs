@@ -3,11 +3,10 @@
 pub mod hash;
 
 use outbe_protocol::protocol::shielded_pool::ShieldedPool;
-use outbe_protocol::protocol::zkproof::ProofMarshalingError as WireMarshalingError;
 use outbe_protocol::{OutbeV1, Suite};
 
 #[cfg(feature = "alloy")]
-pub use crate::noir::emit_mint::alloy::{decode_public_inputs, PublicInputs};
+pub use crate::noir::emit_mint::alloy::{decode_public_inputs, PublicInputs, Witness};
 
 /// Cryptographic suite used by Emit.
 pub type EmitSuite = OutbeV1;
@@ -20,22 +19,11 @@ pub type Tree = outbe_protocol::protocol::imt::Imt<EmitSuite>;
 
 pub use crate::noir::emit_mint::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum MarshalingError {
-    #[error(transparent)]
-    Wire(#[from] WireMarshalingError),
-    #[error("zk_verify: emit chain ID word is not a right-aligned uint64")]
-    InvalidChainId,
-    #[error("zk_verify: emit owner word exceeds the 160-bit address bound")]
-    InvalidOwner,
-    #[error("zk_verify: emit mint limb {0} is outside its canonical range")]
-    InvalidMintLimb(usize),
-}
-
 #[cfg(all(test, feature = "alloy"))]
 mod tests {
     use super::*;
     use alloy_primitives::{Address, B256, U256};
+    use outbe_protocol::error::Error;
 
     fn combined() -> Vec<u8> {
         let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
@@ -71,50 +59,28 @@ mod tests {
     }
 
     #[test]
-    fn generated_decoder_preserves_emit_errors() {
+    fn generated_decoder_preserves_noncanonical_errors() {
         for (index, bits, expected) in [
-            (0, 64, MarshalingError::InvalidChainId),
-            (3, 160, MarshalingError::InvalidOwner),
-            (4, 120, MarshalingError::InvalidMintLimb(0)),
-            (5, 120, MarshalingError::InvalidMintLimb(1)),
-            (6, 16, MarshalingError::InvalidMintLimb(2)),
+            (0, 64, "u64"),
+            (3, 160, "address"),
+            (4, 120, "uint256 limbs"),
+            (5, 120, "uint256 limbs"),
+            (6, 16, "uint256 limbs"),
         ] {
             let mut proof = combined();
             let start = 4 + index * 32;
             let invalid: U256 = U256::from(1) << bits;
             proof[start..start + 32].copy_from_slice(&invalid.to_be_bytes::<32>());
-            assert_eq!(decode_public_inputs(&proof), Err(expected));
+            assert!(matches!(
+                decode_public_inputs(&proof),
+                Err(Error::NonCanonical(what)) if what == expected
+            ));
         }
-        // Noncanonical field encodings remain wire errors, not InvalidChainId.
         let mut proof = combined();
         proof[4..36].fill(0xff);
-        assert_eq!(
+        assert!(matches!(
             decode_public_inputs(&proof),
-            Err(MarshalingError::Wire(
-                WireMarshalingError::NonCanonicalPublicInput(0)
-            ))
-        );
-    }
-
-    #[test]
-    fn errors_keep_chain_visible_text() {
-        let cases = [
-            (
-                MarshalingError::InvalidChainId,
-                "zk_verify: emit chain ID word is not a right-aligned uint64",
-            ),
-            (
-                MarshalingError::InvalidOwner,
-                "zk_verify: emit owner word exceeds the 160-bit address bound",
-            ),
-            (
-                MarshalingError::InvalidMintLimb(1),
-                "zk_verify: emit mint limb 1 is outside its canonical range",
-            ),
-        ];
-
-        for (error, expected) in cases {
-            assert_eq!(error.to_string(), expected);
-        }
+            Err(Error::NonCanonical("public input"))
+        ));
     }
 }

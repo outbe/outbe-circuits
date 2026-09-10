@@ -37,7 +37,6 @@ type Fr = <OutbeV1 as Suite>::Field;
 #[test]
 fn generated_ownership_and_aggregation_decoders() {
     use alloy_primitives::{B256, U256};
-    use outbe_protocol::protocol::zkproof::ProofMarshalingError;
     use outbe_zk_canonical::noir::ownership_proof as ownership;
 
     fn combined(count: usize, len: usize) -> (Vec<u8>, Vec<B256>) {
@@ -68,14 +67,14 @@ fn generated_ownership_and_aggregation_decoders() {
     wrong_count[..4].copy_from_slice(&0u32.to_be_bytes());
     assert!(matches!(
         ownership::alloy::decode_public_inputs(&wrong_count),
-        Err(ProofMarshalingError::WrongPublicInputCount { .. })
+        Err(Error::Proof(_))
     ));
     let mut noncanonical = proof;
     noncanonical[4..36].fill(0xff);
-    assert_eq!(
+    assert!(matches!(
         ownership::alloy::decode_public_inputs(&noncanonical),
-        Err(ProofMarshalingError::NonCanonicalPublicInput(0))
-    );
+        Err(Error::NonCanonical("public input"))
+    ));
 
     // Every tier must retain all array elements in ABI order, including padding slots.
     macro_rules! check_tiers {
