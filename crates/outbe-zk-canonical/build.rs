@@ -391,9 +391,7 @@ fn gen_module(l: &Loaded, proof_system: &str) -> String {
          \x20   pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;\n\n"
     ));
 
-    if module == "paynote" {
-        m.push_str(&gen_alloy_public_inputs(params, module));
-    }
+    m.push_str(&gen_decoded_public_inputs(params, module));
 
     m.push_str("    /// Canonical dotted label (matches `outbe-zk-canonical`).\n");
     m.push_str(&format!("    pub const LABEL: &str = {:?};\n", l.label));
@@ -521,21 +519,41 @@ fn proof_words(vk: &[u8], public_input_count: usize, proof_system: &str) -> usiz
     82 + 12 * log_n
 }
 
-/// Alloy public claims use B256 for bare Fields, and preserve the semantic
-/// EthAddress / U256 types recorded in the ABI. Other shapes fail closed until
-/// their wire representation is explicitly supported here.
-fn gen_alloy_public_inputs(params: &[Value], module: &str) -> String {
+/// Public claims preserve semantic ABI types. FullProof retains its existing
+/// byte-array API; Alloy views use B256 for bare Fields.
+fn gen_decoded_public_inputs(params: &[Value], module: &str) -> String {
+    let (cfg, view, field_type) = if module == "full_proof" {
+        ("", "decoded", "[u8; 32]")
+    } else {
+        ("#[cfg(feature = \"alloy\")]", "alloy", "B256")
+    };
+    let error_type = if module == "emit_mint" {
+        "crate::emit_mint::MarshalingError"
+    } else {
+        "ProofMarshalingError"
+    };
     let mut declarations = String::new();
     let mut decoded = String::new();
+    let mut needs_fields = false;
     let mut index = 0;
     for p in params {
         if p["visibility"].as_str() != Some("public") {
             continue;
         }
         let name = p["name"].as_str().expect("ABI parameter name");
+        // Preserve FullProof's public API names while deriving offsets from ABI order.
+        let name = match (module, name) {
+            ("full_proof", "owner") => "derived_owner",
+            ("full_proof", "expected_merkle_root") => "merkle_root",
+            _ => name,
+        };
         let ty = &p["type"];
         let (rust, width) = match ty["kind"].as_str() {
-            Some("field") => ("B256".to_string(), 1),
+            Some("field") => (field_type.to_string(), 1),
+            Some("array") if ty["type"]["kind"] == "field" => {
+                let length = abi_field_count(ty);
+                (format!("[{field_type}; {length}]"), length)
+            }
             Some("integer")
                 if ty["sign"] == "unsigned"
                     && matches!(ty["width"].as_u64(), Some(8 | 16 | 32 | 64 | 128)) =>
@@ -556,46 +574,75 @@ fn gen_alloy_public_inputs(params: &[Value], module: &str) -> String {
             _ => panic!("{module}: unsupported Alloy ABI type for {name}: {ty}"),
         };
         declarations.push_str(&format!("        pub {name}: {rust},\n"));
-        let value = match rust.as_str() {
-            "B256" => format!("words[{index}].into()"),
-            "U256" => {
+        let value = match ty["kind"].as_str() {
+            Some("field") => format!("words[{index}].into()"),
+            Some("array") => format!("std::array::from_fn(|i| words[{index} + i].into())"),
+            _ if rust == "U256" => {
+                needs_fields = true;
                 let end = index + width;
+                let error = if module == "emit_mint" && name == "mint_units" {
+                    format!("{error_type}::InvalidMintLimb(offset)")
+                } else {
+                    format!("{error_type}::from(ProofMarshalingError::NonCanonicalPublicInput({index} + offset))")
+                };
                 format!(
                     r#"OutbeV1::fields_to_u256(&fields[{index}..{end}]).map_err(|_| {{
                     // Preserve the offending limb index in the wire error.
                     let offset = fields[{index}..{end}].iter().zip([120, 120, 16])
                         .position(|(limb, bits)| limb.into_bigint().num_bits() > bits)
                         .expect("invalid U256 limb");
-                    ProofMarshalingError::NonCanonicalPublicInput({index} + offset)
+                    {error}
                 }})?"#
                 )
             }
-            _ => format!(
-                "{rust}::from_field(&fields[{index}]).map_err(|_| ProofMarshalingError::NonCanonicalPublicInput({index}))?"
-            ),
+            _ => {
+                needs_fields = true;
+                let error = match (module, name) {
+                    ("emit_mint", "chain_id") => format!("{error_type}::InvalidChainId"),
+                    ("emit_mint", "note_owner") => format!("{error_type}::InvalidOwner"),
+                    _ => format!("{error_type}::from(ProofMarshalingError::NonCanonicalPublicInput({index}))"),
+                };
+                format!("{rust}::from_field(&fields[{index}]).map_err(|_| {error})?")
+            }
         };
         decoded.push_str(&format!("                {name}: {value},\n"));
         index += width;
     }
+    let mut imports = String::new();
+    if error_type == "ProofMarshalingError" || decoded.contains("ProofMarshalingError") {
+        imports.push_str("        use outbe_protocol::protocol::zkproof::ProofMarshalingError;\n");
+    }
+    for ty in ["Address", "B256", "U256"] {
+        if declarations.contains(ty) {
+            imports.push_str(&format!("        use alloy_primitives::{ty};\n"));
+        }
+    }
+    if declarations.contains("U256") {
+        imports.push_str("        use ark_ff::{BigInteger, PrimeField};\n");
+    }
+    let fields = if needs_fields {
+        imports.push_str("        use outbe_protocol::{Codec, FieldElement, OutbeV1};\n");
+        "let fields = words.map(|word| OutbeV1::field_from_be32(&word));"
+    } else {
+        ""
+    };
     format!(
         r#"
-    #[cfg(feature = "alloy")]
-    pub mod alloy {{
-        use alloy_primitives::{{Address, B256, U256}};
-        use ark_ff::{{BigInteger, PrimeField}};
-        use outbe_protocol::{{Codec, FieldElement, OutbeV1}};
-        use outbe_protocol::protocol::zkproof::{{decode_public_words, ProofMarshalingError}};
+    {cfg}
+    pub mod {view} {{
+{imports}
+        use outbe_protocol::protocol::zkproof::decode_public_words;
 
-        /// Public claim in circuit order, with bare Fields represented as B256.
+        /// Public claim in circuit order, with bare Fields represented as {field_type}.
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         pub struct PublicInputs {{
 {declarations}        }}
 
-        /// Decode public inputs using Alloy address, hash, and amount types.
-        pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, ProofMarshalingError> {{
+        /// Decode public inputs from the canonical combined-proof encoding.
+        pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, {error_type}> {{
             let words = decode_public_words::<{{super::PUBLIC_INPUT_COUNT}}>(combined_proof, super::COMBINED_LEN)?;
             // decode_public_words has checked every word for canonicality.
-            let fields = words.map(|word| OutbeV1::field_from_be32(&word));
+            {fields}
             Ok(PublicInputs {{
 {decoded}            }})
         }}

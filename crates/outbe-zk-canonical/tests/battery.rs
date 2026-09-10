@@ -33,6 +33,72 @@ use outbe_zk_canonical::CircuitId;
 
 type Fr = <OutbeV1 as Suite>::Field;
 
+#[cfg(feature = "alloy")]
+#[test]
+fn generated_ownership_and_aggregation_decoders() {
+    use alloy_primitives::{B256, U256};
+    use outbe_protocol::protocol::zkproof::ProofMarshalingError;
+    use outbe_zk_canonical::noir::ownership_proof as ownership;
+
+    fn combined(count: usize, len: usize) -> (Vec<u8>, Vec<B256>) {
+        let words: Vec<_> = (1..=count).map(|i| B256::from(U256::from(i))).collect();
+        let mut proof = (count as u32).to_be_bytes().to_vec();
+        for word in &words {
+            proof.extend_from_slice(word.as_slice());
+        }
+        proof.resize(len, 0);
+        (proof, words)
+    }
+
+    let (proof, words) = combined(ownership::PUBLIC_INPUT_COUNT, ownership::COMBINED_LEN);
+    assert_eq!(
+        ownership::alloy::decode_public_inputs(&proof).unwrap(),
+        ownership::alloy::PublicInputs {
+            owner: words[0],
+            nft_hash: words[1],
+            binding_hash: words[2],
+        }
+    );
+
+    // Exercise shared framing validation once through a generated decoder.
+    for malformed in [&proof[..3], &proof[..4], &proof[..proof.len() - 1]] {
+        assert!(ownership::alloy::decode_public_inputs(malformed).is_err());
+    }
+    let mut wrong_count = proof.clone();
+    wrong_count[..4].copy_from_slice(&0u32.to_be_bytes());
+    assert!(matches!(
+        ownership::alloy::decode_public_inputs(&wrong_count),
+        Err(ProofMarshalingError::WrongPublicInputCount { .. })
+    ));
+    let mut noncanonical = proof;
+    noncanonical[4..36].fill(0xff);
+    assert_eq!(
+        ownership::alloy::decode_public_inputs(&noncanonical),
+        Err(ProofMarshalingError::NonCanonicalPublicInput(0))
+    );
+
+    // Every tier must retain all array elements in ABI order, including padding slots.
+    macro_rules! check_tiers {
+        ($($module:ident),+ $(,)?) => {$(
+            {
+                use outbe_zk_canonical::noir::$module as circuit;
+                let (proof, words) = combined(circuit::PUBLIC_INPUT_COUNT, circuit::COMBINED_LEN);
+                let decoded = circuit::alloy::decode_public_inputs(&proof).unwrap();
+                assert_eq!(decoded.public_inputs.as_slice(), words.as_slice());
+            }
+        )+};
+    }
+    check_tiers!(
+        flat_aggregation_n1,
+        flat_aggregation_n2,
+        flat_aggregation_n4,
+        flat_aggregation_n8,
+        flat_aggregation_n16,
+        flat_aggregation_n32,
+        flat_aggregation_n64,
+    );
+}
+
 #[test]
 fn generated_combined_proof_lengths_match_frozen_layouts() {
     use outbe_zk_canonical::{emit_mint, full_proof, paynote};
