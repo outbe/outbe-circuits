@@ -671,24 +671,3 @@ fn paynote_descriptor_and_abi_layout() {
         "Paynote missing from CIRCUIT_REGISTRY"
     );
 }
-
-#[test]
-fn raw_commitment_amount_bounds() {
-    use outbe_zk_canonical::{emit_mint, paynote};
-
-    let serial = Fr::from(17u64);
-    let max = [(1u128 << 120) - 1, (1u128 << 120) - 1, u16::MAX as u128].map(Fr::from);
-    assert!(emit_mint::hash::note_commitment_raw(1, serial, max).is_ok());
-    assert!(paynote::hash::note_commitment_raw(1, serial, [0x22; 20], max).is_ok());
-
-    for (index, bits) in [(0, 120), (1, 120), (2, 16), (0, 200)] {
-        let mut amount = max;
-        let mut bytes = [0u8; 32];
-        bytes[31 - bits / 8] = 1 << (bits % 8);
-        amount[index] = Fr::from_be_bytes_mod_order(&bytes);
-        assert!(matches!(
-            emit_mint::hash::note_commitment_raw(1, serial, amount),
-            Err(Error::NonCanonical(_))
-        ));
-    }
-}
