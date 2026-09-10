@@ -577,7 +577,7 @@ fn gen_decoded_public_inputs(params: &[Value], module: &str, use_alloy: bool) ->
             },
             _ => panic!("{module}: unsupported Alloy ABI type for {name}: {ty}"),
         };
-        declarations.push_str(&format!("        pub {name}: {rust},\n"));
+        declarations.push_str(&format!("            pub {name}: {rust},\n"));
         let value = match ty["kind"].as_str() {
             Some("field") => format!("words[{index}].into()"),
             Some("array") => format!("std::array::from_fn(|i| words[{index} + i].into())"),
