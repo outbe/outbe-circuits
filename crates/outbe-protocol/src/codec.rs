@@ -28,6 +28,8 @@
 //!    at the type level (`Codec::Bytes`). Blanket conventions every FFI / chain
 //!    boundary uses; bring it into scope with `use outbe_protocol::Codec`.
 
+#[cfg(feature = "alloy")]
+use alloy_primitives::{B256, U256};
 use ark_ec::CurveGroup;
 use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
@@ -84,6 +86,11 @@ pub fn field_from_be_bytes_canonical<F: PrimeField>(
         .iter()
         .flat_map(|byte| (0..8).rev().map(move |i| (byte >> i) & 1 == 1))
         .collect();
+    // The block rejects nonzero overflow bits while allowing extra leading zeros
+    let excess = bits.len().saturating_sub(F::BigInt::NUM_LIMBS * 64);
+    if bits[..excess].iter().any(|bit| *bit) {
+        return Err(Error::NonCanonical(what));
+    }
     let repr = <F::BigInt as BigInteger>::from_bits_be(&bits);
     F::from_bigint(repr).ok_or(Error::NonCanonical(what))
 }
@@ -367,6 +374,37 @@ pub trait Codec: Suite {
     /// 32-byte big-endian → field element (reduced mod order).
     fn field_from_be32(b: &[u8; 32]) -> Self::Field {
         Self::Field::from_be_bytes_mod_order(b)
+    }
+
+    /// Decode a big-endian field word, rejecting values >= the field modulus.
+    #[cfg(feature = "alloy")]
+    fn field_from_b256(value: &B256) -> Result<Self::Field, Error> {
+        value.to_field()
+    }
+
+    /// Encode a field as a zero-padded big-endian word; reject values over 256 bits.
+    #[cfg(feature = "alloy")]
+    fn field_to_b256(value: &Self::Field) -> Result<B256, Error> {
+        Self::field_to_u256(value).map(|value| B256::from(value.to_be_bytes::<32>()))
+    }
+
+    /// Decode a single field value, rejecting integers >= the field modulus.
+    /// For full-width amounts, use [`FieldEncode`]'s three-limb U256 encoding.
+    #[cfg(feature = "alloy")]
+    fn field_from_u256(value: &U256) -> Result<Self::Field, Error> {
+        B256::from(value.to_be_bytes::<32>()).to_field()
+    }
+
+    /// Encode the field's numeric value; reject values over 256 bits.
+    #[cfg(feature = "alloy")]
+    fn field_to_u256(value: &Self::Field) -> Result<U256, Error> {
+        let bytes = Self::field_to_be_bytes(value);
+        let start = bytes
+            .iter()
+            .position(|byte| *byte != 0)
+            .unwrap_or(bytes.len());
+        U256::try_from_be_slice(&bytes[start..])
+            .ok_or(Error::NonCanonical("field value exceeds uint256"))
     }
 
     /// Embedded-curve secret scalar → its type-sized byte block.
