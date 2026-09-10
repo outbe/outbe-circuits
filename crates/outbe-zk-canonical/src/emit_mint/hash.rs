@@ -20,7 +20,6 @@
 use crate::emit_mint::{Field, Pool, Tree};
 #[cfg(feature = "alloy")]
 use alloy_primitives::{Address, U256};
-use ark_ff::{BigInteger, PrimeField};
 use outbe_protocol::{codec::field_from_be_bytes, error::Error, OutbeV1, Suite};
 #[cfg(feature = "alloy")]
 use outbe_protocol::{Codec, FieldElement};
@@ -85,19 +84,12 @@ pub fn note_commitment(chain_id: u64, note_sn: Field, note_amount: U256) -> Resu
 }
 
 /// Commit to a note with three canonical radix-`2^120` amount fields.
-/// Rejects limbs outside the `[120, 120, 16]`-bit bounds.
+/// Limbs must be inside the `[120, 120, 16]`-bit bounds.
 pub fn note_commitment_raw(
     chain_id: u64,
     note_sn: Field,
     note_amount: [Field; 3],
 ) -> Result<Field, Error> {
-    if note_amount
-        .iter()
-        .zip([120, 120, 16])
-        .any(|(limb, bits)| limb.into_bigint().num_bits() > bits)
-    {
-        return Err(Error::NonCanonical("uint256 limbs"));
-    }
     let [lo, mid, hi] = note_amount;
     Pool::hash_multi(
         tag_commitment()?,
