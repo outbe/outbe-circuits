@@ -374,18 +374,6 @@ fn gen_module(l: &Loaded, proof_system: &str) -> String {
     }
     m.push_str("    use ark_bn254::Fr;\n\n");
 
-    m.push_str("    /// Private (witness) inputs, in ABI order.\n");
-    m.push_str("    #[derive(Clone, Debug)]\n");
-    m.push_str("    pub struct Witness {\n");
-    m.push_str(&witness_fields);
-    m.push_str("    }\n\n");
-
-    m.push_str("    /// Public inputs, in ABI order.\n");
-    m.push_str("    #[derive(Clone, Debug)]\n");
-    m.push_str("    pub struct PublicInputs {\n");
-    m.push_str(&public_fields);
-    m.push_str("    }\n\n");
-
     let public_input_count: usize = params
         .iter()
         .filter(|p| p["visibility"] == "public")
@@ -400,11 +388,6 @@ fn gen_module(l: &Loaded, proof_system: &str) -> String {
          \x20   /// Combined proof: four-byte count, public inputs, then proof words.\n\
          \x20   pub const COMBINED_LEN: usize = 4 + (PUBLIC_INPUT_COUNT + PROOF_WORDS) * 32;\n\n"
     ));
-
-    m.push_str(&gen_decoded_public_inputs(params, module, true));
-    if module == "full_proof" {
-        m.push_str(&gen_decoded_public_inputs(params, module, false));
-    }
 
     m.push_str("    /// Canonical dotted label (matches `outbe-zk-canonical`).\n");
     m.push_str(&format!("    pub const LABEL: &str = {:?};\n", l.label));
@@ -428,6 +411,18 @@ fn gen_module(l: &Loaded, proof_system: &str) -> String {
         "    pub const VK_HASH: [u8; 32] = {};\n\n",
         hex_lit(&l.vk_hash)
     ));
+
+    m.push_str("    /// Private (witness) inputs, in ABI order.\n");
+    m.push_str("    #[derive(Clone, Debug)]\n");
+    m.push_str("    pub struct Witness {\n");
+    m.push_str(&witness_fields);
+    m.push_str("    }\n\n");
+
+    m.push_str("    /// Public inputs, in ABI order.\n");
+    m.push_str("    #[derive(Clone, Debug, PartialEq, Eq)]\n");
+    m.push_str("    pub struct PublicInputs {\n");
+    m.push_str(&public_fields);
+    m.push_str("    }\n\n");
 
     m.push_str(&format!(
         "    /// Canonical marker type for the `{}` circuit.\n",
@@ -490,6 +485,9 @@ fn gen_module(l: &Loaded, proof_system: &str) -> String {
     m.push_str("        const VK_HASH: [u8; 32] = VK_HASH;\n");
     m.push_str("    }\n");
 
+    m.push_str(&gen_public_codec(params, module));
+    m.push_str(&gen_alloy_types(params, module));
+
     m.push_str("}\n\n");
     m
 }
@@ -532,124 +530,187 @@ fn proof_words(vk: &[u8], public_input_count: usize, proof_system: &str) -> usiz
     82 + 12 * log_n
 }
 
-/// Public claims preserve semantic ABI types. FullProof retains its existing
-/// byte-array API; Alloy views use B256 for bare Fields.
-fn gen_decoded_public_inputs(params: &[Value], module: &str, use_alloy: bool) -> String {
-    let (cfg, view, field_type) = if use_alloy {
-        ("#[cfg(feature = \"alloy\")]", "alloy", "B256")
-    } else {
-        ("", "decoded", "[u8; 32]")
-    };
-    let mut declarations = String::new();
+/// Combined-proof codecs use the circuit types independently of Alloy.
+fn gen_public_codec(params: &[Value], module: &str) -> String {
     let mut decoded = String::new();
-    let mut needs_fields = false;
     let mut index = 0;
-    for p in params {
-        if p["visibility"].as_str() != Some("public") {
-            continue;
-        }
+    for p in params.iter().filter(|p| p["visibility"] == "public") {
         let name = p["name"].as_str().expect("ABI parameter name");
         let ty = &p["type"];
-        let (rust, width) = match ty["kind"].as_str() {
-            Some("field") => (field_type.to_string(), 1),
+        let value = match ty["kind"].as_str() {
+            Some("field") => format!("fields[{index}]"),
             Some("array") if ty["type"]["kind"] == "field" => {
-                let length = abi_field_count(ty);
-                (format!("[{field_type}; {length}]"), length)
+                format!("std::array::from_fn(|i| fields[{index} + i])")
             }
-            Some("integer")
-                if ty["sign"] == "unsigned"
-                    && matches!(ty["width"].as_u64(), Some(8 | 16 | 32 | 64 | 128)) =>
-            {
-                (rust_type(ty, module), 1)
+            Some("integer") if ty["sign"] == "unsigned" => {
+                format!("{}::from_field(&fields[{index}])?", rust_type(ty, module))
             }
             Some("struct") => match ty["path"].as_str() {
-                Some("outbe_circuit_core::types::EthAddress") => {
-                    assert_eq!(rust_type(ty, module), "Fr", "EthAddress ABI changed");
-                    ("Address".to_string(), 1)
-                }
+                Some("outbe_circuit_core::types::EthAddress") => format!(
+                    r#"{{
+                if words[{index}][..12].iter().any(|&byte| byte != 0) {{
+                    return Err(outbe_protocol::Error::NonCanonical("address"));
+                }}
+                fields[{index}]
+            }}"#
+                ),
                 Some("bignum::fields::U256::U256") => {
-                    assert_eq!(rust_type(ty, module), "[u128; 3]", "U256 ABI changed");
-                    ("U256".to_string(), 3)
+                    let limbs = (index..index + 3)
+                        .map(|i| format!("u128::from_field(&fields[{i}])?"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    format!(
+                        r#"{{
+                let limbs = [{limbs}];
+                outbe_protocol::codec::u256_from_limbs_be(limbs)
+                    .ok_or(outbe_protocol::Error::NonCanonical("uint256 limbs"))?;
+                limbs
+            }}"#
+                    )
                 }
-                _ => panic!("{module}: unsupported Alloy ABI type for {name}: {ty}"),
+                _ => panic!("{module}: unsupported public ABI type: {ty}"),
             },
-            _ => panic!("{module}: unsupported Alloy ABI type for {name}: {ty}"),
+            _ => panic!("{module}: unsupported public ABI type: {ty}"),
         };
-        declarations.push_str(&format!("            pub {name}: {rust},\n"));
-        let value = match ty["kind"].as_str() {
-            Some("field") => format!("words[{index}].into()"),
-            Some("array") => format!("std::array::from_fn(|i| words[{index} + i].into())"),
-            _ if rust == "U256" => {
-                needs_fields = true;
-                let end = index + width;
-                format!("OutbeV1::fields_to_u256(&fields[{index}..{end}])?")
-            }
-            _ => {
-                needs_fields = true;
-                format!("{rust}::from_field(&fields[{index}])?")
-            }
-        };
-        decoded.push_str(&format!("                {name}: {value},\n"));
-        index += width;
+        decoded.push_str(&format!("            {name}: {value},\n"));
+        index += abi_field_count(ty);
     }
-    let mut witness = String::new();
-    if use_alloy {
-        witness.push_str(
-            "        /// Private inputs in ABI order, using Alloy field and amount types.\n",
-        );
-        witness.push_str("        #[derive(Clone, Debug)]\n        pub struct Witness {\n");
-        for p in params.iter().filter(|p| p["visibility"] == "private") {
-            let name = p["name"].as_str().expect("ABI parameter name");
-            let ty = alloy_type(&p["type"], module);
-            witness.push_str(&format!("            pub {name}: {ty},\n"));
-        }
-        witness.push_str("        }\n");
-        witness.push_str(&gen_alloy_conversion(params, module, "Witness", "private"));
-        witness.push_str(&gen_alloy_conversion(
-            params,
-            module,
-            "PublicInputs",
-            "public",
-        ));
-    }
-    let all_types = format!("{declarations}{witness}");
-    let mut imports = String::new();
-    for ty in ["Address", "B256", "U256"] {
-        if all_types.contains(ty) {
-            imports.push_str(&format!("        use alloy_primitives::{ty};\n"));
-        }
-    }
-    let fields = if needs_fields {
-        imports.push_str("        use outbe_protocol::{Codec, FieldElement, OutbeV1};\n");
-        "let fields = words.map(|word| OutbeV1::field_from_be32(&word));"
+    let field_element = if decoded.contains("::from_field") {
+        "        use outbe_protocol::FieldElement;\n"
     } else {
         ""
     };
+    let marker = marker_ident(module);
     format!(
         r#"
-    {cfg}
-    pub mod {view} {{
-{imports}
-        use outbe_protocol::protocol::zkproof::decode_public_words;
+    /// Decode public inputs from the canonical combined-proof encoding.
+    pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, outbe_protocol::Error> {{
+        use outbe_protocol::{{Codec, OutbeV1}};
+{field_element}
+        let words = outbe_protocol::protocol::zkproof::decode_public_words::<PUBLIC_INPUT_COUNT>(combined_proof, COMBINED_LEN)?;
+        let fields = words.map(|word| OutbeV1::field_from_be32(&word));
+        Ok(PublicInputs {{
+{decoded}        }})
+    }}
 
-        /// Public claim in circuit order, with bare Fields represented as {field_type}.
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        pub struct PublicInputs {{
-{declarations}        }}
-
-{witness}
-
-        /// Decode public inputs from the canonical combined-proof encoding.
-        pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, outbe_protocol::error::Error> {{
-            let words = decode_public_words::<{{super::PUBLIC_INPUT_COUNT}}>(combined_proof, super::COMBINED_LEN)?;
-            // decode_public_words has checked every word for canonicality.
-            {fields}
-            Ok(PublicInputs {{
-{decoded}            }})
+    /// Encode the public-input count (big-endian u32), ABI-ordered public
+    /// words, and proof words. Each proof word must contain exactly 32 bytes.
+    pub fn encode_combined_proof(public_inputs: PublicInputs, proof: Vec<Vec<u8>>) -> Result<Vec<u8>, outbe_protocol::Error> {{
+        use outbe_protocol::{{protocol::zk::Circuit, Codec, OutbeV1}};
+        if proof.len() != PROOF_WORDS {{
+            return Err(outbe_protocol::Error::Proof(format!(
+                "proof has {{}} words, expected {{}}", proof.len(), PROOF_WORDS
+            )));
         }}
+        let mut combined = Vec::with_capacity(COMBINED_LEN);
+        combined.extend_from_slice(&(PUBLIC_INPUT_COUNT as u32).to_be_bytes());
+        for field in <{marker} as Circuit<OutbeV1>>::public_inputs(&public_inputs) {{
+            combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+        }}
+        for (index, word) in proof.into_iter().enumerate() {{
+            if word.len() != 32 {{
+                return Err(outbe_protocol::Error::Proof(format!(
+                    "proof word {{index}} has {{}} bytes, expected 32", word.len()
+                )));
+            }}
+            combined.extend_from_slice(&word);
+        }}
+        // Apply the same semantic address and limb bounds as decoding.
+        decode_public_inputs(&combined)?;
+        Ok(combined)
     }}
 "#
     )
+}
+
+/// Alloy representations and checked conversions; wire codecs live on the circuit.
+fn gen_alloy_types(params: &[Value], module: &str) -> String {
+    let mut types = String::new();
+    let mut implementations = String::new();
+    for (name, visibility, derives) in [
+        (
+            "PublicInputs",
+            "public",
+            "Clone, Copy, Debug, PartialEq, Eq",
+        ),
+        ("Witness", "private", "Clone, Debug"),
+    ] {
+        types.push_str(&format!(
+            "        #[derive({derives})]\n        pub struct {name} {{\n"
+        ));
+        for p in params.iter().filter(|p| p["visibility"] == visibility) {
+            let field = p["name"].as_str().expect("ABI parameter name");
+            let ty = alloy_type(&p["type"], module);
+            types.push_str(&format!("            pub {field}: {ty},\n"));
+        }
+        types.push_str("        }\n\n");
+        implementations.push_str(&gen_alloy_conversion(params, module, name, visibility));
+        let mut fields = String::new();
+        for p in params.iter().filter(|p| p["visibility"] == visibility) {
+            let field = p["name"].as_str().expect("ABI parameter name");
+            let value = circuit_to_alloy(&p["type"], &format!("value.{field}"), module);
+            fields.push_str(&format!("                    {field}: {value},\n"));
+        }
+        implementations.push_str(&format!(
+            r#"
+        impl TryFrom<super::{name}> for {name} {{
+            type Error = outbe_protocol::Error;
+
+            /// Convert circuit inputs to Alloy, checking address and U256 bounds.
+            fn try_from(value: super::{name}) -> Result<Self, Self::Error> {{
+                Ok(Self {{
+{fields}                }})
+            }}
+        }}
+"#
+        ));
+    }
+    let mut imports = String::new();
+    for ty in ["Address", "B256", "U256"] {
+        if types.contains(&format!(": {ty}")) || types.contains(&format!("[{ty};")) {
+            imports.push_str(&format!("        use alloy_primitives::{ty};\n"));
+        }
+    }
+    format!("\n    #[cfg(feature = \"alloy\")]\n    pub mod alloy {{\n{imports}\n{types}{implementations}    }}\n")
+}
+
+/// Reverse the ABI mapping without reducing addresses or truncating limbs.
+fn circuit_to_alloy(ty: &Value, expr: &str, module: &str) -> String {
+    match ty["kind"].as_str() {
+        Some("field") => format!("<outbe_protocol::OutbeV1 as outbe_protocol::Codec>::field_to_b256(&{expr})?"),
+        Some("array") if alloy_type(ty, module) != rust_type(ty, module) => {
+            let inner = circuit_to_alloy(&ty["type"], "item", module);
+            format!(
+                "{expr}.map(|item| -> Result<_, outbe_protocol::Error> {{ Ok({inner}) }})\n\
+                 .into_iter().collect::<Result<Vec<_>, _>>()?.try_into().expect(\"ABI array length unchanged\")"
+            )
+        }
+        Some("struct") => match ty["path"].as_str() {
+            Some("std::embedded_curve_ops::EmbeddedCurvePoint") => {
+                let fields = ty["fields"].as_array().expect("point fields");
+                let members: Vec<_> = fields.iter().map(|f| {
+                    let name = f["name"].as_str().expect("point field name");
+                    let value = circuit_to_alloy(&f["type"], &format!("{expr}.{name}"), module);
+                    format!("{name}: {value}")
+                }).collect();
+                format!("crate::noir::alloy::EmbeddedCurvePoint {{ {} }}", members.join(", "))
+            }
+            Some("outbe_circuit_core::types::EthAddress") => format!(
+                "<Address as outbe_protocol::FieldElement<ark_bn254::Fr>>::from_field(&{expr})?"
+            ),
+            Some("bignum::fields::U256::U256") => format!(
+                "U256::from_be_bytes(outbe_protocol::codec::u256_from_limbs_be({expr}).ok_or(outbe_protocol::Error::NonCanonical(\"uint256 limbs\"))?)"
+            ),
+            _ => {
+                let fields = ty["fields"].as_array().expect("struct fields");
+                match fields.as_slice() {
+                    [only] => circuit_to_alloy(&only["type"], expr, module),
+                    _ => panic!("{module}: unsupported Alloy ABI type: {ty}"),
+                }
+            }
+        },
+        _ => expr.to_string(),
+    }
 }
 
 /// TryFrom supplies TryInto automatically and rejects noncanonical field words.

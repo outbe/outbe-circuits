@@ -33,68 +33,54 @@ use outbe_zk_canonical::CircuitId;
 
 type Fr = <OutbeV1 as Suite>::Field;
 
-#[cfg(feature = "alloy")]
 #[test]
-fn generated_ownership_and_aggregation_decoders() {
-    use alloy_primitives::{B256, U256};
-    use outbe_zk_canonical::noir::ownership_proof as ownership;
+fn generated_combined_proof_codecs() {
+    use outbe_protocol::Codec;
+    use outbe_zk_canonical::noir;
 
-    fn combined(count: usize, len: usize) -> (Vec<u8>, Vec<B256>) {
-        let words: Vec<_> = (1..=count).map(|i| B256::from(U256::from(i))).collect();
-        let mut proof = (count as u32).to_be_bytes().to_vec();
-        for word in &words {
-            proof.extend_from_slice(word.as_slice());
-        }
-        proof.resize(len, 0);
-        (proof, words)
-    }
-
-    let (proof, words) = combined(ownership::PUBLIC_INPUT_COUNT, ownership::COMBINED_LEN);
-    assert_eq!(
-        ownership::alloy::decode_public_inputs(&proof).unwrap(),
-        ownership::alloy::PublicInputs {
-            owner: words[0],
-            nft_hash: words[1],
-            binding_hash: words[2],
-        }
-    );
-
-    // Exercise shared framing validation once through a generated decoder.
-    for malformed in [&proof[..3], &proof[..4], &proof[..proof.len() - 1]] {
-        assert!(ownership::alloy::decode_public_inputs(malformed).is_err());
-    }
-    let mut wrong_count = proof.clone();
-    wrong_count[..4].copy_from_slice(&0u32.to_be_bytes());
-    assert!(matches!(
-        ownership::alloy::decode_public_inputs(&wrong_count),
-        Err(Error::Proof(_))
-    ));
-    let mut noncanonical = proof;
-    noncanonical[4..36].fill(0xff);
-    assert!(matches!(
-        ownership::alloy::decode_public_inputs(&noncanonical),
-        Err(Error::NonCanonical("public input"))
-    ));
-
-    // Every tier must retain all array elements in ABI order, including padding slots.
-    macro_rules! check_tiers {
-        ($($module:ident),+ $(,)?) => {$(
+    macro_rules! check {
+        ($($module:ident => $marker:ident),+ $(,)?) => {$(
             {
-                use outbe_zk_canonical::noir::$module as circuit;
-                let (proof, words) = combined(circuit::PUBLIC_INPUT_COUNT, circuit::COMBINED_LEN);
-                let decoded = circuit::alloy::decode_public_inputs(&proof).unwrap();
-                assert_eq!(decoded.public_inputs.as_slice(), words.as_slice());
+                use noir::$module as c;
+                let fields: Vec<_> = (1..=c::PUBLIC_INPUT_COUNT).map(|i| Fr::from(i as u64)).collect();
+                let mut combined = (fields.len() as u32).to_be_bytes().to_vec();
+                for field in &fields {
+                    combined.extend_from_slice(&OutbeV1::field_to_be_bytes(field));
+                }
+                let proof: Vec<_> = (0..c::PROOF_WORDS).map(|i| vec![i as u8; 32]).collect();
+                combined.extend(proof.iter().flatten());
+                let public = c::decode_public_inputs(&combined).unwrap();
+                assert_eq!(<c::$marker as Circuit<OutbeV1>>::public_inputs(&public), fields);
+                assert_eq!(c::encode_combined_proof(public.clone(), proof.clone()).unwrap(), combined);
+                for count in [0, c::PROOF_WORDS - 1, c::PROOF_WORDS + 1] {
+                    assert!(matches!(
+                        c::encode_combined_proof(public.clone(), vec![vec![0; 32]; count]),
+                        Err(Error::Proof(_))
+                    ));
+                }
+                for len in [0, 31, 33] {
+                    let mut malformed = proof.clone();
+                    malformed[c::PROOF_WORDS - 1].resize(len, 0);
+                    assert!(matches!(c::encode_combined_proof(public.clone(), malformed), Err(Error::Proof(_))));
+                }
+                for malformed in [&combined[..3], &combined[..4], &combined[..combined.len() - 1]] {
+                    assert!(matches!(c::decode_public_inputs(malformed), Err(Error::Proof(_))));
+                }
+                let mut wrong_count = combined.clone();
+                wrong_count[..4].copy_from_slice(&0u32.to_be_bytes());
+                assert!(matches!(c::decode_public_inputs(&wrong_count), Err(Error::Proof(_))));
+                combined[4..36].fill(0xff);
+                assert!(matches!(c::decode_public_inputs(&combined), Err(Error::NonCanonical("public input"))));
             }
         )+};
     }
-    check_tiers!(
-        flat_aggregation_n1,
-        flat_aggregation_n2,
-        flat_aggregation_n4,
-        flat_aggregation_n8,
-        flat_aggregation_n16,
-        flat_aggregation_n32,
-        flat_aggregation_n64,
+    check!(
+        ownership_proof => OwnershipProof, full_proof => FullProof,
+        emit_mint => EmitMint, paynote => Paynote,
+        flat_aggregation_n1 => FlatAggregationN1, flat_aggregation_n2 => FlatAggregationN2,
+        flat_aggregation_n4 => FlatAggregationN4, flat_aggregation_n8 => FlatAggregationN8,
+        flat_aggregation_n16 => FlatAggregationN16, flat_aggregation_n32 => FlatAggregationN32,
+        flat_aggregation_n64 => FlatAggregationN64,
     );
 }
 
