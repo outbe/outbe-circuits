@@ -504,14 +504,14 @@ fn full_proof_round_trip() {
         .derive_full_witness(&mut rng, &signer, binding, &path)
         .unwrap();
 
-    assert_eq!(public.owner, owner);
+    assert_eq!(public.derived_owner, owner);
     assert_eq!(public.binding_hash, binding);
     assert_eq!(witness.merkle_path_siblings.len(), 32);
     // Index 0 => current-left at every level => all path bits are true.
     assert_eq!(witness.merkle_path_indices, [true; 32]);
     // The public root is the inclusion path resolved over nft_hash (the leaf).
     assert_eq!(
-        public.expected_merkle_root,
+        public.merkle_root,
         path.root(public.nft_hash).unwrap(),
         "merkle root mismatch"
     );
@@ -530,7 +530,7 @@ fn full_proof_round_trip() {
     let (populated_witness, populated_public) = td
         .derive_full_witness(&mut rng, &signer, binding, &populated_path)
         .unwrap();
-    assert_eq!(populated_public.expected_merkle_root, populated.root());
+    assert_eq!(populated_public.merkle_root, populated.root());
     assert!(!populated_witness.merkle_path_indices[0]);
     assert!(populated_witness.merkle_path_indices[1..]
         .iter()

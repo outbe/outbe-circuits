@@ -105,7 +105,8 @@ circuit_hash = "b3708b87579e41438ea070d6c1cfa8f60a4c00a4480f3b1b8a15e412d7e29766
 module = "full_proof"
 label = "outbe.full_proof"
 version = "1.1.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "aebb21f5f4c12129c278849321c8414db0ee4a24f94882bf27c873f3c7690484"
 
 [[circuit]]
 module = "emit_mint"
@@ -165,5 +166,11 @@ circuit_hash = "3154da6976ca8ee5f00b228fe821ce0868b189ff73cefb1a9a562d2768a9f9cc
 [[circuit]]
 module = "paynote"
 label = "outbe.paynote"
+version = "1.2.0"
+status = "active"
+
+[[circuit]]
+module = "full_proof"
+label = "outbe.full_proof"
 version = "1.2.0"
 status = "active"

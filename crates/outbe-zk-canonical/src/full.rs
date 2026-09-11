@@ -39,7 +39,7 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
     /// Merkle inclusion `path` proving `nft_hash` sits in the commitment tree.
     /// The path must use [`FULL_CIRCUIT_DOMAIN`] and have
     /// [`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH) levels. The
-    /// `expected_merkle_root` public input is recomputed from the path.
+    /// `merkle_root` public input is recomputed from the path.
     fn derive_full_witness<R, K>(
         &self,
         rng: &mut R,
@@ -67,8 +67,8 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
         // Ownership: recompute owner from (pk, nonce), reject a mismatch, sign
         // the §4.2 payload — the same constraint the circuit enforces.
         let seed = signer.owner_seed();
-        let owner = S::derive_owner(&seed.pk, seed.nonce)?;
-        if owner != self.owner()? {
+        let derived_owner = S::derive_owner(&seed.pk, seed.nonce)?;
+        if derived_owner != self.owner()? {
             return Err(Error::OwnerMismatch);
         }
         let nft_hash = self.entity_hash()?;
@@ -98,10 +98,10 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
             merkle_path_indices,
         };
         let public = PublicInputs {
-            owner,
+            derived_owner,
             nft_hash,
             binding_hash: binding,
-            expected_merkle_root: merkle_root,
+            merkle_root,
         };
         Ok((witness, public))
     }

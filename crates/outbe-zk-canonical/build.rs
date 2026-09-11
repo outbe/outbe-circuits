@@ -549,8 +549,6 @@ fn gen_decoded_public_inputs(params: &[Value], module: &str, use_alloy: bool) ->
             continue;
         }
         let name = p["name"].as_str().expect("ABI parameter name");
-        // Preserve FullProof's public API names while deriving offsets from ABI order.
-        let name = public_input_name(module, name);
         let ty = &p["type"];
         let (rust, width) = match ty["kind"].as_str() {
             Some("field") => (field_type.to_string(), 1),
@@ -654,25 +652,12 @@ fn gen_decoded_public_inputs(params: &[Value], module: &str, use_alloy: bool) ->
     )
 }
 
-fn public_input_name<'a>(module: &str, name: &'a str) -> &'a str {
-    match (module, name) {
-        ("full_proof", "owner") => "derived_owner",
-        ("full_proof", "expected_merkle_root") => "merkle_root",
-        _ => name,
-    }
-}
-
 /// TryFrom supplies TryInto automatically and rejects noncanonical field words.
 fn gen_alloy_conversion(params: &[Value], module: &str, name: &str, visibility: &str) -> String {
     let mut fields = String::new();
     for p in params.iter().filter(|p| p["visibility"] == visibility) {
         let target = p["name"].as_str().expect("ABI parameter name");
-        let source = if visibility == "public" {
-            public_input_name(module, target)
-        } else {
-            target
-        };
-        let value = alloy_to_circuit(&p["type"], &format!("value.{source}"), module);
+        let value = alloy_to_circuit(&p["type"], &format!("value.{target}"), module);
         fields.push_str(&format!("                    {target}: {value},\n"));
     }
     format!(
