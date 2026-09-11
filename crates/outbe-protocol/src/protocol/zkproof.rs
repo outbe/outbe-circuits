@@ -26,6 +26,15 @@ pub enum ProofMarshalingError {
     WrongCombinedProofLength { expected: usize, actual: usize },
 }
 
+impl From<ProofMarshalingError> for crate::error::Error {
+    fn from(error: ProofMarshalingError) -> Self {
+        match error {
+            ProofMarshalingError::NonCanonicalPublicInput(_) => Self::NonCanonical("public input"),
+            other => Self::Proof(other.to_string()),
+        }
+    }
+}
+
 /// Canonical decoding of `abi.encode(bytes32 circuit_hash, bytes proof)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct VerifyCall<'a> {

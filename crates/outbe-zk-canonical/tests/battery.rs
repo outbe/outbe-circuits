@@ -37,7 +37,6 @@ type Fr = <OutbeV1 as Suite>::Field;
 #[test]
 fn generated_ownership_and_aggregation_decoders() {
     use alloy_primitives::{B256, U256};
-    use outbe_protocol::protocol::zkproof::ProofMarshalingError;
     use outbe_zk_canonical::noir::ownership_proof as ownership;
 
     fn combined(count: usize, len: usize) -> (Vec<u8>, Vec<B256>) {
@@ -68,14 +67,14 @@ fn generated_ownership_and_aggregation_decoders() {
     wrong_count[..4].copy_from_slice(&0u32.to_be_bytes());
     assert!(matches!(
         ownership::alloy::decode_public_inputs(&wrong_count),
-        Err(ProofMarshalingError::WrongPublicInputCount { .. })
+        Err(Error::Proof(_))
     ));
     let mut noncanonical = proof;
     noncanonical[4..36].fill(0xff);
-    assert_eq!(
+    assert!(matches!(
         ownership::alloy::decode_public_inputs(&noncanonical),
-        Err(ProofMarshalingError::NonCanonicalPublicInput(0))
-    );
+        Err(Error::NonCanonical("public input"))
+    ));
 
     // Every tier must retain all array elements in ABI order, including padding slots.
     macro_rules! check_tiers {
@@ -505,14 +504,14 @@ fn full_proof_round_trip() {
         .derive_full_witness(&mut rng, &signer, binding, &path)
         .unwrap();
 
-    assert_eq!(public.owner, owner);
+    assert_eq!(public.derived_owner, owner);
     assert_eq!(public.binding_hash, binding);
     assert_eq!(witness.merkle_path_siblings.len(), 32);
     // Index 0 => current-left at every level => all path bits are true.
     assert_eq!(witness.merkle_path_indices, [true; 32]);
     // The public root is the inclusion path resolved over nft_hash (the leaf).
     assert_eq!(
-        public.expected_merkle_root,
+        public.merkle_root,
         path.root(public.nft_hash).unwrap(),
         "merkle root mismatch"
     );
@@ -531,7 +530,7 @@ fn full_proof_round_trip() {
     let (populated_witness, populated_public) = td
         .derive_full_witness(&mut rng, &signer, binding, &populated_path)
         .unwrap();
-    assert_eq!(populated_public.expected_merkle_root, populated.root());
+    assert_eq!(populated_public.merkle_root, populated.root());
     assert!(!populated_witness.merkle_path_indices[0]);
     assert!(populated_witness.merkle_path_indices[1..]
         .iter()

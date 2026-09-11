@@ -21,19 +21,19 @@ pub fn main(
     // Depth-32 Merkle inclusion path for the perpetual TD commitment tree.
     merkle_path_siblings: [Field; 32],
     merkle_path_indices: [bool; 32],
-    // Public: the (owner, nft_hash, binding_hash) ownership prefix plus the
+    // Public: the (derived_owner, nft_hash, binding_hash) ownership prefix plus the
     // Merkle root the inclusion check resolves to.
-    owner: pub Field,
+    derived_owner: pub Field,
     nft_hash: pub Field,
     binding_hash: pub Field,
-    expected_merkle_root: pub Field,
+    merkle_root: pub Field,
 ) {
     // Part 1: sec.4.2 ownership proof. Owner commitment + Grumpkin Schnorr
     // over Poseidon3(nft_hash, nonce, binding_hash). Same code path the
     // standalone ownership circuit uses.
-    ownership::verify_ownership_per_su(pk, signature, nonce, owner, nft_hash, binding_hash);
+    ownership::verify_ownership_per_su(pk, signature, nonce, derived_owner, nft_hash, binding_hash);
 
-    // Part 2: Merkle inclusion of `nft_hash` against `expected_merkle_root`.
+    // Part 2: Merkle inclusion of `nft_hash` against `merkle_root`.
     let computed_merkle_root = merkle_tree::merkle_root_from_indices(
         FULL_CIRCUIT_DOMAIN,
         nft_hash,
@@ -41,7 +41,7 @@ pub fn main(
         merkle_path_indices,
     );
     assert(
-        computed_merkle_root == expected_merkle_root,
+        computed_merkle_root == merkle_root,
         "merkle_root mismatch: inclusion proof failed",
     );
 }
