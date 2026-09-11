@@ -5,7 +5,6 @@ mod common;
 use alloy_primitives::{Address, U256};
 use ark_ff::PrimeField;
 
-use outbe_protocol::protocol::zk::Circuit;
 use outbe_protocol::{Codec, OutbeV1};
 use outbe_zk_backend::barretenberg::verify_circuit;
 use outbe_zk_canonical::emit_mint;
@@ -124,17 +123,12 @@ fn emit_partial_mint_prove_verify_round_trip() {
         )],
     );
 
-    let fields = <EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
-    let mut combined = Vec::with_capacity(emit_mint::COMBINED_LEN);
-    combined.extend_from_slice(&(fields.len() as u32).to_be_bytes());
-    for field in fields {
-        combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
-    }
-    for word in proof.proof {
-        combined.extend_from_slice(&word);
-    }
+    let combined = emit_mint::encode_combined_proof(public.clone(), proof.proof).unwrap();
     assert_eq!(combined.len(), emit_mint::COMBINED_LEN);
-    let decoded = emit_mint::decode_public_inputs(&combined).unwrap();
+    let decoded: emit_mint::alloy::PublicInputs = emit_mint::decode_public_inputs(&combined)
+        .unwrap()
+        .try_into()
+        .unwrap();
     assert_eq!(decoded.chain_id, chain_id);
     assert_eq!(decoded.note_owner, Address::from([0x22; 20]));
     assert_eq!(

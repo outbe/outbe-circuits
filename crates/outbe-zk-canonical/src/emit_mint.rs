@@ -6,7 +6,8 @@ use outbe_protocol::protocol::shielded_pool::ShieldedPool;
 use outbe_protocol::{OutbeV1, Suite};
 
 #[cfg(feature = "alloy")]
-pub use crate::noir::emit_mint::alloy::{decode_public_inputs, PublicInputs, Witness};
+pub use crate::noir::emit_mint::alloy::{self, Witness};
+pub use crate::noir::emit_mint::{decode_public_inputs, encode_combined_proof, PublicInputs};
 
 /// Cryptographic suite used by Emit.
 pub type EmitSuite = OutbeV1;
@@ -19,41 +20,43 @@ pub type Tree = outbe_protocol::protocol::imt::Imt<EmitSuite>;
 
 pub use crate::noir::emit_mint::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
-#[cfg(all(test, feature = "alloy"))]
+#[cfg(test)]
 mod tests {
     use super::*;
-    use alloy_primitives::{Address, B256, U256};
+    use ark_bn254::Fr;
+    use ark_ff::{Field as _, PrimeField};
     use outbe_protocol::error::Error;
+    use outbe_protocol::Codec;
 
     fn combined() -> Vec<u8> {
         let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
         for word in [
-            U256::from(31_337),
-            U256::from(102),
-            U256::from(103),
-            U256::from_be_slice(&[0x22; 20]),
-            U256::from(1),
-            U256::from(2),
-            U256::from(3),
-            U256::from(104),
+            Fr::from(31_337),
+            Fr::from(102),
+            Fr::from(103),
+            Fr::from_be_bytes_mod_order(&[0x22; 20]),
+            Fr::from(1),
+            Fr::from(2),
+            Fr::from(3),
+            Fr::from(104),
         ] {
-            proof.extend_from_slice(&word.to_be_bytes::<32>());
+            proof.extend_from_slice(&OutbeV1::field_to_be_bytes(&word));
         }
         proof.resize(COMBINED_LEN, 0);
         proof
     }
 
     #[test]
-    fn generated_alloy_inputs_follow_abi_order() {
+    fn generated_inputs_follow_abi_order() {
         assert_eq!(
             decode_public_inputs(&combined()).unwrap(),
             PublicInputs {
                 chain_id: 31_337,
-                root: B256::from(U256::from(102)),
-                nullifier: B256::from(U256::from(103)),
-                note_owner: Address::from([0x22; 20]),
-                mint_units: U256::from(1) | (U256::from(2) << 120) | (U256::from(3) << 240),
-                change_commitment: B256::from(U256::from(104)),
+                root: Fr::from(102),
+                nullifier: Fr::from(103),
+                note_owner: Fr::from_be_bytes_mod_order(&[0x22; 20]),
+                mint_units: [1, 2, 3],
+                change_commitment: Fr::from(104),
             }
         );
     }
@@ -69,10 +72,21 @@ mod tests {
         ] {
             let mut proof = combined();
             let start = 4 + index * 32;
-            let invalid: U256 = U256::from(1) << bits;
-            proof[start..start + 32].copy_from_slice(&invalid.to_be_bytes::<32>());
+            let invalid = Fr::from(2).pow([bits]);
+            proof[start..start + 32].copy_from_slice(&OutbeV1::field_to_be_bytes(&invalid));
             assert!(matches!(
                 decode_public_inputs(&proof),
+                Err(Error::NonCanonical(what)) if what == expected
+            ));
+            let mut public = decode_public_inputs(&combined()).unwrap();
+            match index {
+                3 => public.note_owner = invalid,
+                4..=6 => public.mint_units[index - 4] = 1u128 << bits,
+                // An out-of-range u64 cannot be constructed in the generic type.
+                _ => continue,
+            }
+            assert!(matches!(
+                encode_combined_proof(public, vec![vec![0; 32]; PROOF_WORDS]),
                 Err(Error::NonCanonical(what)) if what == expected
             ));
         }
