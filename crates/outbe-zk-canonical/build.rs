@@ -293,8 +293,9 @@ fn generate_l2_chain_entry(chain_id: u64, versions: &BTreeMap<&str, &Loaded>) ->
 /// One enabled circuit version within an L2 chain entry.
 fn generate_l2_circuit_version(version: &str, target: &Loaded) -> String {
     format!(
-        "        crate::L2CircuitVersion {{ version: {version:?}, circuit_hash: {} }},\n",
-        hex_lit(&target.circuit_hash)
+        "        crate::L2CircuitVersion {{ version: {version:?}, circuit_hash: {}, vk_hash: {} }},\n",
+        hex_lit(&target.circuit_hash),
+        hex_lit(&target.vk_hash)
     )
 }
 

@@ -93,6 +93,8 @@ pub struct L2CircuitVersion {
     pub version: &'static str,
     /// `keccak256(acir bytecode)`, matching a [`RegistryEntry::circuit_hash`].
     pub circuit_hash: [u8; 32],
+    /// `keccak256(vk_bytes)`, matching a [`RegistryEntry::vk_hash`].
+    pub vk_hash: [u8; 32],
 }
 
 /// All circuit versions explicitly enabled for one external L2 chain.
