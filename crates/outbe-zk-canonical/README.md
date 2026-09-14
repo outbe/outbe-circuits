@@ -181,7 +181,7 @@ missed:
   verify against `vk_bytes`. Old + new versions coexist here, so a chain can accept
   both during a rollout.
 - `pub const L2_CIRCUITS_REGISTRY: &[L2ChainEntry]` groups explicitly enabled
-  `(version, circuit_hash)` bindings by external L2 chain ID. Use
+  `(version, circuit_hash, vk_hash)` bindings by external L2 chain ID. Use
   `outbe_zk_canonical::l2_circuits(chain_id)` for allocation-free lookup.
 
 So: **registry = all versions; codegen = latest active**.
@@ -240,7 +240,7 @@ circuits may be bound, but revoked or unknown targets fail the build. Duplicate
 chain IDs and duplicate versions within one chain also fail the build. The same
 version string may be used independently on different chains.
 
-Chain `0` is an example, not a production deployment binding. Add more entries
+Chain `0xdead` is a test example, not a production deployment binding. Add more entries
 to enable additional circuit versions. Changing bindings requires only a normal
 Cargo rebuild, not a freeze.
 

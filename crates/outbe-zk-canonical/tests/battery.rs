@@ -662,7 +662,7 @@ fn emit_mint_descriptor_and_abi_layout() {
 }
 
 #[test]
-fn l2_chain_zero_enables_full_proof() {
+fn l2_test_chain_enables_full_proof() {
     use outbe_zk_canonical::{l2_circuits, noir, L2CircuitVersion};
 
     let full_proof = noir::CIRCUIT_REGISTRY
@@ -670,12 +670,14 @@ fn l2_chain_zero_enables_full_proof() {
         .find(|entry| entry.label == "outbe.full_proof" && entry.version == "1.1.0")
         .expect("the example's pinned full-proof release must remain registered");
     assert_eq!(
-        l2_circuits(0),
+        l2_circuits(0xdead),
         &[L2CircuitVersion {
             version: "1.1.0",
             circuit_hash: full_proof.circuit_hash,
+            vk_hash: full_proof.vk_hash,
         }]
     );
+    assert!(l2_circuits(0).is_empty());
     assert!(l2_circuits(u64::MAX).is_empty());
 }
 
