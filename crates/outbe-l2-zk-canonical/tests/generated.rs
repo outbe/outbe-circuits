@@ -84,6 +84,20 @@ fn the_key_header_gives_the_proof_length() {
     // claim's key, whatever the manifest says.
     assert!(matches!(combined_len(DEMO_VK, 5), Err(Error::Proof(_))));
     assert!(matches!(combined_len(&[0u8; 32], 4), Err(Error::Proof(_))));
+    // Right length, unusable header: word zero carries log_n, and a proof
+    // length derived from a zero or absurd one would be a silent mis-parse.
+    let mut bad_log_n = DEMO_VK.to_vec();
+    for word in [0u64, 29] {
+        bad_log_n[..32].copy_from_slice(&{
+            let mut be = [0u8; 32];
+            be[24..].copy_from_slice(&word.to_be_bytes());
+            be
+        });
+        assert!(matches!(
+            combined_len(&bad_log_n, PUBLIC_INPUT_COUNT),
+            Err(Error::Proof(_))
+        ));
+    }
 }
 
 #[test]
