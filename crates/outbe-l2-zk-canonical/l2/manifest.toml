@@ -1,0 +1,21 @@
+# L2 circuit registry — append-only.
+#
+# Each [[l2_circuit]] is one committed circuit root: `root` (crate-relative)
+# holds `Nargo.toml`, `src/`, the compiled `abi.json`, the `circuit.vk` L1
+# verifies with and `circuit.hash`. `build.rs` reads this file and emits the
+# in-code `l2_keys` table; it never runs a toolchain. Mint an entry from a root
+# with `cargo xtask l2 admit --root <path>`, and prove a committed key came
+# from its committed source with `cargo xtask l2 verify`. Status transitions
+# (active → deprecated → revoked) are edits here, reviewed in a PR; revoking
+# deletes the root in the same pull request.
+
+# Logical proof system these keys verify under (the bb pin). Must equal the
+# `proof_system` in `outbe-zk-canonical/circuits/manifest.toml`.
+proof_system = "bb-keccak-v1"
+
+[[l2_circuit]]
+chain_id = 57005
+claim = "tribute"
+version = "1.0.0"
+status = "active"
+root = "l2/57005/tribute/1.0.0"

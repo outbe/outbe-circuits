@@ -1,47 +1,35 @@
 //! Concrete canonical circuit and witness types for the Outbe protocol.
 //!
-//! The generic core (`outbe-protocol`) defines only the seams — the
-//! [`Circuit`](outbe_protocol::protocol::zk::Circuit),
-//! [`ProofGenerator`](outbe_protocol::protocol::zk::ProofGenerator), and
-//! [`ProofVerifier`](outbe_protocol::protocol::zk::ProofVerifier) traits plus
-//! the `Suite` formulas. This crate supplies the *concrete* statements built
-//! on top of them, generated from the vendored noir circuits.
+//! The core (`outbe-zk-core`) defines the seams — the
+//! [`Circuit`](outbe_zk_core::zk::Circuit),
+//! [`ProofGenerator`](outbe_zk_core::zk::ProofGenerator), and
+//! [`ProofVerifier`](outbe_zk_core::zk::ProofVerifier) traits plus the
+//! concrete formulas over [`Fr`](outbe_zk_core::Fr). This crate supplies the
+//! *concrete* statements built on top of them, generated from the vendored
+//! noir circuits.
 //!
 //! The noir circuits fix the proving field to BN254, so the witness types are
-//! `ark_bn254::Fr`-based. Rather than hardcode `OutbeV1`, the circuit layer is
-//! generic over [`CircuitSuite`] — any suite on the BN254/Grumpkin cycle that
-//! signs with the in-circuit 64-byte Grumpkin Schnorr. `OutbeV1` satisfies it;
-//! a future same-cycle `OutbeV2` would reuse the same circuits.
+//! `ark_bn254::Fr`-based — the same field the core is written over.
 //!
 //! The [`noir`] module is **build-generated** at compile time from committed
 //! frozen artifacts in `resources/circuits/`; normal builds do not invoke
 //! `nargo` or `bb`. Per circuit it derives Rust `Witness` / `PublicInputs`
-//! types, a marker type with a generic
-//! [`Circuit<S>`](outbe_protocol::protocol::zk::Circuit) impl + a suite-independent
+//! types, a marker type with a
+//! [`Circuit`](outbe_zk_core::zk::Circuit) impl + a
 //! [`CircuitId`] identity impl, and the canonical descriptor
 //! constants (`LABEL` / `VERSION` / `CIRCUIT_HASH` / `BYTECODE_B64` /
 //! `VK_BYTES` / `VK_HASH`).
 //!
 //! The `.nr` circuits remain the source of truth.
 
-pub mod aggregation;
 pub mod emit_mint;
-pub mod full;
-pub mod full_proof;
-pub mod ownership;
 pub mod paynote;
 
-/// The circuit seams live in the core (`outbe-protocol`), so a noir backend can be
+/// The circuit seams live in the core (`outbe-zk-core`), so a noir backend can be
 /// generic over circuits without depending on this crate. Re-exported here for
-/// convenience — `outbe_zk_canonical::{CircuitSuite, CircuitId}` and the
-/// build-generated `crate::{…}` impls keep resolving.
-pub use outbe_protocol::protocol::zk::{CircuitId, CircuitSuite};
-
-/// Depth of the perpetual TributeDraft commitment tree — the chain's
-/// `CommitmentWindowBase.TREE_DEPTH` and the `full_proof` circuit's Merkle path
-/// length. The generic [`outbe_protocol::protocol::imt::Imt`] is depth-agnostic;
-/// this pins the canonical depth the full-proof circuit is built for.
-pub const INCLUSION_DEPTH: usize = 32;
+/// convenience — `outbe_zk_canonical::CircuitId` and the build-generated
+/// `crate::{…}` impls keep resolving.
+pub use outbe_zk_core::zk::CircuitId;
 
 /// Lifecycle status of a registered circuit version (see `circuits/manifest.toml`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -86,39 +74,10 @@ pub struct RegistryEntry {
     pub vk_bytes: &'static [u8],
 }
 
-/// One frozen circuit version explicitly enabled for an L2 chain.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct L2CircuitVersion {
-    /// Semver version of the frozen circuit artifact.
-    pub version: &'static str,
-    /// `keccak256(acir bytecode)`, matching a [`RegistryEntry::circuit_hash`].
-    pub circuit_hash: [u8; 32],
-    /// `keccak256(vk_bytes)`, matching a [`RegistryEntry::vk_hash`].
-    pub vk_hash: [u8; 32],
-}
-
-/// All circuit versions explicitly enabled for one external L2 chain.
-#[derive(Clone, Copy, Debug)]
-pub struct L2ChainEntry {
-    pub chain_id: u64,
-    pub circuits: &'static [L2CircuitVersion],
-}
-
-/// Enabled versions for an L2 chain, or an empty slice if none are configured.
-///
-/// Bindings are explicit: a new circuit release does not change them. Deprecated
-/// circuits may remain enabled for verification; revoked circuits cannot be bound.
-pub fn l2_circuits(chain_id: u64) -> &'static [L2CircuitVersion] {
-    noir::L2_CIRCUITS_REGISTRY
-        .binary_search_by_key(&chain_id, |entry| entry.chain_id)
-        .map_or(&[], |index| noir::L2_CIRCUITS_REGISTRY[index].circuits)
-}
-
 /// Rust types generated at build time from the **frozen** circuit artifacts
 /// listed in `circuits/manifest.toml` (witness + public-input shapes + canonical
 /// identity for the latest active version of each circuit, plus the full
-/// append-only [`CIRCUIT_REGISTRY`](noir::CIRCUIT_REGISTRY) over every version
-/// and the explicitly enabled [`L2_CIRCUITS_REGISTRY`](noir::L2_CIRCUITS_REGISTRY)).
+/// append-only [`CIRCUIT_REGISTRY`](noir::CIRCUIT_REGISTRY) over every version).
 #[allow(dead_code)]
 #[allow(clippy::all)] // machine-generated by build.rs from the noir ABIs; not hand-linted
 pub mod noir {

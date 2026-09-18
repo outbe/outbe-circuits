@@ -1,6 +1,6 @@
 # cargo-deny configuration.
 #
-# Runs in CI on every PR + nightly at 04:00 UTC.
+# Runs in the `cargo-deny` CI job on every pull request and push to main.
 #
 # outbe-circuits consumes Noir's Rust FFI surface (acir / acvm /
 # bn254_blackbox_solver, pulled directly from the noir-lang upstream as
@@ -31,7 +31,7 @@ ignore = [
     # proc-macro layer, which the noir → acir_field chain pulls in.
     # No safe upgrade exists in the 0.6.x ark-* line; ark-* has
     # not cut a release that drops paste. Mirrors the same ignore
-    # in outbe-poseidon and outbe-protocol.
+    # in outbe-poseidon and outbe-zk-core.
     "RUSTSEC-2024-0436",
 ]
 
@@ -49,8 +49,9 @@ allow = [
     "Unicode-3.0",
     "Zlib",
     # Public-domain dedications driven by the dependency tree.
-    #   - CC0-1.0  : `tiny-keccak` (used directly by xtask for the
-    #                canonical VK derivation key + transitively by
+    #   - CC0-1.0  : `tiny-keccak` (used directly by xtask and by the
+    #                build scripts of outbe-l2-zk-canonical and the demo
+    #                for circuit/VK hashes + transitively by
     #                cryptographic deps)
     #   - CDLA-Permissive-2.0 : `webpki-roots` (TLS cert bundle via
     #                           reqwest in outbe-zk-backend)
@@ -87,10 +88,8 @@ skip = [
     { crate = "crypto-common" },
     { crate = "block-buffer" },
     { crate = "cpufeatures" },
-    # blake2 0.10 (outbe-protocol) vs 0.11-rc (noir beta.22 bn254_blackbox_solver);
-    # generic-array 0.14 (digest 0.10 stack) vs 1.x (outbe-protocol codec).
+    # blake2 0.10 (outbe-zk-core) vs 0.11-rc (noir beta.22 bn254_blackbox_solver).
     { crate = "blake2" },
-    { crate = "generic-array" },
     # thiserror 1.x (noir, some older deps) vs 2.x (rest of the tree).
     { crate = "thiserror" },
     { crate = "thiserror-impl" },

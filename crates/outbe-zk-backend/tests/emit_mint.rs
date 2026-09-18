@@ -5,12 +5,12 @@ mod common;
 use alloy_primitives::{Address, U256};
 use ark_ff::PrimeField;
 
-use outbe_protocol::{Codec, OutbeV1};
 use outbe_zk_backend::barretenberg::verify_circuit;
 use outbe_zk_canonical::emit_mint;
+use outbe_zk_core::codec::fields_to_u256;
 
-use outbe_protocol::codec::u256_limbs_be;
 use outbe_zk_canonical::noir::emit_mint::{EmitMint, PublicInputs, Witness};
+use outbe_zk_core::codec::u256_limbs_be;
 
 use common::{address, hash_tagged, AuthPath, Fr, Pool};
 
@@ -71,7 +71,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
         emit_mint::hash::note_commitment(
             chain_id,
             serial,
-            OutbeV1::fields_to_u256(&note_amount.map(Fr::from)).unwrap()
+            fields_to_u256(&note_amount.map(Fr::from)).unwrap()
         )
         .unwrap()
     );
@@ -133,7 +133,7 @@ fn emit_partial_mint_prove_verify_round_trip() {
     assert_eq!(decoded.note_owner, Address::from([0x22; 20]));
     assert_eq!(
         decoded.mint_units,
-        OutbeV1::fields_to_u256(&mint_units.map(Fr::from)).unwrap()
+        fields_to_u256(&mint_units.map(Fr::from)).unwrap()
     );
     assert!(verify_circuit::<EmitMint>(&combined).unwrap());
 }
