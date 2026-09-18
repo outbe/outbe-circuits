@@ -5,25 +5,32 @@
 [![CI](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml/badge.svg)](https://github.com/outbe/outbe-circuits/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
-Concrete canonical circuit, witness, and verifier-wire types for the Outbe
-protocol (ownership, flat-aggregation tiers n1–n64, full proof, Emit mint, and
-Paynote), built on the generic seams and marshaling helpers in `outbe-protocol`.
-The `full_proof`, `emit_mint`, and `paynote` modules own their circuit-specific
-combined-proof layouts and public-input decoders. This crate is also the
-**in-code, versioned circuit registry**: the authoritative, append-only record
-of every released circuit version and its on-chain identity.
+The **L1 side** of the Outbe protocol: the two canonical circuits — Emit mint and
+Paynote — as concrete Rust witness, public-input and combined-proof types, their
+Rust hash mirrors, and the **in-code, append-only circuit registry**: the
+authoritative record of every released circuit version and its on-chain identity.
 
-Alloy support is optional and disabled by default. Enable `features = ["alloy"]`
-to use the Emit mint and Paynote `PublicInputs` and `decode_public_inputs` APIs
-and their Alloy hash helpers. Decoders return `Address`, `B256`, and `U256`
-values. Alloy hash helpers serialize addresses with `FieldElement` and amounts
-with `Codec::fields_from_u256`. The always-available `_raw` functions use
-`[u8; 20]` addresses and field elements; `note_commitment_raw` accepts
-`[Field; 3]` amount limbs. Hash helpers retain field elements
-for serials, keys, and results. Byte/ABI limb conversions are available directly
-in `outbe_protocol::codec::{u256_limbs_be, u256_from_limbs_be}`. Generated Noir
-witness types retain their ABI layout, including three `[120, 120, 16]`-bit limbs for
-each amount.
+This crate has no concept of an L2. Which key an L2 chain verifies with lives
+entirely in [`outbe-l2-zk-canonical`](../outbe-l2-zk-canonical), which this crate
+does not depend on, and which does not depend on this one.
+
+Alloy support is optional and off by default, and `decode_public_inputs` is not
+what it gates: that decoder is generated unconditionally (`build.rs`, no `cfg`)
+and always returns the field-element `PublicInputs`, whatever features are on.
+`features = ["alloy"]` adds two things. First, the generated
+`noir::<module>::alloy` module — `PublicInputs` and `Witness` mirrors typed as
+`Address` / `B256` / `U256`, with checked `TryFrom` in both directions — behind
+`#[cfg(feature = "alloy")]`. Second, the alloy-typed hash helpers in
+`emit_mint::hash` and `paynote::hash` (`note_sn`, `note_commitment` and their
+neighbours), which take `Address` and `U256` instead of bytes and limbs. To go
+from a decoded `PublicInputs` to Ethereum types, convert through that mirror;
+the decode itself never needed the feature. The always-available `_raw` helpers
+take `[u8; 20]`
+addresses and `[Field; 3]` amount limbs instead; serials, keys and results are
+field elements either way. Limb conversions live in
+`outbe_zk_core::codec::{u256_limbs_be, u256_from_limbs_be, fields_from_u256}`.
+Generated witness types keep their ABI layout, three `[120, 120, 16]`-bit limbs
+per amount included.
 
 ## Emit mint statement
 
@@ -55,14 +62,17 @@ Every Emit preimage is tagged with `Poseidon2(EMIT_DOMAIN, TAG)`, where `TAG` is
 a base purpose tag from `outbe_circuit_core::tags` (`COMMITMENT`, `NULLIFIER`,
 `NOTE_SN`, `CHANGE_KEY`, `EMPTY`). Merkle inner nodes use
 `Poseidon2(EMIT_DOMAIN, left, right)`.
-`leaf_index` is converted to little-endian path bits inside the Emit helper:
-zero selects the current node as left; one selects it as right.
+`leaf_index` is converted to little-endian path bits by
+`outbe_circuit_core::merkle_tree::merkle_root` in the shared Noir library, which
+the Emit helper wraps: zero selects the current node as left; one selects it as
+right.
 
 ### Amount encoding (256-bit)
 
 Amounts are `noir-bignum`'s `U256` — three little-endian limbs of radix 2^120
 (`limbs[0..2] < 2^120`, `limbs[2] < 2^16`) — crossing the ABI as `[u128; 3]`.
-Alloy `U256` conversions live in [`outbe_zk_canonical::u256`](src/u256.rs).
+Alloy `U256` conversions live in `outbe_zk_core::codec`
+(`u256_limbs_be` / `u256_from_limbs_be` / `fields_from_u256`).
 Two encoding rules are load-bearing:
 
 - **Canonicality is enforced in-circuit.** The ABI carries raw `u128` limbs with
@@ -73,11 +83,24 @@ Two encoding rules are load-bearing:
   by the field modulus. The preimage is
   `(chain_id, serial, limbs[0], limbs[1], limbs[2])`.
 
-`EMIT_DOMAIN` is unchanged from 1.4.x: `hash_multi` seeds its state with the
-preimage length, so the 3-element (u128-era) and 5-element (limb) preimages
-cannot collide. Notes committed under 1.4.x are **not** provable under 1.5.0 —
-the commitment formula changed — so the runtime must migrate note commitments
-when it adopts 1.5.0.
+`hash_multi` seeds its state with the preimage length before absorbing the
+values (`outbe_zk_core::shielded_pool::hash_multi`), so two preimages of
+different arity cannot collide under one tag whatever the domain — a 3-element
+and a 5-element commitment preimage land on different elements by construction.
+
+What the earlier `emit_mint` versions hashed is **not checkable from this
+repository**, and no claim here should be read as if it were. `1.4.0` and
+`1.4.1` are `deprecated` in `circuits/manifest.toml`, and the storage policy
+below drops a deprecated version's `bytecode.b64` and `abi.json`:
+`resources/circuits/emit_mint/1.4.0/` and `.../1.4.1/` hold `circuit.vk` and
+nothing else. There is no older formula in the tree to compare 1.5.0 against.
+
+**The contract a runtime upholds** (this crate cannot check it): a note
+commitment is provable only under the circuit version whose formula produced it.
+A runtime holding leaves committed under an earlier `emit_mint` must establish
+that version's commitment formula from its own records — the deprecated entry's
+`circuit_hash` in the manifest identifies the version, not the formula — and
+migrate them before those notes can be minted under 1.5.0.
 
 The circuit does **not** select or authenticate the payout recipient and does not
 mutate ledger state. The verifier/runtime must bind `chain_id`, accept the
@@ -172,19 +195,39 @@ missed:
 `outbe_zk_canonical::noir`:
 
 - `pub mod <module> { … }` for the **latest active** version of each circuit —
-  `Witness` / `PublicInputs` types, the `Circuit<S>` + `CircuitId` impls on a
+  `Witness` / `PublicInputs` types, the `Circuit` + `CircuitId` impls on a
   marker, and identity consts (`LABEL`, `VERSION`, `CIRCUIT_HASH`, `BYTECODE_B64`,
   `VK_BYTES`, `VK_HASH`). This is the prover-facing API.
-- `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** version (the
-  verification view — VK + hashes, no bytecode). A verifier dispatches on this:
+- `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over every **non-revoked**
+  version (the verification view — VK + hashes, no bytecode). A verifier dispatches on this:
   match a submission's `circuit_id` (`vk_hash` / `label@version`), check `status`,
   verify against `vk_bytes`. Old + new versions coexist here, so a chain can accept
   both during a rollout.
-- `pub const L2_CIRCUITS_REGISTRY: &[L2ChainEntry]` groups explicitly enabled
-  `(version, circuit_hash, vk_hash)` bindings by external L2 chain ID. Use
-  `outbe_zk_canonical::l2_circuits(chain_id)` for allocation-free lookup.
 
-So: **registry = all versions; codegen = latest active**.
+So: **registry = every non-revoked version; codegen = latest active**.
+
+## Rust hash mirrors
+
+`emit_mint::hash` and `paynote::hash` re-implement each circuit's formulas in
+Rust, so a runtime can build the same leaves, serials, nullifiers and change
+commitments the circuit constrains without running a prover. Each module doc
+names the `.nr` file it mirrors. The shared rules:
+
+- `h2(a, b)` / `h3(a, b, c)` are Noir's `hash_2` / `hash_3` — the
+  `outbe-poseidon` sponge at `len = 2` / `len = 3`.
+- `hash_multi(tag, values)` absorbs the tag, the tuple arity, then the ordered
+  values.
+- Every purpose tag is domain-folded — `h2(<DOMAIN>, base)` with the base tags
+  from `outbe_circuit_core::tags` — so no two domains collide on the same
+  purpose.
+- Merkle inner nodes are `h3(<DOMAIN>, left, right)`. `EMIT_DOMAIN` is the
+  big-endian ASCII `OUTBE_EMIT`, `PAYNOTE_DOMAIN` the ASCII `OUTBE_PAYNOTE`.
+- A field word must be a canonical 32-byte big-endian encoding; one that would
+  need reduction is invalid input.
+
+The mirrors are Rust; nothing here proves them equivalent to the circuit. Each
+module's doc comment names the `.nr` file it must track, and that pairing is what
+a reviewer checks.
 
 ## Layout
 
@@ -201,49 +244,6 @@ noir/                                        # the .nr sources = the "head" (nex
 one `[[circuit]]` per `(module, version)` with `label`, `status`, and — once the
 bytecode is dropped — the preserved `circuit_hash`.
 
-### Enabling circuit versions for an L2 chain
-
-Add one `[[l2_chain]]` table per chain to `circuits/manifest.toml`. Each entry in
-`circuits` enables an exact frozen `(module, version)`. For example, a local
-development chain could enable both full-proof releases:
-
-```toml
-[[l2_chain]]
-chain_id = 31337
-circuits = [
-  { module = "full_proof", version = "1.0.0" },
-  { module = "full_proof", version = "1.1.0" },
-]
-```
-
-`version` is the circuit's frozen semver; there is no separate deployment version.
-Hashes are derived from the frozen artifacts (or preserved manifest identity for
-deprecated circuits), never entered by hand:
-
-```rust
-use outbe_zk_canonical::l2_circuits;
-
-let enabled = l2_circuits(31337); // &'static [L2CircuitVersion]
-let v1_1 = enabled.iter().find(|entry| entry.version == "1.1.0");
-let circuit_hash = v1_1.map(|entry| entry.circuit_hash);
-```
-
-The hash is `circuit_hash = keccak256(ACIR)`, not `vk_hash`; it resolves to the
-verification metadata in `noir::CIRCUIT_REGISTRY`. The generated registry is a
-static slice sorted by chain ID, with binary-search lookup and no runtime map
-allocation. Versions are sorted lexically, not by release precedence; there is
-no implicit "latest" selection. Unknown chains return an empty slice.
-
-Only declared bindings are enabled. Remove an entry to disable a circuit version;
-freezing a new circuit does not move existing bindings. Active and deprecated
-circuits may be bound, but revoked or unknown targets fail the build. Duplicate
-chain IDs and duplicate versions within one chain also fail the build. The same
-version string may be used independently on different chains.
-
-Chain `0xdead` is a test example, not a production deployment binding. Add more entries
-to enable additional circuit versions. Changing bindings requires only a normal
-Cargo rebuild, not a freeze.
-
 ## Lifecycle & storage policy
 
 | status | accepts proofs? | bytecode + abi | vk | in `CIRCUIT_REGISTRY`? |
@@ -254,9 +254,7 @@ Cargo rebuild, not a freeze.
 
 Rationale: bytecode is a *proving* artifact (a retired prover ships its own);
 verification needs only the VK. So a superseded version keeps its VK to keep
-verifying in-flight proofs, and a fully-obsolete one drops everything. The
-chain-side versioning/rollout design is in
-[`../docs/circuit-versioning.md`](../docs/circuit-versioning.md).
+verifying in-flight proofs, and a fully-obsolete one drops everything.
 
 ## Evolving a circuit
 
@@ -264,7 +262,8 @@ Editing the `.nr` sources does **not** change anything by itself — released
 versions are frozen. Minting a new version is a deliberate step:
 
 ```sh
-cargo xtask freeze-circuits          # the only step that runs nargo/bb
+cargo xtask freeze-circuits          # the only step that runs nargo/bb and writes artifacts
+cargo xtask freeze-circuits --check  # the dry run: every active artifact must reproduce
 ```
 
 For each circuit whose ACIR or ABI changed it mints a new frozen version:
@@ -281,17 +280,26 @@ The new artifacts + manifest land in a **PR** — that review is the audit gate 
 admitting a circuit. Status transitions (active → deprecated → revoked) are edits
 to `manifest.toml`; the next `freeze-circuits` reconciles the on-disk artifacts.
 
-Example — bumping the n2 tier:
+Example — bumping the paynote circuit:
 
 ```
 $ cargo xtask freeze-circuits
-  unchanged  flat_aggregation_n1 @ 1.0.0
-  minted     flat_aggregation_n2 1.0.0 -> 1.0.1  (old -> deprecated)
+  unchanged  emit_mint @ 1.5.0
+  minted     paynote 1.2.0 -> 1.2.1  (old -> deprecated)
   ...
-# manifest: n2 v1.0.0 deprecated (+circuit_hash), v1.0.1 active
-# resources: n2/1.0.0/ -> circuit.vk only;  n2/1.0.1/ -> bytecode+abi+vk
-# CIRCUIT_REGISTRY: both n2 entries;  pub mod flat_aggregation_n2 -> v1.0.1
+# manifest: paynote v1.2.0 deprecated (+circuit_hash), v1.2.1 active
+# resources: paynote/1.2.0/ -> circuit.vk only;  paynote/1.2.1/ -> bytecode+abi+vk
+# CIRCUIT_REGISTRY: both paynote entries;  pub mod paynote -> v1.2.1
 ```
+
+### `--check`
+
+`--check` is the same compile and the same key derivation, asserted against the
+committed `active` artifacts and writing nothing outside `target/`. It asserts
+the `mise.toml` tool pins first — a key that reproduces under an unpinned `bb`
+proves nothing — compiles a scratch copy of the whole `noir/` tree, and reports
+every failing module before exiting 1. The `l1-freeze-check` CI job runs it and
+then `git diff --exit-code`, which is what proves the dry run wrote nothing.
 
 ## Publishability
 
