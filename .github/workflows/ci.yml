@@ -266,3 +266,103 @@ jobs:
       # come out byte-identical.
       - name: the dry run wrote nothing
         run: git diff --exit-code
+
+  # --------------------------------------------------------------
+  # Versioning (cocogitto). See cog.toml.
+  #
+  # Pull requests only: report the version a merge would cut, tagging nothing.
+  # The history predates Conventional Commits, so the check covers the range
+  # the pull request introduces rather than the whole log.
+  # --------------------------------------------------------------
+  preview-version:
+    name: preview next version
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # cog reads the full history + tags
+          persist-credentials: false
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.11
+          install_args: cocogitto
+
+      - name: Validate the commits this pull request adds
+        run: >-
+          mise exec -- cog check --ignore-merge-commits
+          "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      - name: Preview the bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Neutralise cog.toml's branch_whitelist for this read-only preview so
+          # it runs from a pull-request ref. Nothing is committed or tagged.
+          cfg="$(mktemp -d)/cog.toml"
+          sed 's/^branch_whitelist.*/branch_whitelist = []/' cog.toml > "$cfg"
+          if out="$(mise exec -- cog --config "$cfg" bump --auto --dry-run --skip-untracked 2>/dev/null)"; then
+            tag="$(printf '%s\n' "$out" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' | tail -n1 || true)"
+            echo "::notice::next release would be: ${tag:-<no bump warranted>}"
+          else
+            echo "::notice::no bump warranted"
+          fi
+
+  # --------------------------------------------------------------
+  # main only, once every gate is green: cut the next v* tag, then push the
+  # bump commit and the tag through cog.toml's post-bump hooks. The push uses a
+  # token whose owner bypasses the branch ruleset; that also lets the tag push
+  # start release.yml, which the default workflow token cannot do.
+  # --------------------------------------------------------------
+  bump:
+    name: bump version & tag
+    needs: [cargo-deny, check, l2-verify, l1-freeze-check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.11
+          install_args: cocogitto
+
+      # cog.toml's pre-bump hook shells out to `cargo set-version`. Installed
+      # as a prebuilt binary rather than compiled, the way cargo-deny is above.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Configure the committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate the new commit
+        run: mise exec -- cog check --ignore-merge-commits "HEAD^..HEAD"
+
+      - name: Cocogitto bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          # cog does not see the CI checkout as `main`, so its own
+          # branch_whitelist guard would reject the bump. The job `if:` above is
+          # what restricts this to a push on main. Every hook from cog.toml is
+          # preserved and runs with the checkout credentials.
+          cfg="$(mktemp -d)/cog.toml"
+          sed 's/^branch_whitelist.*/branch_whitelist = []/' cog.toml > "$cfg"
+          mise exec -- cog --config "$cfg" bump --auto
+          tag="$(git tag --points-at HEAD | grep '^v' | head -n1 || true)"
+          if [ -n "$tag" ]; then
+            echo "::notice::cut ${tag}; release.yml runs on the tag push"
+          else
+            echo "::notice::no bump warranted"
+          fi

@@ -1773,7 +1773,7 @@ checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
 name = "outbe-l2-claims"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -1783,7 +1783,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-l2-demo"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -1801,7 +1801,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-l2-zk-canonical"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -1825,7 +1825,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-backend"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "acir",
  "acvm",
@@ -1844,7 +1844,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-canonical"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -1859,7 +1859,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-core"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -1876,7 +1876,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-core-derive"
-version = "0.11.0"
+version = "0.20.0"
 dependencies = [
  "proc-macro2",
  "quote",

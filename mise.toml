@@ -8,6 +8,9 @@
 # canonical crates build from committed artifacts.
 [tools]
 rust = "latest"
+# Conventional-commit check + auto-versioning; see cog.toml. CI installs just
+# this one tool rather than the whole set, so keep the pin here.
+cocogitto = "7"
 
 [tools.nargo]
 version = "1.0.0-beta.22"

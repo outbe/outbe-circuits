@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project shape
 
-Rust workspace (version `0.11.0`, edition 2021) for the Outbe zero-knowledge protocol: concrete BN254 cryptographic primitives, a Noir/barretenberg proving backend, and **two** frozen, versioned registries — L1 circuits in `outbe-zk-canonical`, L2 claim keys in `outbe-l2-zk-canonical`. Six library crates, one example and xtask:
+Rust workspace (edition 2021; the version is release-managed, see **Releases**) for the Outbe zero-knowledge protocol: concrete BN254 cryptographic primitives, a Noir/barretenberg proving backend, and **two** frozen, versioned registries — L1 circuits in `outbe-zk-canonical`, L2 claim keys in `outbe-l2-zk-canonical`. Six library crates, one example and xtask:
 
 - `crates/outbe-zk-core` — The concrete cryptographic core: BN254 field, Grumpkin curve, Poseidon2 hash, Grumpkin Schnorr. Modules `codec` / `error` / `hash` / `imt` / `keys` / `shielded_pool` / `entity` / `zk` / `zkproof`. Every formula is a plain function over `ark_bn254::Fr`, re-exported as `outbe_zk_core::Fr`. Owns the verifier envelope and combined-proof validation; concrete circuit layouts stay downstream. Hashing routes through **`outbe-poseidon`** (git dep, tag `v0.11.0`). Optional `alloy` feature adds field-encoding impls for alloy ABI scalars (the orphan rule forces them here). Re-exports `#[derive(Entity)]`. `#![forbid(unsafe_code)]`.
 - `crates/outbe-zk-core-derive` — `#[derive(Entity)]` proc-macro. Exactly five per-field `#[outbe(...)]` roles — `id` / `body` / `pos = N` / `limbed` / `skip` — generate the canonical entity-hash preimage. Every field must carry one. Emits `::outbe_zk_core::` paths; exercised by `outbe-zk-core`'s `tests/limbed.rs` and `tests/sorted_set.rs`.
@@ -93,6 +93,36 @@ An L2 is admitted by a pull request that adds one circuit root plus its `[[l2_ci
 `--changed` selects an entry when its own root or its claim ABI (in `crates/outbe-l2-claims/claims/`) moved, or when the manifest gained an **added** `root = "..."` line (`select` / `added_roots` — a status-only manifest edit selects nothing extra). A change to `mise.toml`, the workspace `Cargo.toml` or `crates/outbe-zk-canonical/circuits/manifest.toml` (`TOOLCHAIN_FILES`) widens it to every live entry, because those are the only things that can stop an untouched key reproducing. A key is a deterministic function of the compiled ACIR and the `bb` version; the ACIR is a deterministic function of the root's source, its tag-pinned dependencies and the `nargo` version. Both tools are pinned once, in `mise.toml`, with no per-entry pin — so a toolchain bump runs `--all`.
 
 Never hand-edit a committed root's `abi.json` / `circuit.vk` / `circuit.hash`, and never commit a root's `target/`. `l2 verify` and `l2 admit` compile a scratch copy under `target/xtask-l2/` and leave the root alone, but `cargo xtask test-circuits` runs `nargo test` in the root itself — `nargo` has no `--target-dir` — so it does write `<root>/target/`. That path is gitignored; it is a build artifact, not something to commit or hand-edit.
+
+## Releases
+
+Versioning is cocogitto (`cog.toml`), the same setup as `outbe-chain`. Commits
+are Conventional; CI checks only the range a pull request adds, because the
+history predates the convention.
+
+- A pull request gets a `preview next version` job that reports the version a
+  merge would cut, and tags nothing.
+- A merge to `main`, once every gate is green, runs `cog bump --auto`. That
+  rolls the version, writes `CHANGELOG.md`, commits `chore(version): vX.Y.Z`,
+  tags it and pushes both.
+- The tag push runs `release.yml`, which re-checks that the tag and the
+  manifest agree, re-resolves the lockfile, and creates the GitHub release.
+
+The version bump is `cargo set-version --workspace --exclude xtask`, **not** a
+sed on the first `^version` line. This workspace states each member's version
+twice: in `[workspace.package]` and again beside `path` on every
+intra-workspace dependency, which is what keeps the crates resolvable for
+cargo-deny and a future `cargo publish`. Moving one and not the other makes
+`outbe-zk-core = "^X.Y.Z"` unsatisfiable and breaks resolution outright;
+`release.yml` fails the release rather than publishing that.
+
+Tags and manifests were out of step up to `v0.20.0`, because nothing rewrote
+the manifest at release time. `v0.20.0` is the reconciliation point: from there
+a checkout of any tag reports the version that tag names.
+
+Nothing is published to crates.io yet. `outbe-poseidon` is a git dependency and
+not on the registry, so no crate here can be packaged for it; add a publish
+step once that changes.
 
 ## Dependency pinning
 

@@ -1,0 +1,91 @@
+name: release
+
+# Runs when a `v*` tag lands. In the normal path that tag comes from ci.yml's
+# `bump` job, which pushes it with a token that can start this workflow; a tag
+# pushed by hand works the same way.
+on:
+  push:
+    tags:
+      - "v[0-9]+.*"
+  # Escape hatch for re-cutting a release whose tag already exists.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.21.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  github-release:
+    name: github release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # This repository's whole product is a set of frozen artifacts, so a
+      # release that does not match its manifest is worse than no release. The
+      # tag says 0.21.0; every crate must agree.
+      - name: The tag and the manifest agree
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)"
+          if [ "v${manifest}" != "$TAG" ]; then
+            echo "::error::tag ${TAG} but Cargo.toml says ${manifest}; cog's pre-bump hook did not run"
+            exit 1
+          fi
+          echo "::notice::${TAG} matches the workspace manifest"
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # Resolves the whole graph against the committed lockfile without
+      # compiling anything. This workspace states each member's version twice -
+      # in `[workspace.package]` and again beside `path` on every
+      # intra-workspace dependency - so a bump that moves one and not the other
+      # leaves `outbe-zk-core = "^0.20.0"` unsatisfiable. That is the one thing
+      # a version bump can break that ci.yml did not already prove on this
+      # commit, and it shows up here in seconds rather than in a full build.
+      #
+      # There is deliberately no `cargo package` step: `outbe-poseidon` is a git
+      # dependency and not on crates.io, so nothing in this workspace can be
+      # packaged for it today. Add one when that crate is published.
+      - name: The lockfile still resolves
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
+      - name: Create the release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::release ${TAG} already exists; leaving it alone"
+            exit 0
+          fi
+          notes=""
+          # cog writes CHANGELOG.md on every bump; prefer it over generated
+          # notes so the release reads the same as the file in the tree.
+          if [ -f CHANGELOG.md ]; then
+            notes="--notes-file CHANGELOG.md"
+          else
+            notes="--generate-notes"
+          fi
+          # shellcheck disable=SC2086
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TAG" \
+            --verify-tag \
+            $notes

@@ -1,0 +1,44 @@
+# Cocogitto (cog) - conventional-commit check + auto-versioning, mirroring
+# outbe-chain's setup.
+#
+# Until now the `v*` tags moved on their own and Cargo.toml did not: the tags
+# reached v0.20.0 while every manifest still said 0.11.0. The pre-bump hook
+# below is what keeps the two equal from here on, so a checkout of a tag always
+# reports the version that tag names.
+#
+# CI validates only the commits a pull request introduces (and the new main
+# commit after merge), so pre-adoption titles do not fail every run. `cog bump
+# --auto` derives the next SemVer from the commits since the last tag, rolls
+# the version, writes the tag, and pushes both.
+tag_prefix = "v"
+branch_whitelist = ["main"]
+ignore_merge_commits = true
+
+# `cargo set-version`, not a sed on the first `^version` line: this workspace
+# states each member's version TWICE - once in `[workspace.package]` and again
+# as the `version = "x.y.z"` beside `path` on every intra-workspace dependency,
+# which is what keeps the publishable crates resolvable for `cargo publish` and
+# cargo-deny. Rewriting only the first would leave `outbe-zk-core = "^0.11.0"`
+# unsatisfiable by the crate it points at and break resolution outright.
+# It updates Cargo.lock too, so no separate `cargo update` is needed.
+#
+# xtask is excluded on purpose: it is `publish = false` and pinned at 0.0.0, so
+# it carries no version anyone resolves against.
+#
+# Needs cargo-edit (`cargo install cargo-edit`) to run a bump by hand; CI
+# installs it in the `bump` job. It is left unpinned because it only rewrites
+# version strings and release.yml re-checks the result against the tag.
+pre_bump_hooks = [
+    "cargo set-version --workspace --exclude xtask {{version}}",
+]
+
+# Push the bump commit and the tag back, so release.yml (`on: push: tags`)
+# picks the tag up and cuts the GitHub release.
+post_bump_hooks = [
+    "git push origin HEAD:main",
+    "git push origin v{{version}}",
+]
+
+[changelog]
+path = "CHANGELOG.md"
+authors = []
