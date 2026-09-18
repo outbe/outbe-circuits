@@ -1772,6 +1772,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c87def4c32ab89d880effc9e097653c8da5d6ef28e6b539d313baaacfbafcbe"
 
 [[package]]
+name = "outbe-l2-claims"
+version = "0.11.0"
+dependencies = [
+ "alloy-primitives",
+ "ark-bn254",
+ "outbe-zk-core",
+ "serde_json",
+]
+
+[[package]]
 name = "outbe-l2-demo"
 version = "0.11.0"
 dependencies = [
@@ -1796,6 +1806,7 @@ dependencies = [
  "alloy-primitives",
  "ark-bn254",
  "hex-literal",
+ "outbe-l2-claims",
  "outbe-zk-core",
  "serde_json",
  "tiny-keccak",

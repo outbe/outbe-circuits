@@ -1,7 +1,7 @@
 //! Canonical ZK verifier-wire marshaling.
 //!
 //! Circuit-specific layouts and public-input decoders live downstream:
-//! `outbe-zk-canonical` and `outbe-l2-zk-canonical` each generate their own.
+//! `outbe-zk-canonical` and `outbe-l2-claims` each generate their own.
 
 const CANONICAL_ABI_OFFSET: u64 = 64;
 

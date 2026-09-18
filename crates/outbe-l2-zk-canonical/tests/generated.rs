@@ -3,10 +3,8 @@
 //! No toolchain and no network — everything here reads the committed root the
 //! same way `cargo build` does.
 //!
-//! All of it is the `l2-keys` half. The claim half — entity, `binding`, the
-//! generated `PublicInputs` — is `tests/tribute.rs`, which compiles either way;
-//! see `the_enclaves_half_needs_no_registry` there.
-#![cfg(feature = "l2-keys")]
+//! The claim half — the entity, `binding` and the generated `PublicInputs` —
+//! is `outbe-l2-claims`, and its vectors are that crate's `tests/tribute.rs`.
 
 use ark_bn254::Fr;
 use outbe_l2_zk_canonical::claims::tribute::{

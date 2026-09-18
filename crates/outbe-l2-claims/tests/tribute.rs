@@ -6,7 +6,7 @@
 //! asserts fails, the fix is to put the preimage back, not to update the bytes.
 
 use alloy_primitives::{hex, B256};
-use outbe_l2_zk_canonical::claims::tribute::{binding, TributeDraftClaim};
+use outbe_l2_claims::claims::tribute::{binding, TributeDraftClaim};
 use outbe_zk_core::codec::{field_to_be_bytes, fits_in_fr, FR_MODULUS};
 use outbe_zk_core::entity::Entity;
 use outbe_zk_core::Error;
@@ -113,28 +113,23 @@ fn a_non_canonical_b256_is_rejected_not_reduced() {
     }
 }
 
-/// A consumer that never verifies a proof takes this crate with
-/// `default-features = false`: it needs the claim half and not the key table.
-/// Both halves of that are checked here, in the file that compiles with and
-/// without `l2-keys`:
-///
-/// * the core is reached through the re-export, the way such a consumer reaches
-///   it, not through a second `outbe-zk-core` entry in its manifest;
-/// * everything touched is registry-free, so `--no-default-features` builds it.
-///
-/// If the feature gate ever creeps over the claim, `cargo test
-/// -p outbe-l2-zk-canonical --no-default-features` stops compiling here.
+/// A consumer that never verifies a proof — a prover, a TEE image — takes this
+/// crate and nothing else, so the generated public-input type and its ABI order
+/// have to be reachable with no registry anywhere in the graph. That is what
+/// this crate *is* now, so the test is a statement of the surface rather than a
+/// gate: the core is reached through the re-export, the way such a consumer
+/// reaches it, not through a second `outbe-zk-core` entry in its manifest.
 #[test]
-fn the_enclaves_half_needs_no_registry() {
-    use outbe_l2_zk_canonical::claims::tribute::{public_words, PublicInputs, PUBLIC_INPUT_COUNT};
-    use outbe_l2_zk_canonical::outbe_zk_core as zk_core;
+fn the_public_inputs_need_no_registry() {
+    use outbe_l2_claims::claims::tribute::{public_words, PublicInputs, PUBLIC_INPUT_COUNT};
+    use outbe_l2_claims::outbe_zk_core as zk_core;
 
     let claim = sample(vec![b256(3)]);
     let nft_hash = claim.entity_hash().unwrap();
     let binding_hash = binding(&[1; 20], &claim.id.0, 19_280_501, 57005).unwrap();
 
     // The generated public-input type and its ABI order are part of the claim,
-    // not of the key table: a prover needs them with no registry compiled in.
+    // not of the key table.
     let public = PublicInputs {
         owner: zk_core::codec::field_from_be_bytes(claim.owner.as_slice()),
         nft_hash,
@@ -143,6 +138,12 @@ fn the_enclaves_half_needs_no_registry() {
     };
     assert_eq!(public_words(&public).len(), PUBLIC_INPUT_COUNT);
     assert_eq!(public_words(&public)[1], nft_hash);
+    // `from_fields` is the key-free half of decoding: it must invert
+    // `public_words` exactly.
+    assert_eq!(
+        outbe_l2_claims::claims::tribute::from_fields(&public_words(&public)).unwrap(),
+        public
+    );
 
     assert_eq!(field_to_be_bytes(&nft_hash).len(), 32);
     assert!(zk_core::codec::fits_in_fr(&claim.owner));

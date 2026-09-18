@@ -8,7 +8,8 @@ Chain 57005 is an ordinary registration — the demo goes through the same
 registry, the same build-time checks and the same `xtask l2 verify` a real L2
 does. Nothing here depends on `outbe-zk-canonical`; an L2 has no business with L1
 circuits, and the dependency graph says so. The crate depends on
-`outbe-l2-zk-canonical` (claims and keys), `outbe-zk-core` (hashes, keys, tree)
+`outbe-l2-zk-canonical` (the keys, and the claim contract re-exported from
+`outbe-l2-claims`), `outbe-zk-core` (hashes, keys, tree)
 and `outbe-zk-backend` (proving). Two tests read a committed L1 *file* by path
 — the L1 manifest, to check the proof-system pins, and one L1 verification key,
 to show a tribute proof is rejected under that one foreign key (not under every
@@ -65,7 +66,7 @@ against its
 
 **1. Ownership over `owner` (public word 0).** How a root commits to the key
 behind word 0 is that L2's own construction and no part of the claim
-(`outbe-l2-zk-canonical/README.md`, *The owner commitment*), so there is no
+(`outbe-l2-claims/README.md`, *The owner commitment*), so there is no
 formula to check a root against here. What a reviewer checks is that the root
 binds word 0 to a key the prover holds, and that the L2's own Rust side builds
 word 0 the same way. This root commits `poseidon2([pk.x, pk.y, nonce])` for a
@@ -123,8 +124,8 @@ that tree can never emit — the constraint passes and admits nothing real.
 
 | Claim | Checked by | When |
 | --- | --- | --- |
-| The four public words and their order | `outbe-l2-zk-canonical/build.rs` against `claims/tribute/abi.json` | every `cargo build` with the default `l2-keys` feature |
-| Root hygiene: `type = "bin"`, no `path` dep leaving the root, git deps pinned | `outbe-l2-zk-canonical/build.rs`, and again in `cargo xtask l2 verify` | every `cargo build` with the default `l2-keys` feature; `cargo xtask l2 verify` either way |
+| The four public words and their order | `outbe-l2-zk-canonical/build.rs` against `outbe-l2-claims`'s `claims/tribute/abi.json` | every `cargo build` |
+| Root hygiene: `type = "bin"`, no `path` dep leaving the root, git deps pinned | `outbe-l2-zk-canonical/build.rs`, and again in `cargo xtask l2 verify` | every `cargo build`; `cargo xtask l2 verify` too |
 | The committed key reproduces from the committed source | `cargo xtask l2 verify` | the `l2-verify` CI job |
 | The committed `circuit.hash` is `keccak256` of that recompiled ACIR | `cargo xtask l2 verify` | the `l2-verify` CI job |
 | The key the demo proves with is the registered key | `tests/roundtrip.rs` | `cargo test` |

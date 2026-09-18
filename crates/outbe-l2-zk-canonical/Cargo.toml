@@ -5,43 +5,41 @@ edition.workspace    = true
 authors.workspace    = true
 license.workspace    = true
 repository.workspace = true
-description = "The L2 side of the Outbe zk gate: claim entities and bindings, claim public-input ABIs, and the registered L2 circuit keys."
+description = "The L2 registry of the Outbe zk gate: the committed L2 circuit roots, their verification keys and the key-aware public-input decoders."
 keywords    = ["outbe", "zero-knowledge", "bn254", "layer2", "consensus"]
 categories  = ["cryptography"]
 readme      = "README.md"
 
-[features]
-default = ["l2-keys"]
-# The generated registry: `L2Key`, `L2ClaimEntry`, `CircuitStatus`, `L2_KEYS`,
-# `l2_keys` and the `include_bytes!` of every registered `circuit.vk`.
-#
-# Off, the crate is still the whole claim: the entities, `binding`, the claim
-# ABIs and the generated `PublicInputs` / `decode_public_inputs`. That is the
-# half a consumer that never verifies a proof needs, and it is the half that
-# does not move when an L2 registers — with the keys compiled in, every
-# registration changes the bytes this crate contributes to that consumer's
-# binary, which is what breaks a build whose identity is a measurement over
-# those bytes (a TEE image, say).
-l2-keys = ["dep:hex-literal"]
-
 # Deliberately NOT a dependency of (or on) `outbe-zk-canonical` or
 # `outbe-zk-backend`: an L2 registration must never be able to touch an L1
-# circuit, and a claim-only consumer must be able to take this crate without
-# pulling barretenberg. Keep this dependency list to the core.
+# circuit. `outbe-l2-claims` is a dependency one way only — this crate holds
+# the keys, that one holds the contract, and a claim-only consumer takes that
+# one instead of this one. Keep this dependency list to the core.
 [dependencies]
+# The claim contract: entities, bindings, ABIs and the generated
+# `PublicInputs`. Re-exported as `claims::<name>`, where the generated
+# key-aware decoder joins it.
+outbe-l2-claims = { workspace = true }
 outbe-zk-core = { workspace = true, features = ["alloy"] }
 ark-bn254     = { workspace = true }
-# Not optional: every claim entity carries `B256` members, so the `alloy`
-# codec impls are load-bearing rather than a convenience feature.
-alloy-primitives = { workspace = true }
 # Compile-time `hex!("..")` -> `[u8; 32]` for the generated `vk_hash` literals.
-# Only the key table has those, so it rides with the `l2-keys` feature.
-hex-literal = { workspace = true, optional = true }
+hex-literal = { workspace = true }
 
-# Read-only codegen over committed files: the claim ABIs, `l2/manifest.toml`
-# and each root's `abi.json` / `circuit.vk`. It never runs `nargo` or `bb`, so
-# `cargo build` needs no Noir toolchain.
+# The claim entities carry `B256` members, but this crate only passes them
+# through: only the tests spell `alloy_primitives` out.
+[dev-dependencies]
+alloy-primitives = { workspace = true }
+
+# Read-only codegen over committed files: `l2/manifest.toml` and each root's
+# `abi.json` / `circuit.vk`. It never runs `nargo` or `bb`, so `cargo build`
+# needs no Noir toolchain.
+#
+# `outbe-l2-claims` is here as well as in `[dependencies]` because a build
+# script cannot read another package's files by path: it takes the crate that
+# owns the contract and reads `CLAIM_ABIS` — each claim's `abi.json`,
+# `include_str!`d — to gate every committed root's public ABI against it.
 [build-dependencies]
+outbe-l2-claims = { workspace = true }
 serde_json  = { workspace = true }
 tiny-keccak = { workspace = true }
 toml        = { workspace = true }

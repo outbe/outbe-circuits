@@ -22,8 +22,12 @@ resolver = "2"
 # Local crates. `version` next to `path` keeps the publishable crates
 # (outbe-zk-canonical) resolvable by cargo-deny / `cargo publish`.
 outbe-zk-core = { path = "crates/outbe-zk-core", version = "0.11.0" }
-# The L2 side of the gate: claim entities, claim ABIs and the registered L2
-# keys. Deliberately not wired to outbe-zk-canonical in either direction.
+# The L1-to-L2 contract: claim entities, bindings and claim ABIs. Holds no
+# verification key, so a consumer that only folds claims takes this alone.
+outbe-l2-claims = { path = "crates/outbe-l2-claims", version = "0.11.0" }
+# The L2 registry: committed roots, the key table and the key-aware decoders.
+# Depends on outbe-l2-claims; deliberately not wired to outbe-zk-canonical in
+# either direction.
 outbe-l2-zk-canonical = { path = "crates/outbe-l2-zk-canonical", version = "0.11.0" }
 # The `#[derive(Entity)]` proc-macro, re-exported by outbe-zk-core so a
 # consumer needs one dependency. No cycle: it depends only on syn/quote.

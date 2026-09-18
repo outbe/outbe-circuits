@@ -76,7 +76,7 @@ jobs:
               - 'crates/outbe-zk-canonical/circuits/manifest.toml'
             l2:
               - 'crates/outbe-l2-zk-canonical/l2/**'
-              - 'crates/outbe-l2-zk-canonical/claims/**'
+              - 'crates/outbe-l2-claims/claims/**'
               - 'mise.toml'
               - 'Cargo.toml'
               - 'crates/outbe-zk-canonical/circuits/manifest.toml'
@@ -157,15 +157,6 @@ jobs:
       # the feature-off path untestable.
       - name: cargo test -p outbe-zk-canonical --features alloy
         run: cargo test -p outbe-zk-canonical --features alloy
-
-      # `default-features = false` is the claim half with no key table, so a
-      # consumer on that path sees no compiled bytes move when an L2
-      # registration lands. It only holds while the entities, `binding` and the
-      # generated `PublicInputs` still compile without the registry; the run
-      # above never exercises that, because every other member wants the
-      # default feature.
-      - name: cargo test -p outbe-l2-zk-canonical --no-default-features
-        run: cargo test -p outbe-l2-zk-canonical --no-default-features
 
       # The nargo pin lives only in mise.toml — no hand-copied version
       # string. `install_args` is load-bearing: mise.toml also declares

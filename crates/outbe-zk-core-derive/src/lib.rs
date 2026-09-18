@@ -40,8 +40,8 @@
 //! attribute, or one that names only `pos` / `limbed`, is a compile error. The
 //! struct must have named fields and no generic parameters.
 //!
-//! The macro's real user is `TributeDraftClaim` in `outbe-l2-zk-canonical`
-//! (`crates/outbe-l2-zk-canonical/src/claims/tribute.rs`). A smaller struct,
+//! The macro's real user is `TributeDraftClaim` in `outbe-l2-claims`
+//! (`crates/outbe-l2-claims/src/claims/tribute.rs`). A smaller struct,
 //! showing every role at once:
 //!
 //! ```ignore

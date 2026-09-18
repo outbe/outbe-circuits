@@ -1,154 +1,42 @@
 # outbe-l2-zk-canonical
 
-The L2 side of the Outbe zk gate. Outbe L1 admits NFTs from L2 networks by
+The L2 registry of the Outbe zk gate. Outbe L1 admits NFTs from L2 networks by
 proof: each **claim** kind has one public-input ABI, and each registered L2
-holds one verification key per claim and version. Everything L2-facing lives
-here — the claim entities and their bindings, the claim ABIs, the committed
-circuit roots with their keys, and the build-time checks that tie them
-together.
+holds one verification key per claim and version. The keys live here — the
+committed circuit roots, the `l2/manifest.toml` that indexes them, the
+key-aware decoders and the build-time checks that tie them to the claim ABIs.
 
 This crate has **no dependency on `outbe-zk-canonical`** (the L1 circuits) in
 either direction, and none on `outbe-zk-backend`: registering an L2 cannot
-touch an L1 circuit or its key, and a consumer that only hashes claims takes
-this crate without taking barretenberg (see *Features*). It re-exports
-`outbe_zk_core`, so a consumer that only registers or verifies claims depends
-on this crate alone and still reaches `codec`, `hash`, `keys`, `Entity` and
-`Error`.
+touch an L1 circuit or its key, and a verifier takes this crate without taking
+barretenberg. It re-exports both `outbe_l2_claims` and `outbe_zk_core`, so a
+consumer that registers or verifies claims depends on this crate alone and
+still reaches the claim entities, `binding`, `codec`, `hash`, `keys`, `Entity`
+and `Error`.
 
-## What a claim is
+## The claim contract
 
-Three things, all under `claims::<name>`:
+The claim itself — `TributeDraftClaim`, `binding`, `BINDING_DOMAIN`,
+`claims/tribute/abi.json` and the generated `PublicInputs` — is
+[`outbe-l2-claims`](../outbe-l2-claims), which this crate depends on and
+re-exports through `claims::<name>`. The fold order, the field-fit rule, the
+four public words and the binding preimage are documented in
+[`../outbe-l2-claims/README.md`](../outbe-l2-claims/README.md), and the frozen
+vectors for all of them are that crate's `tests/tribute.rs`.
 
-| Part | Where | Becomes |
-|------|-------|---------|
-| The entity | `src/claims/<name>.rs`, `#[derive(Entity)]` | `nft_hash` |
-| The binding formula | `src/claims/<name>.rs` | `binding_hash` |
-| The public-input ABI | `claims/<name>/abi.json` | the generated `PublicInputs` |
-
-## The tribute claim
-
-### The entity
-
-`TributeDraftClaim` in `src/claims/tribute.rs` is the one definition of what a
-tribute draft hashes to. Seven hashed members — the `id` and six body
-members — and `pos`, not declaration order, pins the fold:
-
-| Role | Field | Type | Meaning |
-|------|-------|------|---------|
-| `id` | `id` | `B256` | the L2's draft id; the seed the body folds onto |
-| `body, pos = 0` | `owner` | `B256` | the L2's owner commitment, an opaque field element |
-| `body, pos = 1` | `worldwide_day` | `u64` | the day the tribute is offered for |
-| `body, pos = 2` | `currency` | `u16` | ISO-4217 numeric code |
-| `body, pos = 3` | `base` | `u64` | whole units of the amount |
-| `body, pos = 4` | `micro` | `u64` | the `10^-6` remainder, `0..=999_999` |
-| `body, pos = 5` | `su_ids` | `Vec<B256>` | the spending units consumed, as a canonical set |
-
-```text
-nft_hash = iterate(id, [owner, worldwide_day, currency, base, micro,
-                        len(su_ids), su_0, …, su_n-1])
-```
-
-where `iterate(seed, xs) = fold(seed, |s, x| poseidon2([s, x]))`. The `len`
-prefix is the canonical set encoding and is what makes the vector boundary
-unambiguous — it is emitted even for an empty set. `su_ids` must be strictly
-ascending by field value, so sorted and de-duplicated;
-`outbe_zk_core::codec::sort_set` normalises it, and an unsorted set is a hash
-error, not a different hash. `micro` reaching `10^6` gives one amount two
-spellings; the hash does not enforce the bound, the producer must.
-
-`tests/tribute.rs` pins the fold order, the empty-set length prefix and the
-unsorted-set rejection; `examples/outbe-l2-demo/tests/roundtrip.rs` spells the
-same preimage out by hand with the bare `poseidon2` primitive and requires it
-to reproduce the proof's word.
-
-### Field fit
-
-Every `B256` member is a BN254 scalar carried in 32 bytes, not an arbitrary
-256-bit value: it must be strictly below `outbe_zk_core::codec::FR_MODULUS`.
-Hashing decodes through `field_from_be_bytes_canonical`, so a value at or above
-the modulus fails with `Error::NonCanonical` instead of being silently reduced
-onto a different element. **An L2 must mint draft ids and SU ids as field
-elements in the first place** — a Poseidon2 output, say — never as 32 random
-bytes or a keccak digest. That is not a rare edge: the modulus over `2^256` is
-`21888242871839275222246405745257275088548364400416034343698204186575808495617
-/ 115792089237316195423570985008687907853269984665640564039457584007913129639936
-= 0.189`, so a uniform 32-byte word is a field element only ~18.9% of the time
-and roughly four in five keccak digests are rejected. The same rule applies on
-the way back in:
-`decode_public_inputs` reads each public word through
-`outbe_zk_core::zkproof::decode_public_words`, which rejects a non-canonical
-word rather than reducing it.
-
-### The four public words
-
-`claims/tribute/abi.json` is the claim's contract: four `field` parameters, all
-`public`, no return type.
-
-| # | Word | What it is |
-|---|------|------------|
-| 0 | `owner` | the L2's owner commitment, opaque to this claim — also body position 0 of the entity |
-| 1 | `nft_hash` | `TributeDraftClaim::entity_hash()` |
-| 2 | `binding_hash` | `binding(sender, draft_id, host_chain_id, l2_chain_id)` |
-| 3 | `merkle_root` | the root of the L2's own commitment tree — its depth and domain are in the root's `src/main.nr`, not in the claim |
-
-A breaking change to that list is a **new claim name**, not a new version of
-this one.
-
-#### The owner commitment
-
-How an L2 builds word 0 — and whether a nonce goes into it at all — is that
-L2's own construction, and no part of this claim: the claim says only that word
-0 *is* the owner, that the same value folds at body position 0 of the entity,
-and that it is a canonical field element. Neither that construction nor
-anything it commits to reaches L1, which takes `owner` from the draft claim it
-was handed, compares word 0 against it, and never recomputes it.
-`examples/outbe-l2-demo` shows one such construction, and its reviewer checklist
-reads what that one root constrains over the word — as an example of the
-reading, not as a rule for other roots.
-
-### The binding
-
-```text
-binding_hash = poseidon2([BINDING_DOMAIN, sender, draft_id_lo128,
-                          draft_id_hi128, host_chain_id, l2_chain_id])
-```
-
-`BINDING_DOMAIN` is `1`. Six elements: the 20-byte sender as one field, then
-the draft id in two 128-bit limbs **low limb first** (independent of the
-three-limb encoding `U256` amounts use), then the two chain ids. `l2_chain_id`
-is the sixth element, so two L2s running byte-identical circuits still cannot
-replay each other's proofs — and folding it here rather than exposing it as a
-fifth public input leaves the claim at four words, and the circuit, its ABI and
-its key untouched.
-
-The circuit treats the word as opaque: the registered root only folds it into
-`hash_3([nft_hash, nonce, binding_hash])` before the Schnorr check.
-`tests/tribute.rs` pins the vector and pins that two L2 chain ids give
-different results.
-
-#### The three inputs the claim does not own
-
-`binding` takes them as arguments; nothing in this crate produces them. Each is
-supplied by whoever builds the witness **and independently by whoever checks the
-proof**, which is the whole point — a value both sides compute from their own
-copy is a value neither side can lie about (see *What a verifier must uphold*).
-
-| Input | What it is | Who supplies it | Why it is in the preimage |
-|---|---|---|---|
-| `sender` | 20 bytes: the account that submits the proof on the host chain. `binding` decodes it with the reducing `field_from_be_bytes`, which is exact for 20 bytes — far below `FR_MODULUS`, so no reduction happens. | The submitter builds the witness with it; the verifier uses the caller it is actually serving, not a value read out of the proof. The demo fixture uses `[0x11; 20]` (`examples/outbe-l2-demo/tests/common/mod.rs`). | A proof is a public blob and anyone who sees one can resubmit it. Folding the caller in means a proof built for one submitter does not verify as another's. |
-| `host_chain_id` | A `u64`: the chain id of the L1 the claim is submitted to. | The submitter; the verifier from its own chain configuration. The demo uses `31337`. | Stops one proof being replayed against a second host chain that registered the same L2 key. |
-| `l2_chain_id` | A `u64`: the chain id the key is registered under in `l2/manifest.toml` — here `57005`. | Fixed by the registration. The verifier takes it from the key lookup it already performed, not from the submitter. | Two L2s may register byte-identical circuits, which means byte-identical keys, and then nothing else in the four public words tells them apart. Folding it here rather than exposing it as a fifth public word keeps the claim at four. |
-
-`draft_id`, the fourth argument, is the claim's own `TributeDraftClaim::id` —
-the same 32 bytes that seed `nft_hash` — split into two 128-bit limbs, low limb
-first.
+The split is the guarantee: the dependency runs one way, so a consumer that
+only folds claims takes that crate and no verification key can reach its binary
+under any cargo invocation. It used to be a default-on `l2-keys` cargo feature
+on one crate, and a feature cannot carry it — cargo unifies features across the
+selected package set.
 
 ## What a verifier must uphold
 
 **Everything in this section is the consumer's responsibility, not this
-repository's.** This crate defines two values — `nft_hash` and `binding_hash` —
-and pins them against frozen vectors in `tests/tribute.rs`. It verifies nothing, holds no chain state, and
-has no way to check any obligation below on a consumer's behalf. The verifier
+repository's.** `outbe-l2-claims` defines two values — `nft_hash` and
+`binding_hash` — and pins them against frozen vectors in its `tests/tribute.rs`.
+Neither crate verifies anything, holds chain state, or has any way to check an
+obligation below on a consumer's behalf. The verifier
 is `outbe-zk-backend`: `RawVerifier::verify_combined(vk_bytes, combined_proof)`
 takes the key a consumer looked up and the proof it was handed and returns
 `Result<bool, Error>`. That is the entry point, and
@@ -207,7 +95,6 @@ itself, not a verifier and not a substitute for one.
 ## Layout
 
 ```
-claims/<claim>/abi.json          the claim's public-input ABI; one source of truth
 l2/manifest.toml                 the append-only L2 registry
 l2/<chain>/<claim>/<version>/
   Nargo.toml                     git deps tag-pinned, no path dep leaving the root
@@ -241,9 +128,10 @@ helpers it needs and depends only on tag-pinned `noir-lang/schnorr`.
 
 ## Generated API
 
-`build.rs` reads the committed files and emits `crate::generated`, re-exported
-where consumers should reach for it. It never runs `nargo` or `bb`, so
-`cargo build` and `cargo test` need no Noir toolchain.
+`build.rs` reads `l2/manifest.toml`, the roots, and the claim ABIs it gets from
+`outbe_l2_claims::CLAIM_ABIS`, and emits `crate::generated`, re-exported where
+consumers should reach for it. It never runs `nargo` or `bb`, so `cargo build`
+and `cargo test` need no Noir toolchain.
 
 ```rust
 use outbe_l2_zk_canonical::{claims::tribute, Claim, l2_keys};
@@ -261,16 +149,13 @@ let ethereum = tribute::alloy::PublicInputs::try_from(public)?;
 
 | Item | What it is |
 |------|------------|
-| `Claim` | One variant per `claims/<name>/abi.json`, in name order, with `as_str()` |
-| `claims::<name>::CLAIM` | Which claim the module is, as a `Claim` enum constant (`pub const CLAIM: super::Claim = super::Claim::<Variant>`); the name is `CLAIM.as_str()` |
-| `claims::<name>::PUBLIC_INPUT_COUNT` | Public field words the claim exposes (tribute: 4) |
-| `claims::<name>::PublicInputs` | The words in ABI order, typed from the ABI: `field` as `Fr`, unsigned `integer` as `uN`, arrays as `[T; N]` (tribute: four `Fr`) |
-| `claims::<name>::public_words` | Flatten for a prover or for `encode_combined_proof` |
-| `claims::<name>::decode_public_inputs(combined, vk)` | Key-aware decoder |
-| `claims::<name>::alloy::PublicInputs` | The `B256` mirror, with `TryFrom` both ways |
-| `l2_keys(chain_id, claim)` | The registered `L2Key`s by binary search, ascending by version (`l2-keys`) |
-| `L2Key::{version, status, vk_hash, vk_bytes}()` | Read-only accessors; the fields are private and there is no constructor, so a caller cannot fabricate a key (`l2-keys`) |
-| `outbe_zk_core` | The core, re-exported: one dependency is enough for a claim consumer |
+| `Claim` | One variant per claim ABI, in claim-name order, with `as_str()` |
+| `claims::<name>::CLAIM` | Which claim the module is, as a `Claim` enum constant; the name is `CLAIM.as_str()` |
+| `claims::<name>::decode_public_inputs(combined, vk)` | Key-aware decoder. Here rather than in `outbe-l2-claims` because the expected proof length comes from the key; it calls that crate's `from_fields` |
+| `claims::<name>::*` | Everything else under the module is `outbe-l2-claims` re-exported: the entity, `binding`, `PUBLIC_INPUT_COUNT`, `PublicInputs`, `public_words`, `from_fields` and the `alloy` mirror |
+| `l2_keys(chain_id, claim)` | The registered `L2Key`s by binary search, ascending by version |
+| `L2Key::{version, status, vk_hash, vk_bytes}()` | Read-only accessors; the fields are private and there is no constructor, so a caller cannot fabricate a key |
+| `outbe_l2_claims` / `outbe_zk_core` | The claim contract and the core, re-exported: one dependency is enough for a verifier |
 | `proof_words` / `combined_len` / `encode_combined_proof` | The key-derived proof layout, written once (hand-written in `src/lib.rs`) |
 
 `L2_KEYS` is a `&'static` table built at compile time, sorted by
@@ -279,45 +164,14 @@ coexist and the newest is last. An unregistered pair yields an empty slice.
 There is no runtime registration path: the set of keys a node accepts changes
 only with a node release.
 
-A claim ABI may use `field`, unsigned `integer`, and arrays of those. A struct
-or a signed integer is a hard build failure — the generator names the claim and
-the type it will not handle.
-
-## Features
-
-`l2-keys`, on by default, is the registry: `L2Key`, `L2ClaimEntry`,
-`CircuitStatus`, `L2_KEYS`, `l2_keys`, and each root's `circuit.vk` compiled
-in. Every verifier wants it and gets it by writing nothing.
-
-Off — `default-features = false` — the crate is still the whole claim: the
-entities, `binding`, the claim ABIs, `PublicInputs`, `public_words`,
-`decode_public_inputs` and the `proof_words` / `combined_len` /
-`encode_combined_proof` layout helpers. That is what a consumer needs if it
-only folds claims and recomputes `binding_hash` instead of verifying proofs.
-
-What the split buys such a consumer is verifiable here: `build.rs` reads
-`l2/manifest.toml` and the roots only under
-`if env::var_os("CARGO_FEATURE_L2_KEYS").is_some()`, and emits the key table
-only there, so with the feature off nothing an L2 registration touches reaches
-the object file and the crate's compiled bytes do not move when a registration
-lands.
-
-The gate cannot creep over the claim half unnoticed: CI runs `cargo test -p
-outbe-l2-zk-canonical --no-default-features` (`.github/workflows/ci.yml`), and
-`the_enclaves_half_needs_no_registry` in `tests/tribute.rs` exercises the
-entities, `binding`, `PublicInputs` and `public_words` through the
-`outbe_zk_core` re-export with the feature off — if any of them gained a
-dependency on the registry, that build would stop compiling.
-
 ## Checks at `cargo build`
 
-The claim-ABI checks run in every build; the rest need the roots and so run
-with `l2-keys` — without it `build.rs` reads `claims/*/abi.json` and nothing
-else. Each is a hard build failure naming the entry:
+Every build runs all of them; nothing here is behind a feature. Each is a hard
+build failure naming the entry:
 
 - every non-revoked `root` exists and holds `Nargo.toml`, `abi.json` and `circuit.vk`;
 - root hygiene: the package is `type = "bin"`, no `path` dependency resolves outside the root, and every git dependency carries a `tag` or `rev`;
-- the root's public ABI parameters equal `claims/<claim>/abi.json` by name, type and order;
+- the root's public ABI parameters equal the claim ABI by name, type and order — read from `outbe_l2_claims::CLAIM_ABIS`, since a build script cannot open another package's files by path, which is why `outbe-l2-claims` is a build-dependency as well as a normal one;
 - the key is exactly 59 words — `VK_WORDS = 3 + 28 * 2`, so a committed `circuit.vk` is `59 * 32 = 1888` bytes — and its header declares `PUBLIC_INPUT_COUNT + 8` public inputs (the eight `DefaultIO` pairing-accumulator words bb appends);
 - `(chain_id, claim, version)` is unique and `status` is one of `active` / `deprecated` / `revoked`;
 - a `revoked` entry has no surviving root — revocation deletes it in the same pull request;
@@ -329,7 +183,7 @@ keys in existence are the ones `build.rs` emitted under these checks.
 
 What `build.rs` deliberately cannot check is that the committed key came from
 the committed source; that needs the toolchain and is
-`cargo xtask l2 verify`'s job, run in CI on every change to `l2/` or `claims/`.
+`cargo xtask l2 verify`'s job, run in CI on every change to `l2/` or to a claim ABI.
 
 ## Registering an L2
 
@@ -401,7 +255,7 @@ have named.
 Then, per root:
 
 3. Hygiene — the directory exists, `Nargo.toml` parses, `[package] type = "bin"`, `src/main.nr` exists, no `path` dependency escapes the root, every git dependency carries a `tag` or `rev`.
-4. The committed `abi.json`'s public parameters equal `claims/<claim>/abi.json`, **before** anything is compiled.
+4. The committed `abi.json`'s public parameters equal `outbe-l2-claims`'s `claims/<claim>/abi.json`, **before** anything is compiled.
 5. Copy the root to `target/xtask-l2/` and run `nargo compile`, then `bb write_vk`.
 6. The committed `abi.json` equals the compiled ABI. The comparison is structural, over parsed JSON, not a raw-string compare — that would false-positive on serializer differences. The compiled ABI matching the claim ABI follows by transitivity from step 4. On a mismatch the compiled ABI is written beside the scratch copy so the reviewer can diff it.
 7. The committed `circuit.vk` equals the recompiled key, byte for byte.
@@ -441,11 +295,7 @@ gone.
 
 ## Adding a claim
 
-Add `claims/<name>/abi.json` and a `src/claims/<name>.rs` with the entity and
-its binding. `build.rs` picks up the ABI and emits `generated::<name>` with
-`PublicInputs`, `public_words`, the decoder, the alloy mirror and the `Claim`
-variant; the hand-written module re-exports them as `claims::<name>`. Nothing
-about an existing claim changes. By convention every claim exposes `owner`,
-`nft_hash` and `binding_hash` as its first three words and `merkle_root` as its
-last, so ownership, binding and inclusion are checked the same way for every
-NFT. The convention is a convention: `build.rs` does not enforce it.
+The claim itself is added in [`outbe-l2-claims`](../outbe-l2-claims) — see that
+crate's README. Here, nothing: `build.rs` picks the new `CLAIM_ABIS` row up and
+grows a `Claim` variant and a `claims::<name>` module. Nothing about an existing
+claim or an existing key changes.

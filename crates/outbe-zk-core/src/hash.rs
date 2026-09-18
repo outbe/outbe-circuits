@@ -11,11 +11,11 @@
 //! [`nft_hash`] and [`signing_payload`] are consensus preimages: their element
 //! order is frozen. None of the formulas here folds in a domain constant.
 //! [`derive_owner`] is not one of them — the owner commitment is each L2's own
-//! construction (`outbe-l2-zk-canonical`'s `TributeDraftClaim::owner` treats it
+//! construction (`outbe-l2-claims`'s `TributeDraftClaim::owner` treats it
 //! as an opaque field element), and this is the one the reference demo in
 //! `examples/outbe-l2-demo` uses. The submission binding is *not* here either:
 //! it names an L2 chain id, so it lives with its claim, in
-//! `outbe-l2-zk-canonical`.
+//! `outbe-l2-claims`.
 
 use ark_ff::PrimeField;
 

@@ -11,8 +11,9 @@ Rust hash mirrors, and the **in-code, append-only circuit registry**: the
 authoritative record of every released circuit version and its on-chain identity.
 
 This crate has no concept of an L2. Which key an L2 chain verifies with lives
-entirely in [`outbe-l2-zk-canonical`](../outbe-l2-zk-canonical), which this crate
-does not depend on, and which does not depend on this one.
+entirely in [`outbe-l2-zk-canonical`](../outbe-l2-zk-canonical) and the claim
+it verifies in [`outbe-l2-claims`](../outbe-l2-claims), neither of which this
+crate depends on, and neither of which depends on this one.
 
 Alloy support is optional and off by default, and `decode_public_inputs` is not
 what it gates: that decoder is generated unconditionally (`build.rs`, no `cfg`)

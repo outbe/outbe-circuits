@@ -31,6 +31,11 @@ use crate::{toolchain, workspace_root};
 
 const CRATE: &str = "crates/outbe-l2-zk-canonical";
 
+/// The crate that owns the claim ABIs a root's public parameters are checked
+/// against. A separate crate from the registry, so that a claim consumer takes
+/// the contract without taking a verification key.
+const CLAIMS_CRATE: &str = "crates/outbe-l2-claims";
+
 /// Workspace files that can stop *any* committed key reproducing, so a change
 /// to one widens `--changed` to every live entry: the `nargo`/`bb` pins
 /// (`mise.toml`), the `barretenberg-rs` pin (the workspace manifest) and
@@ -404,7 +409,7 @@ fn select<'a>(args: &[String], all: &'a [Entry]) -> Result<Vec<&'a Entry>, Strin
     Ok(live()
         .filter(|e| {
             let root_prefix = format!("{CRATE}/{}/", e.root);
-            let claim_abi = format!("{CRATE}/claims/{}/abi.json", e.claim);
+            let claim_abi = format!("{CLAIMS_CRATE}/claims/{}/abi.json", e.claim);
             manifest_roots.contains(&e.root)
                 || changed
                     .iter()
@@ -623,10 +628,13 @@ fn build(nargo: &Path, bb: &Path, root: &Path, package: &str, slug: &str) -> Res
     })
 }
 
-/// The root's public parameters equal `claims/<claim>/abi.json` in name, type
-/// and order. A different layout is a different claim.
+/// The root's public parameters equal `outbe-l2-claims`'s
+/// `claims/<claim>/abi.json` in name, type and order. A different layout is a
+/// different claim.
 fn check_claim_abi(abi: &serde_json::Value, claim: &str) -> Result<(), String> {
-    let path = crate_dir().join(format!("claims/{claim}/abi.json"));
+    let path = workspace_root()
+        .join(CLAIMS_CRATE)
+        .join(format!("claims/{claim}/abi.json"));
     let text = std::fs::read_to_string(&path).map_err(|_| {
         format!("claims/{claim}/abi.json not found; the manifest entry names claim {claim:?}")
     })?;

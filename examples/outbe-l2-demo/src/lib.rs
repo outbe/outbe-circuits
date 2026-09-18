@@ -7,7 +7,7 @@
 //!
 //! **Where the constants live.** The tree depth and the tree domain are *this
 //! L2's*, not the claim's: they are defined here and in the root's `src/main.nr`
-//! and nowhere else. `outbe-l2-zk-canonical` owns the claim — the entity, the
+//! and nowhere else. `outbe-l2-claims` owns the claim — the entity, the
 //! binding formula and the four public words — and deliberately owns no depth,
 //! no domain and no owner commitment: word 0 is opaque to the claim, so the
 //! `derive_owner` construction [`prove_tribute`] recomputes is this L2's too.

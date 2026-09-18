@@ -54,7 +54,7 @@ alloy-primitives = "1"
 ```
 
 The real user of this macro is `TributeDraftClaim` in
-[`outbe-l2-zk-canonical`](../outbe-l2-zk-canonical/src/claims/tribute.rs); this
+[`outbe-l2-claims`](../outbe-l2-claims/src/claims/tribute.rs); this
 is a smaller struct that exercises every role.
 
 ```rust

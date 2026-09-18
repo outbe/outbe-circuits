@@ -1,10 +1,10 @@
 //! The tribute claim: the entity behind `nft_hash` and the binding formula
 //! behind `binding_hash`.
 //!
-//! This is the one definition. Every consumer of this crate — a prover, a
-//! verifier, the benchmarks in `examples/outbe-l2-demo` — folds the same struct
-//! through the same derive, so a draft hashed by a prover and the same draft
-//! recomputed elsewhere cannot disagree.
+//! This is the one definition. Every consumer — a prover, a verifier, the
+//! benchmarks in `examples/outbe-l2-demo` — folds the same struct through the
+//! same derive, so a draft hashed by a prover and the same draft recomputed
+//! elsewhere cannot disagree.
 //!
 //! The public-input ABI that completes the claim is `claims/tribute/abi.json`:
 //! `owner, nft_hash, binding_hash, merkle_root`, four field words in that
@@ -13,10 +13,11 @@
 
 /// The claim's public-input contract, generated from `claims/tribute/abi.json`:
 /// `owner, nft_hash, binding_hash, merkle_root`, four field words in that
-/// order. [`decode_public_inputs`] takes the verification key alongside the
-/// proof, so one decoder serves every registered tribute key.
+/// order. Decoding a *combined proof* into these needs the verification key,
+/// so that decoder is `outbe_l2_zk_canonical::claims::tribute::decode_public_inputs`;
+/// [`from_fields`] is the half of it that needs no key.
 pub use crate::generated::tribute::{
-    alloy, decode_public_inputs, public_words, PublicInputs, CLAIM, PUBLIC_INPUT_COUNT,
+    alloy, from_fields, public_words, PublicInputs, CLAIM_NAME, PUBLIC_INPUT_COUNT,
 };
 
 use alloy_primitives::B256;

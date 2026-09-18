@@ -8,8 +8,8 @@ The crate is `#![forbid(unsafe_code)]`
 and hashing routes through [`outbe-poseidon`](https://github.com/outbe/outbe-poseidon)
 (git dependency, tag `v0.11.0`).
 
-`outbe-zk-canonical`, `outbe-l2-zk-canonical` and `outbe-zk-backend` all depend
-on this crate; it depends on none of them.
+`outbe-zk-canonical`, `outbe-l2-claims`, `outbe-l2-zk-canonical` and
+`outbe-zk-backend` all depend on this crate; it depends on none of them.
 
 A change to a formula here does **not** move the frozen artifacts. The L1
 bytecode and VKs under `outbe-zk-canonical/resources/circuits/` and the L2 keys
@@ -17,7 +17,7 @@ under `outbe-l2-zk-canonical/l2/` are derived from `.nr` sources by
 `cargo xtask`, which never reads this crate; `xtask`'s manifest depends on no
 workspace member at all. What a formula change does move is every value Rust
 computes — the hash mirrors in `outbe-zk-canonical`, the entity and binding
-hashes `outbe-l2-zk-canonical` folds for its claims, the witnesses the demo
+hashes `outbe-l2-claims` folds for its claims, the witnesses the demo
 builds. So a
 change made here and not also made in the `.nr` sources surfaces as proofs that
 stop verifying against unchanged keys, not as a rebuilt artifact. Changing a
@@ -115,7 +115,8 @@ as `outbe_zk_core::Entity`, so a consumer needs one dependency.
 `public_inputs` / `witness_inputs`), `CircuitId` (the content-derived identity
 consts `LABEL` / `VERSION` / `CIRCUIT_HASH` / `BYTECODE_B64` / `VK_BYTES` /
 `VK_HASH`), and `ProofGenerator` / `ProofVerifier`. Concrete circuits and keys
-live in `outbe-zk-canonical` and `outbe-l2-zk-canonical`; the proving backend is
+live in `outbe-zk-canonical` and `outbe-l2-zk-canonical` (with the claim
+contract in `outbe-l2-claims`); the proving backend is
 `outbe-zk-backend`.
 
 ### `zkproof` — verifier-wire decoding
