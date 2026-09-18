@@ -1,0 +1,41 @@
+[package]
+name = "outbe-l2-demo"
+version.workspace    = true
+edition.workspace    = true
+authors.workspace    = true
+license.workspace    = true
+repository.workspace = true
+description = "Reference implementation an L2 team clones: the Rust side of the tribute circuit root registered under test chain 57005."
+publish = false
+
+# The demo is what an L2 sees, so it depends on exactly what an L2 may depend
+# on: the L2 crate (claims, keys), the core (hashes, keys, tree) and the
+# backend (proving). It deliberately takes no dependency on
+# `outbe-zk-canonical` — L1 circuits are none of an L2's business. Two tests do
+# read committed L1 *files* by path, which adds no package edge.
+[dependencies]
+outbe-l2-zk-canonical = { workspace = true }
+outbe-zk-core = { workspace = true, features = ["alloy"] }
+# Not in [workspace.dependencies]: the backend is `publish = false`, exactly
+# as `outbe-zk-backend` itself path-depends on `outbe-zk-canonical`.
+outbe-zk-backend = { path = "../../crates/outbe-zk-backend" }
+ark-bn254 = { workspace = true }
+ark-std = { workspace = true }
+alloy-primitives = { workspace = true }
+
+# Read-only codegen over the committed root: its `abi.json` becomes the
+# `Witness` type, its `circuit.vk` and `circuit.hash` the circuit identity.
+# No `nargo`, no `bb` — `cargo test` needs no Noir toolchain.
+[build-dependencies]
+serde_json  = { workspace = true }
+tiny-keccak = { workspace = true }
+base64      = { workspace = true }
+
+[dev-dependencies]
+ark-ff    = { workspace = true }
+toml      = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "proving"
+harness = false

@@ -1,10 +1,11 @@
 # Install mise once (https://mise.jdx.dev),
-# then `mise tasks ls` to list or `mise run <task>` to invoke. Every task
-# documents the equivalent raw command so non-mise users can copy-paste.
+# then `mise tasks ls` to list or `mise run <task>` to invoke. Each task's
+# `run =` line below is the raw command it shells out to, for copy-pasting
+# without mise; the `description` is a label, not always the command.
 #
-# Circuit tests need `nargo`; freezing additionally needs `bb`. Plain
-# `cargo build`/`test` need neither because `outbe-zk-canonical` builds from
-# committed frozen artifacts.
+# Circuit tests need `nargo`; freezing an L1 circuit and reproducing an L2 key
+# additionally need `bb`. Plain `cargo build`/`test` need neither: both
+# canonical crates build from committed artifacts.
 [tools]
 rust = "latest"
 
@@ -26,7 +27,7 @@ bb = "github:AztecProtocol/barretenberg"
 # Noir circuit tests.
 # ---------------------------------------------------------------
 [tasks."test-circuits"]
-description = "Run nargo test in every vendored Noir package"
+description = "Run nargo test in every vendored L1 Noir package and every non-revoked L2 root"
 run = "cargo xtask test-circuits"
 
 # ---------------------------------------------------------------
@@ -38,21 +39,56 @@ run = "cargo xtask test-circuits"
 description = "Recompile circuits + refresh frozen artifacts: cargo run -p xtask -- freeze-circuits"
 run = "cargo run -p xtask -- freeze-circuits"
 
+[tasks."freeze-circuits:check"]
+description = "Dry run: assert every active L1 ACIR, abi.json and circuit.vk reproduces, writing nothing outside target/ (the l1-freeze-check CI job)"
+run = "cargo run -p xtask -- freeze-circuits --check"
+
 [tasks."freeze-circuits:abi-change"]
 description = "freeze-circuits minting a new circuit version on an ABI change (--abi-change)"
 run = "cargo run -p xtask -- freeze-circuits --abi-change"
 
 # ---------------------------------------------------------------
-# Convenience: the CI gate locally.
+# Reproduce committed L2 keys from their committed Noir roots — the
+# l2-verify CI job. `--changed` needs a git base; `--all` needs none.
+# ---------------------------------------------------------------
+[tasks."l2:verify"]
+description = "Reproduce every committed L2 key: cargo run -p xtask -- l2 verify --all"
+run = "cargo run -p xtask -- l2 verify --all"
+
+[tasks."l2:verify:changed"]
+description = "Reproduce only the L2 keys this branch touches (--changed)"
+run = "cargo run -p xtask -- l2 verify --changed"
+
+# ---------------------------------------------------------------
+# Convenience: the CI gate locally. `check` is the `check` job;
+# `check:keys` is the two key-reproduction jobs, which need nargo + bb.
 # ---------------------------------------------------------------
 [tasks.check]
-description = "fmt + clippy + test across the workspace (mirrors CI)"
+description = "fmt + clippy + test across the workspace, then the circuit tests (part of the CI `check` job: not its stable+beta matrix, not its two feature-gated test runs; the last line needs nargo)"
 run = '''
 set -euo pipefail
 cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo clippy --all-targets --all-features -- \
+  -D warnings \
+  -D clippy::dbg_macro \
+  -D clippy::print_stdout \
+  -D clippy::print_stderr \
+  -D clippy::todo \
+  -D clippy::unimplemented \
+  -A clippy::module_name_repetitions \
+  -A clippy::must_use_candidate \
+  -A clippy::missing_errors_doc \
+  -A clippy::missing_panics_doc
 cargo test --workspace
 cargo xtask test-circuits
+'''
+
+[tasks."check:keys"]
+description = "The l2-verify + l1-freeze-check CI jobs locally (needs nargo + bb)"
+run = '''
+set -euo pipefail
+cargo run -p xtask -- l2 verify --all
+cargo run -p xtask -- freeze-circuits --check
 '''
 
 [tasks.fmt]
@@ -60,5 +96,5 @@ description = "format code"
 run = "cargo fmt --all"
 
 [tasks.build]
-description = "format code"
+description = "build the workspace"
 run = "cargo build --workspace"
