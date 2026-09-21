@@ -43,7 +43,7 @@ takes the key a consumer looked up and the proof it was handed and returns
 `examples/outbe-l2-demo/tests/roundtrip.rs` uses it. Checking the proof is all
 it does; the obligations below remain the consumer's.
 
-Start from what a verified proof actually says. The registered root
+Start from what a verified proof actually says. The demo's registered root
 (`l2/57005/tribute/1.0.0/src/main.nr`) constrains only relations *among* the
 four public words: that `owner` is `poseidon2([pk.x, pk.y, nonce])` for a `pk`
 that is on the Grumpkin curve and is not the identity; that a Grumpkin Schnorr
@@ -123,7 +123,7 @@ root = "l2/57005/tribute/1.0.0"
 dependency may resolve outside it, so an L2 cannot silently depend on a shared
 library that later changes under it. In particular the L1 circuits' own Noir
 library, `outbe_circuit_core` under `crates/outbe-zk-canonical/noir/`, is not
-reachable from a root; the registered root inlines the ownership and Merkle
+reachable from a root; each registered root inlines the ownership and Merkle
 helpers it needs and depends only on tag-pinned `noir-lang/schnorr`.
 
 ## Generated API

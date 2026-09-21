@@ -18,6 +18,8 @@ use outbe_zk_core::Error;
 
 /// The registered demo key, straight from the committed root.
 const DEMO_VK: &[u8] = include_bytes!("../l2/57005/tribute/1.0.0/circuit.vk");
+/// Niflheim's registered key: pso-zk-circuits' `full_proof` 1.0.0.
+const NIFLHEIM_VK: &[u8] = include_bytes!("../l2/9900501/tribute/1.0.0/circuit.vk");
 
 fn demo_key() -> &'static outbe_l2_zk_canonical::L2Key {
     let keys = l2_keys(57005, Claim::Tribute);
@@ -57,17 +59,38 @@ fn the_table_holds_the_committed_key() {
         alloy_primitives::hex::encode(key.vk_hash()),
         "4f1e294540876d22e858ef46f62918a46fed2913898cc5cbe097b8abe3921e21"
     );
-    assert_eq!(L2_KEYS.len(), 1);
-    assert_eq!(L2_KEYS[0].claim(), CLAIM);
+    assert_eq!(L2_KEYS.len(), 2);
+    assert!(L2_KEYS.iter().all(|key| key.claim() == CLAIM));
+}
+
+#[test]
+fn the_table_holds_niflheims_key() {
+    let keys = l2_keys(9_900_501, Claim::Tribute);
+    assert_eq!(keys.len(), 1, "Niflheim has one registered tribute key");
+    let key = &keys[0];
+    assert_eq!(key.version(), "1.0.0");
+    assert_eq!(key.status(), CircuitStatus::Active);
+    assert_eq!(key.vk_bytes(), NIFLHEIM_VK);
+    // `keccak256(circuit.vk)` as `cargo xtask l2 admit` printed it. The key
+    // itself is byte-identical to pso-zk-circuits' frozen
+    // `resources/circuits/full_proof/1.0.0/circuit.vk`.
+    assert_eq!(
+        alloy_primitives::hex::encode(key.vk_hash()),
+        "7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9"
+    );
+    // Two L2s, two keys: the demo's and Niflheim's are different circuits.
+    assert_ne!(key.vk_bytes(), DEMO_VK);
 }
 
 #[test]
 fn an_unregistered_pair_has_no_keys() {
-    // Either side of the one registered chain, so a binary search that lands
+    // Either side of each registered chain, so a binary search that lands
     // on the wrong entry is caught rather than the empty case being trivial.
     assert!(l2_keys(57004, Claim::Tribute).is_empty());
     assert!(l2_keys(57006, Claim::Tribute).is_empty());
     assert!(l2_keys(1, Claim::Tribute).is_empty());
+    assert!(l2_keys(9_900_500, Claim::Tribute).is_empty());
+    assert!(l2_keys(9_900_502, Claim::Tribute).is_empty());
     // An unknown *claim* is unrepresentable while `Claim` has one variant;
     // the second claim to land here should add the symmetric assertion.
 }
