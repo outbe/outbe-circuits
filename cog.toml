@@ -1,15 +1,13 @@
-# Cocogitto (cog) - conventional-commit check + auto-versioning, mirroring
-# outbe-chain's setup.
+# Cocogitto (cog): conventional-commit checks and manual release versioning.
 #
 # Until now the `v*` tags moved on their own and Cargo.toml did not: the tags
 # reached v0.20.0 while every manifest still said 0.11.0. The pre-bump hook
 # below is what keeps the two equal from here on, so a checkout of a tag always
 # reports the version that tag names.
 #
-# CI validates only the commits a pull request introduces (and the new main
-# commit after merge), so pre-adoption titles do not fail every run. `cog bump
-# --auto` derives the next SemVer from the commits since the last tag, rolls
-# the version, writes the tag, and pushes both.
+# CI validates only the commits a pull request introduces, so
+# pre-adoption titles do not fail every run. Releases
+# are cut manually from Actions → release → Run workflow.
 tag_prefix = "v"
 branch_whitelist = ["main"]
 ignore_merge_commits = true
@@ -32,12 +30,7 @@ pre_bump_hooks = [
     "cargo set-version --workspace --exclude xtask {{version}}",
 ]
 
-# Push the bump commit and the tag back, so release.yml (`on: push: tags`)
-# picks the tag up and cuts the GitHub release.
-post_bump_hooks = [
-    "git push origin HEAD:main",
-    "git push origin v{{version}}",
-]
+# release.yml pushes after the manual bump succeeds. Local bumps stay local.
 
 [changelog]
 path = "CHANGELOG.md"

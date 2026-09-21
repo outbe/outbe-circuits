@@ -1815,8 +1815,9 @@ dependencies = [
 
 [[package]]
 name = "outbe-poseidon"
-version = "0.11.0"
-source = "git+https://github.com/outbe/outbe-poseidon/?tag=v0.11.0#a6066cede0bb95672b194dc69c89946131794396"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "304c5852d481a6b20a13d761a50ffcd0c698f97653a6af40fd76851790b34a9f"
 dependencies = [
  "ark-bn254",
  "ark-ff",

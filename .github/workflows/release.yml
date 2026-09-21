@@ -1,17 +1,26 @@
 name: release
 
-# Runs when a `v*` tag lands. In the normal path that tag comes from ci.yml's
-# `bump` job, which pushes it with a token that can start this workflow; a tag
-# pushed by hand works the same way.
+# Manual releases only. Start from Actions → release → Run workflow,
+# on branch `main`, with the new tag (e.g. v0.22.0).
+#
+# Order: bump (Cargo.toml, Cargo.lock, CHANGELOG, commit, tag)
+#      → package
+#      → GitHub Release (signed)
+#      → verify signatures
+#      → crates.io
+#
+# crates.io versions cannot be replaced, so the registry upload waits
+# until the signed GitHub Release is in place.
+#
+# Secrets (see SECURITY.md):
+#   RELEASE_TOKEN          PAT that can push the bump commit to main
+#                          and the v* tag (bypass branch ruleset)
+#   CARGO_REGISTRY_TOKEN   crates.io API token (publish-new + publish-update)
 on:
-  push:
-    tags:
-      - "v[0-9]+.*"
-  # Escape hatch for re-cutting a release whose tag already exists.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release (e.g. v0.21.0)"
+        description: "New tag to cut (e.g. v0.22.0). Optional v prefix."
         required: true
         type: string
 
@@ -19,29 +28,140 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  # One release at a time so two dispatches cannot race on main.
+  group: release
   cancel-in-progress: false
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
-  github-release:
-    name: github release
+  # ----------------------------------------------------------------
+  # Cut the bump commit and the tag on main. Re-running the workflow
+  # with a tag that already exists skips this job's write and the
+  # later jobs package that existing tag.
+  # ----------------------------------------------------------------
+  bump:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.cut.outputs.tag }}
+      version: ${{ steps.cut.outputs.version }}
+    steps:
+      - name: Require RELEASE_TOKEN
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          if [ -z "${RELEASE_TOKEN}" ]; then
+            echo "::error::RELEASE_TOKEN is not set. See SECURITY.md (CI secrets)."
+            exit 1
+          fi
+
+      - name: Validate the run
+        env:
+          RAW_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_REF}" != "refs/heads/main" ]; then
+            echo "::error::Run this workflow from main (Use workflow from: main)."
+            exit 1
+          fi
+          tag="${RAW_TAG#"${RAW_TAG%%[![:space:]]*}"}"
+          tag="${tag%"${tag##*[![:space:]]}"}"
+          tag="${tag#v}"
+          if [[ ! "${tag}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::tag must be SemVer X.Y.Z (optional v prefix), got: ${RAW_TAG}"
+            exit 1
+          fi
+          echo "TAG=v${tag}" >> "${GITHUB_ENV}"
+          echo "VERSION=${tag}" >> "${GITHUB_ENV}"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cocogitto, cargo-edit
+
+      - name: Configure the committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump Cargo.toml, Cargo.lock, CHANGELOG, and tag
+        id: cut
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --tags
+          git checkout -B main origin/main
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::notice::${TAG} already exists; skipping bump"
+            echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+            echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          manifest="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)"
+          if [ "${manifest}" = "${VERSION}" ]; then
+            echo "::error::Cargo.toml is already ${VERSION} but tag ${TAG} is missing"
+            exit 1
+          fi
+          newest="$(printf '%s\n%s\n' "${manifest}" "${VERSION}" | sort -V | tail -n1)"
+          if [ "${newest}" != "${VERSION}" ]; then
+            echo "::error::${TAG} is not greater than current ${manifest}"
+            exit 1
+          fi
+
+          # cog does not always see the CI checkout as `main`, so its
+          # branch_whitelist guard would reject the bump. This job
+          # already required GITHUB_REF == refs/heads/main.
+          cfg="$(mktemp -d)/cog.toml"
+          sed 's/^branch_whitelist.*/branch_whitelist = []/' cog.toml > "${cfg}"
+          cog --config "${cfg}" bump --version "${VERSION}"
+
+          if [ "$(git tag --points-at HEAD | grep -x "${TAG}" || true)" != "${TAG}" ]; then
+            echo "::error::cog bump did not create ${TAG} on HEAD"
+            exit 1
+          fi
+
+          git push --atomic origin HEAD:main "${TAG}"
+          echo "::notice::cut ${TAG}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+
+  # ----------------------------------------------------------------
+  # Build the `.crate` once. github-release attaches these bytes;
+  # publish later uploads the same tree to crates.io.
+  # ----------------------------------------------------------------
+  package:
+    name: Package workspace crates
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [bump]
     env:
-      TAG: ${{ github.event.inputs.tag || github.ref_name }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.bump.outputs.tag }}
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
-          fetch-depth: 0
+          ref: ${{ needs.bump.outputs.tag }}
           persist-credentials: false
 
-      # This repository's whole product is a set of frozen artifacts, so a
-      # release that does not match its manifest is worse than no release. The
-      # tag says 0.21.0; every crate must agree.
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: cargo
+
       - name: The tag and the manifest agree
-        shell: bash
         run: |
           set -euo pipefail
           manifest="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n1)"
@@ -49,43 +169,251 @@ jobs:
             echo "::error::tag ${TAG} but Cargo.toml says ${manifest}; cog's pre-bump hook did not run"
             exit 1
           fi
-          echo "::notice::${TAG} matches the workspace manifest"
+          echo "::notice::${TAG} matches the package manifest"
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Package .crate
+        run: >-
+          cargo package --locked --workspace
+          --exclude outbe-zk-backend --exclude outbe-l2-demo --exclude xtask
 
-      # Resolves the whole graph against the committed lockfile without
-      # compiling anything. This workspace states each member's version twice -
-      # in `[workspace.package]` and again beside `path` on every
-      # intra-workspace dependency - so a bump that moves one and not the other
-      # leaves `outbe-zk-core = "^0.20.0"` unsatisfiable. That is the one thing
-      # a version bump can break that ci.yml did not already prove on this
-      # commit, and it shows up here in seconds rather than in a full build.
-      #
-      # There is deliberately no `cargo package` step: `outbe-poseidon` is a git
-      # dependency and not on crates.io, so nothing in this workspace can be
-      # packaged for it today. Add one when that crate is published.
-      - name: The lockfile still resolves
-        run: cargo metadata --locked --format-version 1 > /dev/null
+      - name: Upload .crate as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crate-tarball
+          path: target/package/*.crate
+          if-no-files-found: error
+          retention-days: 1
 
-      - name: Create the release
-        shell: bash
+  # ----------------------------------------------------------------
+  # GitHub release. Attaches the packaged `.crate` and a SHA256SUMS
+  # file alongside the auto-generated notes. This job is the signed
+  # distribution point; crates.io upload follows after verify.
+  # ----------------------------------------------------------------
+  github-release:
+    name: Create GitHub release
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [bump, package]
+    env:
+      TAG: ${{ needs.bump.outputs.tag }}
+    # id-token + attestations so cosign keyless +
+    # actions/attest-build-provenance can mint an OIDC token and write
+    # to the GitHub attestation store.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+          persist-credentials: false
+
+      - name: Download .crate artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: crate-tarball
+          path: dist/
+
+      - name: Generate SHA256SUMS
         run: |
           set -euo pipefail
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "::notice::release ${TAG} already exists; leaving it alone"
-            exit 0
+          cd dist
+          shasum -a 256 *.crate > SHA256SUMS
+          echo "---"
+          cat SHA256SUMS
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # pin-target: v3
+
+      # Keyless OIDC sign-blob over every staged artifact (.crate +
+      # SHA256SUMS). Each gets a sibling `.sig` + `.pem` (the Fulcio-
+      # issued ephemeral cert). Skips files that are themselves a sig
+      # or cert so a re-run is idempotent.
+      - name: Sign release artifacts (cosign keyless)
+        run: |
+          set -euo pipefail
+          cd dist
+          for f in *; do
+            [ -f "$f" ] || continue
+            case "$f" in *.sig|*.pem) continue ;; esac
+            echo "Signing $f"
+            cosign sign-blob --yes \
+              --output-signature "${f}.sig" \
+              --output-certificate "${f}.pem" \
+              "$f"
+          done
+          ls -la
+
+      # SLSA v1.0 build provenance for the .crate + SHA256SUMS. Stored
+      # in the GitHub attestation store (queryable via `gh attestation
+      # verify`).
+      - name: Generate SLSA build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # pin-target: v2
+        with:
+          subject-path: |
+            dist/*.crate
+            dist/SHA256SUMS
+
+      - name: Compose release body
+        run: |
+          set -euo pipefail
+          {
+            echo "## Install"
+            echo
+            echo "    cargo add outbe-zk-core@${TAG#v}"
+            echo
+            echo "## Artifacts"
+            echo
+            echo "- \`*.crate\` — publishable workspace crates packaged from this tag; crates.io upload follows this release."
+            echo "- \`SHA256SUMS\` — SHA-256 of the .crate."
+            echo "- \`*.sig\` + \`*.pem\` — sigstore cosign keyless signature + Fulcio cert per artifact."
+            echo
+            echo "## Verification"
+            echo
+            echo "See [SECURITY.md](https://github.com/outbe/outbe-circuits/blob/main/SECURITY.md) for the verify recipe."
+          } > RELEASE_BODY.md
+          cat RELEASE_BODY.md
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ${{ env.TAG }}
+          body_path: RELEASE_BODY.md
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            dist/*.crate
+            dist/*.sig
+            dist/*.pem
+            dist/SHA256SUMS
+
+  # ----------------------------------------------------------------
+  # Smoke test the GitHub Release. Re-downloads every asset and runs
+  # `cosign verify-blob` against each one. Hard-fails the workflow on
+  # any bad signature — this is the regression test for both the
+  # action SHA pins and the cert-identity regex below. crates.io
+  # waits on this job so a bad signature never reaches the registry.
+  # ----------------------------------------------------------------
+  verify-release:
+    name: Verify signed release
+    runs-on: ubuntu-latest
+    needs: [bump, github-release]
+    env:
+      TAG: ${{ needs.bump.outputs.tag }}
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+          persist-credentials: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@7e8b541eb2e61bf99390e1afd4be13a184e9ebc5 # pin-target: v3
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p verify
+          gh release download "$TAG" --dir verify --repo "${{ github.repository }}"
+          ls -la verify/
+
+      - name: Verify cosign signatures
+        run: |
+          set -euo pipefail
+          cd verify
+          # Identity regex pins the signature to a run of THIS repo's
+          # release.yml. Manual releases sign as @refs/heads/main.
+          IDENTITY_RE='^https://github\.com/outbe/outbe-circuits/\.github/workflows/release\.yml@refs/heads/main$'
+          OIDC_ISSUER='https://token.actions.githubusercontent.com'
+          test -f SHA256SUMS
+          sha256sum --check SHA256SUMS
+          failed=0
+          shopt -s nullglob
+          for f in *; do
+            [ -f "$f" ] || continue
+            case "$f" in *.sig|*.pem) continue ;; esac
+            if [ ! -f "${f}.sig" ] || [ ! -f "${f}.pem" ]; then
+              echo "::error::missing ${f}.sig or ${f}.pem alongside ${f}"
+              failed=1
+              continue
+            fi
+            echo "Verifying $f"
+            if cosign verify-blob \
+                --certificate "${f}.pem" \
+                --signature "${f}.sig" \
+                --certificate-identity-regexp "$IDENTITY_RE" \
+                --certificate-oidc-issuer "$OIDC_ISSUER" \
+                "$f"; then
+              echo "  OK $f"
+            else
+              echo "::error::cosign verify-blob FAILED for $f"
+              failed=1
+            fi
+          done
+          if [ "$failed" -ne 0 ]; then
+            echo "::error::one or more release artifacts failed signature verification"
+            exit 1
           fi
-          notes=""
-          # cog writes CHANGELOG.md on every bump; prefer it over generated
-          # notes so the release reads the same as the file in the tree.
-          if [ -f CHANGELOG.md ]; then
-            notes="--notes-file CHANGELOG.md"
-          else
-            notes="--generate-notes"
+          echo "All artifacts verified."
+
+  # ----------------------------------------------------------------
+  # crates.io upload from the same tagged tree. Re-cutting a tag
+  # whose version is already on crates.io skips the upload.
+  # ----------------------------------------------------------------
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [bump, verify-release]
+    env:
+      TAG: ${{ needs.bump.outputs.tag }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: cargo
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
+            echo "::error::CARGO_REGISTRY_TOKEN is not set. See SECURITY.md (CI secrets)."
+            exit 1
           fi
-          # shellcheck disable=SC2086
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "$TAG" \
-            --verify-tag \
-            $notes
+          version="${TAG#v}"
+          cargo metadata --locked --no-deps --format-version 1 > /tmp/metadata.json
+          jq -r '.packages[] | select(.publish == null or (.publish | index("crates-io"))) | .name' /tmp/metadata.json > /tmp/crates.txt
+          args=()
+          while IFS= read -r crate; do
+            status="$(curl -sS -o /tmp/crate.json -w '%{http_code}' \
+              -A 'outbe-circuits-ci (https://github.com/outbe/outbe-circuits)' \
+              "https://crates.io/api/v1/crates/${crate}/${version}")"
+            case "$status" in
+              200)
+                echo "::notice::${crate}@${version} already on crates.io; skipping publish"
+                ;;
+              404) args+=(-p "$crate") ;;
+              *)
+                echo "::error::crates.io lookup failed for ${crate} (HTTP ${status})"
+                cat /tmp/crate.json
+                exit 1
+                ;;
+            esac
+          done < /tmp/crates.txt
+          if [ "${#args[@]}" -gt 0 ]; then
+            cargo publish --locked --no-verify --verbose "${args[@]}"
+          fi

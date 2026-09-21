@@ -33,10 +33,8 @@ outbe-l2-zk-canonical = { path = "crates/outbe-l2-zk-canonical", version = "0.21
 # consumer needs one dependency. No cycle: it depends only on syn/quote.
 outbe-zk-core-derive = { path = "crates/outbe-zk-core-derive", version = "0.21.0" }
 
-# BN254 Poseidon / Poseidon2 (Barretenberg/noir-compatible). External git
-# crate; the `version` next to the git ref satisfies cargo-deny's wildcard
-# check for the publishable downstream crates. cargo resolves the tagged rev.
-outbe-poseidon = { version = "0.11.0", git = "https://github.com/outbe/outbe-poseidon/", tag = "v0.11.0" }
+# BN254 Poseidon / Poseidon2 (Barretenberg/noir-compatible).
+outbe-poseidon = "0.13.0"
 
 # arkworks. `curve` is enabled at the workspace level (needed by the zk crates;
 # additive with the protocol crate's extra `asm`/`parallel`).
