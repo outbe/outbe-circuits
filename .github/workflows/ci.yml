@@ -8,10 +8,14 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Never cancel a push-to-main run: that is the one that re-derives every
+  # committed key with `--all`.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  # dorny/paths-filter resolves the pull request's base through the API.
+  pull-requests: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -42,8 +46,51 @@ jobs:
         run: cargo deny check all
 
   # --------------------------------------------------------------
+  # Which key-reproduction jobs have to run. A job skipped by a
+  # job-level `if:` still reports as skipped, which branch
+  # protection counts as satisfied — unlike a workflow-level
+  # `paths:` filter, which would also gate cargo-deny and check.
+  # --------------------------------------------------------------
+  changes:
+    name: path filter
+    runs-on: ubuntu-latest
+    outputs:
+      l1: ${{ steps.filter.outputs.l1 }}
+      l2: ${{ steps.filter.outputs.l2 }}
+      toolchain: ${{ steps.filter.outputs.toolchain }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          # A toolchain move is the only way an untouched committed key
+          # stops reproducing: the nargo/bb pins (mise.toml), the
+          # barretenberg-rs pin (the workspace Cargo.toml) and
+          # proof_system (the L1 manifest, which `l2 verify` compares
+          # the L2 manifest against).
+          filters: |
+            toolchain:
+              - 'mise.toml'
+              - 'Cargo.toml'
+              - 'crates/outbe-zk-canonical/circuits/manifest.toml'
+            l2:
+              - 'crates/outbe-l2-zk-canonical/l2/**'
+              - 'crates/outbe-l2-claims/claims/**'
+              - 'mise.toml'
+              - 'Cargo.toml'
+              - 'crates/outbe-zk-canonical/circuits/manifest.toml'
+            l1:
+              - 'crates/outbe-zk-canonical/noir/**'
+              - 'crates/outbe-zk-canonical/resources/circuits/**'
+              - 'crates/outbe-zk-canonical/circuits/manifest.toml'
+              - 'mise.toml'
+
+  # --------------------------------------------------------------
   # Format + clippy + cargo test on stable & beta. Runs on PR +
-  # push:main. `[skip ci]` in the head-commit subject opts out.
+  # push:main. `[skip ci]` anywhere in the head commit message opts out —
+  # `github.event.head_commit` is populated only on `push`, so the opt-out
+  # does nothing on a pull request or a `workflow_dispatch`.
   # --------------------------------------------------------------
   check:
     name: cargo fmt + clippy + test (${{ matrix.rust }})
@@ -102,10 +149,220 @@ jobs:
       - name: cargo test --workspace
         run: cargo test --workspace
 
-      # Must match the nargo pin in mise.toml
-      - uses: noir-lang/noirup@v0.1.4
+      # `outbe-zk-canonical/tests/alloy_inputs.rs` is a whole-file
+      # `#![cfg(feature = "alloy")]`, and `alloy` is optional. The run above
+      # only reaches it because `outbe-zk-backend`'s dev-dependency happens to
+      # unify the feature in, so ask for it here explicitly. Enabling it in the
+      # crate's own manifest instead would turn it on for every build and leave
+      # the feature-off path untestable.
+      - name: cargo test -p outbe-zk-canonical --features alloy
+        run: cargo test -p outbe-zk-canonical --features alloy
+
+      # The nargo pin lives only in mise.toml — no hand-copied version
+      # string. `install_args` is load-bearing: mise.toml also declares
+      # `rust = "latest"`, and a bare `mise install` would put a rust
+      # shim on PATH ahead of the stable/beta toolchain installed
+      # above, silently collapsing the matrix to one row.
+      - uses: jdx/mise-action@v4
         with:
-          toolchain: 1.0.0-beta.22
+          version: 2026.9.11
+          install_args: nargo
 
       - name: cargo xtask test-circuits
         run: cargo xtask test-circuits
+
+  # --------------------------------------------------------------
+  # Reproduces every touched L2 verification key from its committed
+  # Noir root. This is the admission gate for an L2 registration.
+  # `cargo xtask` pulls in only serde_json/base64/tiny-keccak/toml_edit,
+  # never barretenberg-rs, so no C++ toolchain step is needed: the
+  # prebuilt `bb` links the libstdc++6 runtime ubuntu-latest ships.
+  # --------------------------------------------------------------
+  l2-verify:
+    name: l2 verify
+    needs: changes
+    if: ${{ needs.changes.outputs.l2 == 'true' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `l2 verify --changed` runs `git merge-base origin/$GITHUB_BASE_REF
+          # HEAD`. The default depth-1 checkout has no origin/<base> ref and
+          # the merge-base fails.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.11
+          install_args: nargo bb
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: l2-verify
+
+      # `bb write_vk` needs the Aztec SRS: ~64MB bn254_g1.dat plus
+      # ~2MB grumpkin_g1.flat.dat, downloaded on first use. Keyed on
+      # the bb pin, which lives in mise.toml.
+      - name: Cache the bb CRS
+        uses: actions/cache@v4
+        with:
+          path: ~/.bb-crs
+          key: bb-crs-${{ hashFiles('mise.toml') }}
+
+      - name: cargo xtask l2 verify
+        run: |
+          # A toolchain move can break any committed key, not only a
+          # touched one. A push to main has no PR base, so --changed
+          # would select nothing — merges always re-derive everything.
+          if [ "${{ needs.changes.outputs.toolchain }}" = 'true' ] \
+            || [ "${{ github.event_name }}" = 'push' ]; then
+            cargo xtask l2 verify --all
+          else
+            cargo xtask l2 verify --changed
+          fi
+
+  # --------------------------------------------------------------
+  # Dry run of the L1 freeze: recompiles every active L1 circuit and
+  # asserts its committed ACIR, ABI and VK reproduce. Writes nothing
+  # under resources/circuits/ or circuits/manifest.toml.
+  # --------------------------------------------------------------
+  l1-freeze-check:
+    name: l1 freeze check
+    needs: changes
+    if: ${{ needs.changes.outputs.l1 == 'true' || github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.11
+          install_args: nargo bb
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: l1-freeze-check
+
+      - name: Cache the bb CRS
+        uses: actions/cache@v4
+        with:
+          path: ~/.bb-crs
+          key: bb-crs-${{ hashFiles('mise.toml') }}
+
+      # No --all/--changed split: it always checks every `active` entry.
+      - name: cargo xtask freeze-circuits --check
+        run: cargo xtask freeze-circuits --check
+
+      # The dry run compiles a scratch copy under target/. The two
+      # tracked noir/<pkg>/target/<module>.json files (emit_mint.json,
+      # paynote.json), and everything under resources/circuits/, must
+      # come out byte-identical.
+      - name: the dry run wrote nothing
+        run: git diff --exit-code
+
+  # --------------------------------------------------------------
+  # Versioning (cocogitto). See cog.toml.
+  #
+  # Pull requests only: report the version a merge would cut, tagging nothing.
+  # The history predates Conventional Commits, so the check covers the range
+  # the pull request introduces rather than the whole log.
+  # --------------------------------------------------------------
+  preview-version:
+    name: preview next version
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # cog reads the full history + tags
+          persist-credentials: false
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.11
+          install_args: cocogitto
+
+      - name: Validate the commits this pull request adds
+        run: >-
+          mise exec -- cog check --ignore-merge-commits
+          "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
+
+      - name: Preview the bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Neutralise cog.toml's branch_whitelist for this read-only preview so
+          # it runs from a pull-request ref. Nothing is committed or tagged.
+          cfg="$(mktemp -d)/cog.toml"
+          sed 's/^branch_whitelist.*/branch_whitelist = []/' cog.toml > "$cfg"
+          if out="$(mise exec -- cog --config "$cfg" bump --auto --dry-run --skip-untracked 2>/dev/null)"; then
+            tag="$(printf '%s\n' "$out" | grep -Eo 'v?[0-9]+\.[0-9]+\.[0-9]+[0-9A-Za-z.+-]*' | tail -n1 || true)"
+            echo "::notice::next release would be: ${tag:-<no bump warranted>}"
+          else
+            echo "::notice::no bump warranted"
+          fi
+
+  # --------------------------------------------------------------
+  # main only, once every gate is green: cut the next v* tag, then push the
+  # bump commit and the tag through cog.toml's post-bump hooks. The push uses a
+  # token whose owner bypasses the branch ruleset; that also lets the tag push
+  # start release.yml, which the default workflow token cannot do.
+  # --------------------------------------------------------------
+  bump:
+    name: bump version & tag
+    needs: [cargo-deny, check, l2-verify, l1-freeze-check]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(version):')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      - uses: jdx/mise-action@v4
+        with:
+          version: 2026.9.11
+          install_args: cocogitto
+
+      # cog.toml's pre-bump hook shells out to `cargo set-version`. Installed
+      # as a prebuilt binary rather than compiled, the way cargo-deny is above.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-edit
+
+      - name: Configure the committer
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Validate the new commit
+        run: mise exec -- cog check --ignore-merge-commits "HEAD^..HEAD"
+
+      - name: Cocogitto bump
+        shell: bash
+        run: |
+          set -euo pipefail
+          # cog does not see the CI checkout as `main`, so its own
+          # branch_whitelist guard would reject the bump. The job `if:` above is
+          # what restricts this to a push on main. Every hook from cog.toml is
+          # preserved and runs with the checkout credentials.
+          cfg="$(mktemp -d)/cog.toml"
+          sed 's/^branch_whitelist.*/branch_whitelist = []/' cog.toml > "$cfg"
+          mise exec -- cog --config "$cfg" bump --auto
+          tag="$(git tag --points-at HEAD | grep '^v' | head -n1 || true)"
+          if [ -n "$tag" ]; then
+            echo "::notice::cut ${tag}; release.yml runs on the tag push"
+          else
+            echo "::notice::no bump warranted"
+          fi

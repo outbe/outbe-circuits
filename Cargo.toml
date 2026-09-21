@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.11.0"
+version = "0.20.0"
 edition = "2021"
 authors    = ["Outbe"]
 license    = "MIT"
@@ -8,6 +8,7 @@ repository = "https://github.com/outbe/outbe-circuits"
 [workspace]
 members = [
     "crates/*",
+    "examples/*",
     "xtask",
 ]
 resolver = "2"
@@ -20,7 +21,17 @@ resolver = "2"
 
 # Local crates. `version` next to `path` keeps the publishable crates
 # (outbe-zk-canonical) resolvable by cargo-deny / `cargo publish`.
-outbe-protocol = { path = "crates/outbe-protocol", version = "0.11.0" }
+outbe-zk-core = { path = "crates/outbe-zk-core", version = "0.20.0" }
+# The L1-to-L2 contract: claim entities, bindings and claim ABIs. Holds no
+# verification key, so a consumer that only folds claims takes this alone.
+outbe-l2-claims = { path = "crates/outbe-l2-claims", version = "0.20.0" }
+# The L2 registry: committed roots, the key table and the key-aware decoders.
+# Depends on outbe-l2-claims; deliberately not wired to outbe-zk-canonical in
+# either direction.
+outbe-l2-zk-canonical = { path = "crates/outbe-l2-zk-canonical", version = "0.20.0" }
+# The `#[derive(Entity)]` proc-macro, re-exported by outbe-zk-core so a
+# consumer needs one dependency. No cycle: it depends only on syn/quote.
+outbe-zk-core-derive = { path = "crates/outbe-zk-core-derive", version = "0.20.0" }
 
 # BN254 Poseidon / Poseidon2 (Barretenberg/noir-compatible). External git
 # crate; the `version` next to the git ref satisfies cargo-deny's wildcard
@@ -34,10 +45,7 @@ ark-grumpkin  = { version = "0.6", default-features = false }
 ark-ff        = { version = "0.6", default-features = false }
 ark-ec        = { version = "0.6", default-features = false }
 ark-std       = { version = "0.6", default-features = false }
-ark-serialize = { version = "0.6", default-features = false }
 
-# Type-level byte-length sizing for the Codec key (de)serialization.
-generic-array = "1"
 # Pure-Rust BLAKE2s for the barretenberg-compatible Grumpkin Schnorr challenge.
 blake2        = { version = "0.10", default-features = false }
 alloy-primitives = { version = "1", default-features = false }
@@ -45,7 +53,7 @@ thiserror     = { version = "2", default-features = false }
 # Floor (not exact pin) so the noir acvm toolchain — which pulls
 # `der 0.8 -> zeroize ^1.8` — can coexist in one workspace resolution.
 zeroize        = { version = "1.7", default-features = false }
-# outbe-protocol-derive proc-macro stack.
+# outbe-zk-core-derive proc-macro stack.
 syn         = { version = "2", features = ["full"] }
 quote       = "1"
 proc-macro2 = "1"

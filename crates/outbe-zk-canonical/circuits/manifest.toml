@@ -12,73 +12,68 @@
 # changes the wire format gets a new proof_system + re-frozen circuits.
 proof_system = "bb-keccak-v1"
 
-# L2 enablement is explicit and separate from circuit releases. Add one
-# [[l2_chain]] per chain, with any number of enabled circuit versions.
-# `module` + `version` pin a frozen circuit. Hashes are derived by build.rs,
-# not copied here. Active and deprecated
-# circuits can be bound; remove bindings before revoking their target.
-# Chain 0xDEAD is a test example, not a production deployment binding.
-
-[[l2_chain]]
-chain_id = 57005 # 0xDEAD - test chain
-circuits = [
-  { module = "full_proof", version = "1.1.0" },
-]
-
 [[circuit]]
 module = "ownership_proof"
 label = "outbe.ownership"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "941cf3ace96614a68952b971f907288dcaedc7eca2871acb908f2c513ac2c3f1"
 
 [[circuit]]
 module = "full_proof"
 label = "outbe.full_proof"
 version = "1.0.0"
-status = "deprecated"
+status = "revoked"
 circuit_hash = "f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"
 
 [[circuit]]
 module = "flat_aggregation_n1"
 label = "outbe.flat_aggregation.n1"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "801b6b3d2c9f768fb01524c978c0677458ed27636d459b990f82d9a83ff6f165"
 
 [[circuit]]
 module = "flat_aggregation_n2"
 label = "outbe.flat_aggregation.n2"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "b6ecb01595efd4a1ab31347df7bd07faed032de76f4ccb49136eccb295040cea"
 
 [[circuit]]
 module = "flat_aggregation_n4"
 label = "outbe.flat_aggregation.n4"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "07bcff997cc549b2b97f707f65085aedaaa2de09f02fa778bfa00dc6bd51b384"
 
 [[circuit]]
 module = "flat_aggregation_n8"
 label = "outbe.flat_aggregation.n8"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "555943e6dfc330581f974dffdeac255fb93865f5e298b167e484cabe275f3d9d"
 
 [[circuit]]
 module = "flat_aggregation_n16"
 label = "outbe.flat_aggregation.n16"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "ca41b7fc1e7a401fa524770419a6f2fc175a8e66c60ba30ba78641947835c2ae"
 
 [[circuit]]
 module = "flat_aggregation_n32"
 label = "outbe.flat_aggregation.n32"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "c32de1221f95597b9f07f982bbff46091666b04d3a6d8bd44d58e600308cbba9"
 
 [[circuit]]
 module = "flat_aggregation_n64"
 label = "outbe.flat_aggregation.n64"
 version = "1.0.0"
-status = "active"
+status = "revoked"
+circuit_hash = "632eea143a9f260c4207c3c3786d0ec147eb36577b6f213dd75a2b95a5188ee8"
 
 [[circuit]]
 module = "commitment_nullifier_proof"
@@ -105,7 +100,7 @@ circuit_hash = "b3708b87579e41438ea070d6c1cfa8f60a4c00a4480f3b1b8a15e412d7e29766
 module = "full_proof"
 label = "outbe.full_proof"
 version = "1.1.0"
-status = "deprecated"
+status = "revoked"
 circuit_hash = "aebb21f5f4c12129c278849321c8414db0ee4a24f94882bf27c873f3c7690484"
 
 [[circuit]]
@@ -173,4 +168,5 @@ status = "active"
 module = "full_proof"
 label = "outbe.full_proof"
 version = "1.2.0"
-status = "active"
+status = "revoked"
+circuit_hash = "aebb21f5f4c12129c278849321c8414db0ee4a24f94882bf27c873f3c7690484"

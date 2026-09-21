@@ -2,30 +2,26 @@
 
 pub mod hash;
 
-use outbe_protocol::protocol::shielded_pool::ShieldedPool;
-use outbe_protocol::{OutbeV1, Suite};
-
 #[cfg(feature = "alloy")]
 pub use crate::noir::paynote::alloy::{self, Witness};
 pub use crate::noir::paynote::{decode_public_inputs, encode_combined_proof, PublicInputs};
 pub use crate::noir::paynote::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
-/// Cryptographic suite used by Paynote.
-pub type PayNoteSuite = OutbeV1;
-pub type Field = <PayNoteSuite as Suite>::Field;
+/// The proving field.
+pub type Field = outbe_zk_core::Fr;
 
-pub type Pool = ShieldedPool<OutbeV1>;
+pub type Pool = outbe_zk_core::shielded_pool::ShieldedPool;
 
 /// In-memory commitment tree for Paynote clients.
-pub type Tree = outbe_protocol::protocol::imt::Imt<PayNoteSuite>;
+pub type Tree = outbe_zk_core::imt::Imt;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ark_bn254::Fr;
     use ark_ff::{Field as _, PrimeField};
-    use outbe_protocol::error::Error;
-    use outbe_protocol::Codec;
+    use outbe_zk_core::codec::field_to_be_bytes;
+    use outbe_zk_core::Error;
 
     fn combined() -> Vec<u8> {
         let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
@@ -40,7 +36,7 @@ mod tests {
             Fr::from(3),
             Fr::from(204),
         ] {
-            proof.extend_from_slice(&OutbeV1::field_to_be_bytes(&word));
+            proof.extend_from_slice(&field_to_be_bytes(&word));
         }
         proof.resize(COMBINED_LEN, 0);
         proof
@@ -76,7 +72,7 @@ mod tests {
             let mut proof = combined();
             let start = 4 + index * 32;
             let invalid = Fr::from(2).pow([bits]);
-            proof[start..start + 32].copy_from_slice(&OutbeV1::field_to_be_bytes(&invalid));
+            proof[start..start + 32].copy_from_slice(&field_to_be_bytes(&invalid));
             assert!(matches!(
                 decode_public_inputs(&proof),
                 Err(Error::NonCanonical(what)) if what == expected

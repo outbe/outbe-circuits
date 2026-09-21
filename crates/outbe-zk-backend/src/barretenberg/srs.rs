@@ -15,7 +15,7 @@ use barretenberg_rs::backends::FfiBackend;
 use barretenberg_rs::generated_types::{CircuitInput, ProofSystemSettings};
 use sha2::{Digest, Sha256};
 
-use outbe_protocol::error::Error;
+use outbe_zk_core::Error;
 
 /// bb's global CRS is **one-shot**: `srs_init_srs` takes effect once per process
 /// and a later call with more points is ignored. So we init exactly once (to
@@ -63,19 +63,27 @@ const G1_POINT_SIZE: u32 = 64;
 /// a pinned size that mismatches is rejected (tampered CRS); an unpinned size
 /// is allowed through but its hash is reported so an operator can pin it (pin
 /// every size you deploy, or flip the `None` arm in [`verify_g1`] to fail
-/// closed). `(1<<20)+1` is the largest tier (n64) and the [`super::preinit_srs`]
-/// size; its digest is the canonical Aztec `g1.dat` prefix.
+/// closed). Every digest is a canonical Aztec `g1.dat` prefix.
+///
+/// One row per size something in this repository actually asks for — the sizes
+/// of the retired circuits are gone, and every size below is one
+/// `tests/srs_pins.rs` prints: the two distinct sizes the three committed
+/// circuits need (emit mint and paynote share one), the demo bench's tier of
+/// headroom derived from the largest of them, and `CANONICAL_SRS_POINTS`. A
+/// circuit whose size is not here proves fine but unverified, so re-run that
+/// helper whenever a circuit grows past a power of two and replace the whole
+/// table with what it prints.
 const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
-    // (1<<13)+1 — Emit mint + Paynote circuits (same 2^13 domain).
+    // (1<<14)+1 — Emit mint (9123 gates) + Paynote (9270), same 2^14 domain.
     (
-        (1 << 13) + 1,
+        (1 << 14) + 1,
         [
-            0xec, 0x2c, 0x34, 0xc5, 0x09, 0x67, 0x9e, 0x61, 0x52, 0xde, 0xe9, 0x3f, 0x36, 0xf5,
-            0x0d, 0x93, 0xde, 0xf3, 0x18, 0x09, 0xe1, 0xbe, 0x0f, 0x05, 0x19, 0x03, 0x6d, 0xcb,
-            0xa8, 0xfd, 0xc2, 0xcb,
+            0x8d, 0x53, 0x95, 0x34, 0x50, 0xcd, 0x6e, 0x90, 0xa9, 0x45, 0x83, 0x7d, 0x49, 0x82,
+            0x98, 0x15, 0x13, 0xe2, 0xf4, 0x4d, 0xb7, 0xb2, 0x0f, 0xd4, 0x77, 0xf1, 0x04, 0xb0,
+            0x41, 0xbe, 0x30, 0x4d,
         ],
     ),
-    // (1<<16)+1 — ownership circuit + aggregation tiers n1/n2/n4 (same 2^16 domain).
+    // (1<<16)+1 — the L2 demo tribute root (46088 gates, 2^16 domain).
     (
         (1 << 16) + 1,
         [
@@ -84,7 +92,11 @@ const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
             0x4f, 0x88, 0x70, 0x78,
         ],
     ),
-    // (1<<17)+1 — flat-aggregation tier n8.
+    // (1<<17)+1 — one dyadic tier of headroom over the tribute root's own 2^16,
+    // which is the literal `examples/outbe-l2-demo/benches/proving.rs` hands to
+    // `preinit_srs`. `tests/srs_pins.rs` recomputes that tier from the largest
+    // circuit's bytecode rather than reading the bench, so the bench's literal
+    // and this row are kept in step by hand.
     (
         (1 << 17) + 1,
         [
@@ -93,25 +105,11 @@ const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
             0x0e, 0xc1, 0x86, 0xa9,
         ],
     ),
-    // (1<<18)+1 — flat-aggregation tier n16.
-    (
-        (1 << 18) + 1,
-        [
-            0x8f, 0x5c, 0xd7, 0x55, 0x19, 0xc2, 0xe9, 0x95, 0xfa, 0x47, 0xaa, 0x7e, 0xcd, 0x7b,
-            0x21, 0x3b, 0x9a, 0xe1, 0x38, 0x24, 0xbc, 0x4b, 0x0f, 0x15, 0x02, 0x5a, 0x63, 0xac,
-            0xd8, 0xc1, 0x39, 0xeb,
-        ],
-    ),
-    // (1<<19)+1 — flat-aggregation tier n32.
-    (
-        (1 << 19) + 1,
-        [
-            0x1d, 0xf3, 0x7a, 0x2c, 0xe1, 0xda, 0x37, 0x13, 0xc7, 0x30, 0x06, 0x91, 0xa6, 0x5f,
-            0xfe, 0x84, 0xde, 0x14, 0x4e, 0xa6, 0x48, 0x99, 0xd5, 0xcf, 0xbf, 0x00, 0x61, 0xaa,
-            0xae, 0xb6, 0xad, 0x31,
-        ],
-    ),
-    // (1<<20)+1 — the largest tier (n64) / `preinit_srs` size.
+    // (1<<20)+1 — [`super::CANONICAL_SRS_POINTS`], the size
+    // [`super::init_crs`] initializes to. No prover in this repository reaches
+    // it: each sizes the CRS from its own circuit. It is pinned because
+    // `init_crs` is the startup call an embedding application makes, and
+    // `tests/crs_init.rs` runs it, so these bytes do reach `srs_init_srs`.
     (
         (1 << 20) + 1,
         [
@@ -124,11 +122,7 @@ const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
 
 /// Lower-case hex of a 32-byte digest (for pin messages).
 fn hex32(b: &[u8; 32]) -> String {
-    let mut s = String::with_capacity(64);
-    for byte in b {
-        s.push_str(&format!("{byte:02x}"));
-    }
-    s
+    b.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Verify the exact G1 prefix bound for bb against the pin for its point count
@@ -159,12 +153,6 @@ fn verify_g1(num_points: u32, bytes: &[u8]) -> Result<(), Error> {
 /// The Aztec CRS G1 endpoint (range-served). Only with `with-network-srs`.
 #[cfg(feature = "with-network-srs")]
 const AZTEC_CRS_G1: &str = "https://crs.aztec.network/g1.dat";
-
-/// Next power of two `>= circuit_size` (the SRS subgroup size).
-fn compute_subgroup_size(circuit_size: u32) -> u32 {
-    let log_value = (circuit_size as f64).log2().ceil() as u32;
-    2u32.pow(log_value)
-}
 
 /// Path to a locally available BN254 G1 SRS: the [`set_srs_path`] override if
 /// set, else `$BB_CRS_PATH`, else `~/.bb-crs/bn254_g1.dat` (the file `bb`
@@ -200,7 +188,7 @@ fn subgroup_size(
         .map_err(|e| Error::Proof(format!("bb circuit_stats: {e}")))?;
     Ok(info
         .num_gates_dyadic
-        .max(compute_subgroup_size(info.num_gates)))
+        .max(info.num_gates.next_power_of_two()))
 }
 
 /// Load `num_points` G1 points (`num_points * 64` bytes) from the local cache.
