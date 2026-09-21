@@ -2,6 +2,12 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.23.0 - 2026-09-21
+#### Miscellaneous Chores
+- remove unused workflows and update manual release process (#26) - (e5c9f42) - latexstone
+
+- - -
+
 ## v0.21.0 - 2026-09-21
 #### Features
 - split L1 and L2 circuit registries with reproducible L2 admission (#24) - (919621a) - Velichko Anton
