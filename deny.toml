@@ -5,8 +5,8 @@
 # outbe-circuits consumes Noir's Rust FFI surface (acir / acvm /
 # bn254_blackbox_solver, pulled directly from the noir-lang upstream as
 # git deps pinned to v1.0.0-beta.22 in `outbe-zk-backend`) on top of a
-# heavy transitive tree. The only git sources are `noir-lang/noir` and the
-# in-house `outbe/outbe-poseidon`. That tree forces (a) two extra licenses,
+# heavy transitive tree. The only git source is `noir-lang/noir`.
+# That tree forces (a) two extra licenses,
 # (b) a sizeable [bans.skip] list, and (c) the workspace-path wildcard
 # carve-out. None of these are individually fixable in this repo; each one
 # is annotated with the upstream chain that drives it.
@@ -111,8 +111,4 @@ allow-git = [
     # origin, pinned per-rev in Cargo.lock to the v1.0.0-beta.22 tag
     # referenced inline in `outbe-zk-backend`.
     "https://github.com/noir-lang/noir",
-    # outbe-poseidon is consumed as a git dep (tagged release) while
-    # the crate stabilises; flips to a crates.io version once
-    # outbe-poseidon is published.
-    "https://github.com/outbe/outbe-poseidon",
 ]
