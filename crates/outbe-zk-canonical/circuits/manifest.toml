@@ -25,6 +25,12 @@ circuits = [
   { module = "full_proof", version = "1.1.0" },
 ]
 
+[[l2_chain]]
+chain_id = 9900501 # Niflheim
+circuits = [
+  { module = "full_proof", version = "1.0.0" },
+]
+
 [[circuit]]
 module = "ownership_proof"
 label = "outbe.ownership"

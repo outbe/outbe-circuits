@@ -681,6 +681,24 @@ fn l2_test_chain_enables_full_proof() {
     assert!(l2_circuits(u64::MAX).is_empty());
 }
 
+#[test]
+fn l2_niflheim_enables_its_frozen_full_proof() {
+    use hex_literal::hex;
+    use outbe_zk_canonical::{l2_circuits, L2CircuitVersion};
+
+    // Niflheim wallets prove with full_proof 1.0.0, not the latest release.
+    assert_eq!(
+        l2_circuits(9_900_501),
+        &[L2CircuitVersion {
+            version: "1.0.0",
+            circuit_hash: hex!("f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"),
+            vk_hash: hex!("7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9"),
+        }]
+    );
+    assert!(l2_circuits(9_900_500).is_empty());
+    assert!(l2_circuits(9_900_502).is_empty());
+}
+
 /// Paynote's descriptor and ABI layout. Mirrors the Emit mint case: the two
 /// addresses cross as `EthAddress` newtypes, so each is a single packed field
 /// rather than 20 byte leaves.

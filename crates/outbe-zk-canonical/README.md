@@ -216,6 +216,10 @@ circuits = [
 ]
 ```
 
+Niflheim (`9900501`) is pinned to `full_proof@1.0.0` for Tribute proofs.
+Although this circuit release is deprecated, its frozen verification key remains
+enabled for that chain.
+
 `version` is the circuit's frozen semver; there is no separate deployment version.
 Hashes are derived from the frozen artifacts (or preserved manifest identity for
 deprecated circuits), never entered by hand:
