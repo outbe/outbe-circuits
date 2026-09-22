@@ -1,16 +1,15 @@
 #![allow(clippy::doc_lazy_continuation)]
 //! The ZK-canonical half of the protocol battery, run against the
 //! production suite. Exercises the build-generated noir circuit types
-//! (`OwnershipProof` / `FlatAggregationN*` and their `Witness` /
-//! `PublicInputs`) through the core ZK seams, on `OutbeV1`. The generated
-//! circuits are BN254-specific, so this battery is concrete to `OutbeV1`
+//! (`OwnershipProof` / `DemoTribute` and their `Witness` / `PublicInputs`)
+//! through the core ZK seams, on `OutbeV1`. The generated circuits are
+//! BN254-specific, so this battery is concrete to `OutbeV1`
 //! (cross-suite pluggability is the core battery's job).
 //!
 //! The concrete entity types live in consumer crates, so the battery
 //! carries its own minimal entity (`TestNft`).
 
 use ark_ff::PrimeField;
-use ark_ff::Zero;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 
@@ -22,11 +21,8 @@ use outbe_protocol::protocol::zk::{Circuit, ProofGenerator, ProofVerifier};
 use outbe_protocol::{OutbeV1, Suite};
 
 use outbe_protocol::protocol::imt::Imt;
-use outbe_zk_canonical::aggregation::{AggregationTier, AnyTier, FlatAggregation, Slot};
-use outbe_zk_canonical::full::{full_circuit_domain, FullProvable};
-use outbe_zk_canonical::noir::flat_aggregation_n4::FlatAggregationN4;
-use outbe_zk_canonical::noir::flat_aggregation_n64::FlatAggregationN64;
-use outbe_zk_canonical::noir::full_proof::FullProof;
+use outbe_zk_canonical::demo_tribute::{demo_tribute_domain, DemoTributeProvable};
+use outbe_zk_canonical::noir::demo_tribute::DemoTribute;
 use outbe_zk_canonical::noir::ownership_proof::{OwnershipProof, PublicInputs, Witness};
 use outbe_zk_canonical::ownership::{verify_signature, Provable};
 use outbe_zk_canonical::CircuitId;
@@ -75,20 +71,16 @@ fn generated_combined_proof_codecs() {
         )+};
     }
     check!(
-        ownership_proof => OwnershipProof, full_proof => FullProof,
+        ownership_proof => OwnershipProof, demo_tribute => DemoTribute,
         emit_mint => EmitMint, paynote => Paynote,
-        flat_aggregation_n1 => FlatAggregationN1, flat_aggregation_n2 => FlatAggregationN2,
-        flat_aggregation_n4 => FlatAggregationN4, flat_aggregation_n8 => FlatAggregationN8,
-        flat_aggregation_n16 => FlatAggregationN16, flat_aggregation_n32 => FlatAggregationN32,
-        flat_aggregation_n64 => FlatAggregationN64,
     );
 }
 
 #[test]
 fn generated_combined_proof_lengths_match_frozen_layouts() {
-    use outbe_zk_canonical::{emit_mint, full_proof, paynote};
+    use outbe_zk_canonical::{demo_tribute, emit_mint, paynote};
 
-    // Released wire sizes: Paynote/Emit have log_n=14; FullProof has log_n=16.
+    // Released wire sizes: Paynote/Emit have log_n=14; DemoTribute has log_n=16.
     assert_eq!(
         (
             paynote::PUBLIC_INPUT_COUNT,
@@ -107,9 +99,9 @@ fn generated_combined_proof_lengths_match_frozen_layouts() {
     );
     assert_eq!(
         (
-            full_proof::PUBLIC_INPUT_COUNT,
-            full_proof::PROOF_WORDS,
-            full_proof::COMBINED_LEN
+            demo_tribute::PUBLIC_INPUT_COUNT,
+            demo_tribute::PROOF_WORDS,
+            demo_tribute::COMBINED_LEN
         ),
         (4, 274, 8900)
     );
@@ -142,7 +134,7 @@ impl Owned<OutbeV1> for TestNft {
 }
 
 /// One mock backend implementing BOTH proof traits for the ownership and
-/// aggregation circuits: the "proof" is the circuit's public-input field
+/// Demo Tribute circuits: the "proof" is the circuit's public-input field
 /// vector echoed back. Exercises the generate→verify round-trip and the
 /// `V::Proof = G::Proof` constraint.
 struct MockBackend;
@@ -160,70 +152,24 @@ impl ProofVerifier<OutbeV1, OwnershipProof> for MockBackend {
     }
 }
 
-impl ProofGenerator<OutbeV1, FlatAggregationN4> for MockBackend {
+impl ProofGenerator<OutbeV1, DemoTribute> for MockBackend {
     type Proof = Vec<Fr>;
     fn generate(
         &self,
-        _witness: &<FlatAggregationN4 as Circuit<OutbeV1>>::Witness,
-        public: &<FlatAggregationN4 as Circuit<OutbeV1>>::PublicInputs,
+        _witness: &<DemoTribute as Circuit<OutbeV1>>::Witness,
+        public: &<DemoTribute as Circuit<OutbeV1>>::PublicInputs,
     ) -> Result<Self::Proof, Error> {
-        Ok(<FlatAggregationN4 as Circuit<OutbeV1>>::public_inputs(
-            public,
-        ))
+        Ok(<DemoTribute as Circuit<OutbeV1>>::public_inputs(public))
     }
 }
-impl ProofVerifier<OutbeV1, FlatAggregationN4> for MockBackend {
+impl ProofVerifier<OutbeV1, DemoTribute> for MockBackend {
     type Proof = Vec<Fr>;
     fn verify(
         &self,
-        public: &<FlatAggregationN4 as Circuit<OutbeV1>>::PublicInputs,
+        public: &<DemoTribute as Circuit<OutbeV1>>::PublicInputs,
         proof: &Self::Proof,
     ) -> Result<bool, Error> {
-        Ok(<FlatAggregationN4 as Circuit<OutbeV1>>::public_inputs(public) == *proof)
-    }
-}
-
-impl ProofGenerator<OutbeV1, FlatAggregationN64> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn generate(
-        &self,
-        _witness: &<FlatAggregationN64 as Circuit<OutbeV1>>::Witness,
-        public: &<FlatAggregationN64 as Circuit<OutbeV1>>::PublicInputs,
-    ) -> Result<Self::Proof, Error> {
-        Ok(<FlatAggregationN64 as Circuit<OutbeV1>>::public_inputs(
-            public,
-        ))
-    }
-}
-impl ProofVerifier<OutbeV1, FlatAggregationN64> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn verify(
-        &self,
-        public: &<FlatAggregationN64 as Circuit<OutbeV1>>::PublicInputs,
-        proof: &Self::Proof,
-    ) -> Result<bool, Error> {
-        Ok(<FlatAggregationN64 as Circuit<OutbeV1>>::public_inputs(public) == *proof)
-    }
-}
-
-impl ProofGenerator<OutbeV1, FullProof> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn generate(
-        &self,
-        _witness: &<FullProof as Circuit<OutbeV1>>::Witness,
-        public: &<FullProof as Circuit<OutbeV1>>::PublicInputs,
-    ) -> Result<Self::Proof, Error> {
-        Ok(<FullProof as Circuit<OutbeV1>>::public_inputs(public))
-    }
-}
-impl ProofVerifier<OutbeV1, FullProof> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn verify(
-        &self,
-        public: &<FullProof as Circuit<OutbeV1>>::PublicInputs,
-        proof: &Self::Proof,
-    ) -> Result<bool, Error> {
-        Ok(<FullProof as Circuit<OutbeV1>>::public_inputs(public) == *proof)
+        Ok(<DemoTribute as Circuit<OutbeV1>>::public_inputs(public) == *proof)
     }
 }
 
@@ -322,154 +268,11 @@ fn outbe_suite() {
             .is_err(),
         "owner mismatch was not rejected"
     );
-
-    // --- aggregation: pad 3 reals to the generated tier-4 circuit ---
-    let mut reals: Vec<Slot> = Vec::new();
-    for _ in 0..3 {
-        let (s_i, p_i) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
-        let n_i = Fr::rand(&mut rng);
-        let o_i = OutbeV1::derive_owner(&p_i, n_i).unwrap();
-        let td_i = sample_nft(&mut rng, o_i);
-        let signer_i = Signer::from_secret(NftSecret::new(s_i), n_i).unwrap();
-        reals.push(
-            td_i.derive_ownership_witness(&mut rng, &signer_i, binding)
-                .unwrap(),
-        );
-    }
-    // FlatAggregationN4::assemble pads to tier 4 and builds the generated
-    // FlatAggregationN4 (Witness, PublicInputs) pair.
-    let (agg_witness, agg_public) =
-        <FlatAggregationN4 as FlatAggregation<OutbeV1>>::assemble(&mut rng, reals, binding)
-            .unwrap();
-    let pubs = &agg_public.public_inputs;
-    assert_eq!(pubs.len(), 2 * 4 + 1, "wrong public-input arity");
-    assert_eq!(*pubs.last().unwrap(), binding, "binding not last");
-    // Padded slot (index 3) is distinguished by nft_hash == 0, NOT a zeroed
-    // owner: the circuit enforces `owner == Poseidon3(pk, nonce)` for every
-    // slot, so the padding owner must be the real derived value (non-zero).
-    assert_eq!(pubs[2 * 3 + 1], Fr::zero(), "padded nft_hash should be 0");
-    assert_ne!(
-        pubs[2 * 3],
-        Fr::zero(),
-        "padded owner must be the real derived owner"
-    );
-    // generated witness carries N=4 slots
-    assert_eq!(agg_witness.nonce.len(), 4, "did not pad to tier");
-
-    // Runtime tier selection picks the exact circuit for the count.
-    assert_eq!(AggregationTier::for_count(3), Some(AggregationTier::N4));
-    assert_eq!(AggregationTier::N4.capacity(), 4);
-    assert_eq!(AggregationTier::N4.label(), "outbe.flat_aggregation.n4");
-
-    // round-trip through the seams
-    assert!(mock_round_trip::<FlatAggregationN4>(
-        &agg_witness,
-        &agg_public
-    ));
 }
 
-/// The largest tier (N=64) assembles and round-trips through the seams,
-/// padding a partial batch up to capacity. Drives both the typed
-/// (`FlatAggregationN64::assemble`) and the runtime-dispatch
-/// (`AggregationTier`) paths.
+/// Demo Tribute = §4.2 ownership + depth-32 Merkle inclusion of `nft_hash`.
 #[test]
-fn flat_aggregation_n64_round_trip() {
-    let mut rng = ark_std::test_rng();
-    let binding = Fr::from(777u64);
-
-    // 50 real slots → tier 64 (the smallest tier that fits).
-    const REAL: usize = 50;
-    assert_eq!(AggregationTier::for_count(REAL), Some(AggregationTier::N64));
-    assert_eq!(AggregationTier::N64.capacity(), 64);
-    assert_eq!(AggregationTier::N64.label(), "outbe.flat_aggregation.n64");
-
-    let build_reals = |rng: &mut _| -> Vec<Slot> {
-        (0..REAL)
-            .map(|_| {
-                let (s_i, p_i) = <OutbeV1 as Suite>::Signature::keypair(rng);
-                let n_i = Fr::rand(rng);
-                let o_i = OutbeV1::derive_owner(&p_i, n_i).unwrap();
-                let td_i = sample_nft(rng, o_i);
-                let signer_i = Signer::from_secret(NftSecret::new(s_i), n_i).unwrap();
-                td_i.derive_ownership_witness(rng, &signer_i, binding)
-                    .unwrap()
-            })
-            .collect()
-    };
-
-    // Typed path: FlatAggregationN64::assemble.
-    let reals = build_reals(&mut rng);
-    let (witness, public) =
-        <FlatAggregationN64 as FlatAggregation<OutbeV1>>::assemble(&mut rng, reals, binding)
-            .unwrap();
-    assert_eq!(witness.pk.len(), 64, "witness padded to N=64");
-    assert_eq!(witness.signature.len(), 64);
-    assert_eq!(witness.nonce.len(), 64);
-    assert_eq!(public.public_inputs.len(), 2 * 64 + 1, "2N+1 public inputs");
-    assert_eq!(
-        *public.public_inputs.last().unwrap(),
-        binding,
-        "binding is last"
-    );
-    // Every padded slot (indices REAL..64) has nft_hash == 0 but a non-zero
-    // (real, derived) owner, as the circuit's per-slot constraint requires.
-    for i in REAL..64 {
-        assert_eq!(
-            public.public_inputs[2 * i + 1],
-            Fr::zero(),
-            "padded nft_hash != 0"
-        );
-        assert_ne!(
-            public.public_inputs[2 * i],
-            Fr::zero(),
-            "padded owner zeroed"
-        );
-    }
-
-    // Round-trip through the ZK seams.
-    assert!(
-        mock_round_trip::<FlatAggregationN64>(&witness, &public),
-        "n64 proof did not verify"
-    );
-
-    // Runtime-dispatch path: AggregationTier::assemble → AnyTier::N64, and its
-    // public inputs round-trip identically.
-    let tier = AggregationTier::for_count(REAL).unwrap();
-    let reals = build_reals(&mut rng);
-    match tier
-        .assemble::<OutbeV1, _>(&mut rng, reals, binding)
-        .unwrap()
-    {
-        AnyTier::N64(w, p) => {
-            assert_eq!(w.nonce.len(), 64);
-            assert_eq!(p.public_inputs.len(), 2 * 64 + 1);
-            assert!(mock_round_trip::<FlatAggregationN64>(&w, &p));
-        }
-        _ => panic!("for_count(50) should select the N64 tier"),
-    }
-
-    // Capacity overflow is rejected.
-    let too_many: Vec<Slot> = build_reals(&mut rng); // 50 — fits; push past 64
-    let overflow = {
-        let mut v = too_many;
-        while v.len() <= 64 {
-            v.push(
-                <FlatAggregationN64 as FlatAggregation<OutbeV1>>::padding_slot(&mut rng, binding)
-                    .unwrap(),
-            );
-        }
-        v
-    };
-    assert!(
-        <FlatAggregationN64 as FlatAggregation<OutbeV1>>::assemble(&mut rng, overflow, binding)
-            .is_err(),
-        "exceeding tier capacity must error"
-    );
-}
-
-/// Full proof = §4.2 ownership + depth-32 Merkle inclusion of `nft_hash`.
-#[test]
-fn full_proof_round_trip() {
+fn demo_tribute_round_trip() {
     let mut rng = ark_std::test_rng();
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
@@ -480,14 +283,14 @@ fn full_proof_round_trip() {
 
     // Inclusion: place nft_hash at index 0 of an otherwise-empty depth-32 tree.
     let tree = Imt::<OutbeV1>::new(
-        full_circuit_domain(),
+        demo_tribute_domain(),
         Fr::from(0u64),
         outbe_zk_canonical::INCLUSION_DEPTH,
     )
     .unwrap();
     let path = tree.empty_inclusion_path(0);
     let (witness, public) = td
-        .derive_full_witness(&mut rng, &signer, binding, &path)
+        .derive_demo_tribute_witness(&mut rng, &signer, binding, &path)
         .unwrap();
 
     assert_eq!(public.derived_owner, owner);
@@ -502,9 +305,9 @@ fn full_proof_round_trip() {
         "merkle root mismatch"
     );
 
-    // A populated tree must keep the full-proof domain, leaf value and bit order.
+    // A populated tree must keep the Demo Tribute domain, leaf value and bit order.
     let mut populated = Imt::<OutbeV1>::new(
-        full_circuit_domain(),
+        demo_tribute_domain(),
         Fr::from(0u64),
         outbe_zk_canonical::INCLUSION_DEPTH,
     )
@@ -514,7 +317,7 @@ fn full_proof_round_trip() {
     populated.append(Fr::from(23u64)).unwrap();
     let populated_path = populated.inclusion_path(index).unwrap();
     let (populated_witness, populated_public) = td
-        .derive_full_witness(&mut rng, &signer, binding, &populated_path)
+        .derive_demo_tribute_witness(&mut rng, &signer, binding, &populated_path)
         .unwrap();
     assert_eq!(populated_public.merkle_root, populated.root());
     assert!(!populated_witness.merkle_path_indices[0]);
@@ -525,13 +328,13 @@ fn full_proof_round_trip() {
         populated_witness.merkle_path_siblings.as_slice(),
         populated_path.siblings
     );
-    assert!(mock_round_trip::<FullProof>(
+    assert!(mock_round_trip::<DemoTribute>(
         &populated_witness,
         &populated_public
     ));
 
     // Round-trip through the seams.
-    assert!(mock_round_trip::<FullProof>(&witness, &public));
+    assert!(mock_round_trip::<DemoTribute>(&witness, &public));
 }
 
 /// The prove-side `witness_inputs` flatten is in ACIR witness-index order and
@@ -662,23 +465,41 @@ fn emit_mint_descriptor_and_abi_layout() {
 }
 
 #[test]
-fn l2_test_chain_enables_full_proof() {
+fn l2_test_chain_enables_demo_tribute() {
     use outbe_zk_canonical::{l2_circuits, noir, L2CircuitVersion};
 
-    let full_proof = noir::CIRCUIT_REGISTRY
+    let release = noir::CIRCUIT_REGISTRY
         .iter()
-        .find(|entry| entry.label == "outbe.full_proof" && entry.version == "1.1.0")
-        .expect("the example's pinned full-proof release must remain registered");
+        .find(|entry| entry.label == "demo.tribute" && entry.version == "1.1.0")
+        .expect("the example's pinned Demo Tribute release must remain registered");
     assert_eq!(
         l2_circuits(0xdead),
         &[L2CircuitVersion {
             version: "1.1.0",
-            circuit_hash: full_proof.circuit_hash,
-            vk_hash: full_proof.vk_hash,
+            circuit_hash: release.circuit_hash,
+            vk_hash: release.vk_hash,
         }]
     );
     assert!(l2_circuits(0).is_empty());
     assert!(l2_circuits(u64::MAX).is_empty());
+}
+
+#[test]
+fn l2_niflheim_enables_its_frozen_tribute() {
+    use hex_literal::hex;
+    use outbe_zk_canonical::{l2_circuits, L2CircuitVersion};
+
+    // Niflheim's frozen identity must survive local circuit and module renames.
+    assert_eq!(
+        l2_circuits(9_900_501),
+        &[L2CircuitVersion {
+            version: "1.0.0",
+            circuit_hash: hex!("f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"),
+            vk_hash: hex!("7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9"),
+        }]
+    );
+    assert!(l2_circuits(9_900_500).is_empty());
+    assert!(l2_circuits(9_900_502).is_empty());
 }
 
 /// Paynote's descriptor and ABI layout. Mirrors the Emit mint case: the two

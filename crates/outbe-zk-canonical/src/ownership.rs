@@ -32,8 +32,7 @@ use crate::CircuitSuite;
 /// The in-protocol Schnorr check over a built ownership pair, independent of
 /// any ZK proof. Reconstructs the payload from `(nft_hash, nonce, binding)`
 /// and verifies the 64-byte `s ‖ e` signature against `pk` — the same
-/// signature the circuit verifies. Aggregation uses this to confirm each slot
-/// (padding included).
+/// signature the circuit verifies.
 pub fn verify_signature<S: CircuitSuite>(
     public: &PublicInputs,
     nonce: S::Field,

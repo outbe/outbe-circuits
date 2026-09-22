@@ -17,15 +17,9 @@ use base64::Engine;
 use flate2::read::GzDecoder;
 use sha2::{Digest, Sha256};
 
+use outbe_zk_canonical::noir::demo_tribute::DemoTribute;
 use outbe_zk_canonical::noir::emit_mint::EmitMint;
-use outbe_zk_canonical::noir::flat_aggregation_n1::FlatAggregationN1;
-use outbe_zk_canonical::noir::flat_aggregation_n16::FlatAggregationN16;
-use outbe_zk_canonical::noir::flat_aggregation_n2::FlatAggregationN2;
-use outbe_zk_canonical::noir::flat_aggregation_n32::FlatAggregationN32;
-use outbe_zk_canonical::noir::flat_aggregation_n4::FlatAggregationN4;
-use outbe_zk_canonical::noir::flat_aggregation_n64::FlatAggregationN64;
-use outbe_zk_canonical::noir::flat_aggregation_n8::FlatAggregationN8;
-use outbe_zk_canonical::noir::full_proof::FullProof;
+use outbe_zk_canonical::noir::niflheim_tribute::NiflheimTribute;
 use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
 use outbe_zk_canonical::noir::paynote::Paynote;
 use outbe_zk_canonical::CircuitId;
@@ -96,15 +90,10 @@ fn print_srs_pins() {
     let mut api = BarretenbergApi::new(backend);
     let circuits: &[(&str, &str)] = &[
         ("ownership", OwnershipProof::BYTECODE_B64),
+        ("demo tribute", DemoTribute::BYTECODE_B64),
+        ("niflheim tribute", NiflheimTribute::BYTECODE_B64),
         ("emit mint", EmitMint::BYTECODE_B64),
         ("paynote", Paynote::BYTECODE_B64),
-        ("flat n1", FlatAggregationN1::BYTECODE_B64),
-        ("flat n2", FlatAggregationN2::BYTECODE_B64),
-        ("flat n4", FlatAggregationN4::BYTECODE_B64),
-        ("flat n8", FlatAggregationN8::BYTECODE_B64),
-        ("flat n16", FlatAggregationN16::BYTECODE_B64),
-        ("flat n32", FlatAggregationN32::BYTECODE_B64),
-        ("flat n64", FlatAggregationN64::BYTECODE_B64),
     ];
     println!("\n--- paste into PINNED_G1_SHA256 ---");
     for (label, b64) in circuits {
@@ -136,16 +125,10 @@ fn print_circuit_complexity() {
     let mut api = BarretenbergApi::new(backend);
     let circuits: &[(&str, &str)] = &[
         ("ownership", OwnershipProof::BYTECODE_B64),
-        ("full", FullProof::BYTECODE_B64),
+        ("demo tribute", DemoTribute::BYTECODE_B64),
+        ("niflheim tribute", NiflheimTribute::BYTECODE_B64),
         ("emit mint", EmitMint::BYTECODE_B64),
         ("paynote", Paynote::BYTECODE_B64),
-        ("flat n1", FlatAggregationN1::BYTECODE_B64),
-        ("flat n2", FlatAggregationN2::BYTECODE_B64),
-        ("flat n4", FlatAggregationN4::BYTECODE_B64),
-        ("flat n8", FlatAggregationN8::BYTECODE_B64),
-        ("flat n16", FlatAggregationN16::BYTECODE_B64),
-        ("flat n32", FlatAggregationN32::BYTECODE_B64),
-        ("flat n64", FlatAggregationN64::BYTECODE_B64),
     ];
     println!("\n--- circuit complexity ---");
     println!("| circuit | num_gates | dyadic (2^k) |");

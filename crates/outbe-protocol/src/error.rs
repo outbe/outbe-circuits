@@ -21,10 +21,6 @@ pub enum Error {
     #[error("owner mismatch: commit(pk, nonce) != entity.owner()")]
     OwnerMismatch,
 
-    /// More real ownership witnesses than the requested aggregation tier holds.
-    #[error("aggregation of {0} slots exceeds the requested tier")]
-    TierOverflow(usize),
-
     /// A value is outside the field modulus or the target type's range;
     /// converting it would silently reduce or truncate it.
     #[error("non-canonical field encoding: {0}")]

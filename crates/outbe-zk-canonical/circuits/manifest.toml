@@ -22,7 +22,13 @@ proof_system = "bb-keccak-v1"
 [[l2_chain]]
 chain_id = 57005 # 0xDEAD - test chain
 circuits = [
-  { module = "full_proof", version = "1.1.0" },
+  { module = "demo_tribute", version = "1.1.0" },
+]
+
+[[l2_chain]]
+chain_id = 9900501 # Niflheim
+circuits = [
+  { module = "niflheim_tribute", version = "1.0.0" },
 ]
 
 [[circuit]]
@@ -32,53 +38,11 @@ version = "1.0.0"
 status = "active"
 
 [[circuit]]
-module = "full_proof"
-label = "outbe.full_proof"
+module = "demo_tribute"
+label = "demo.tribute"
 version = "1.0.0"
 status = "deprecated"
 circuit_hash = "f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"
-
-[[circuit]]
-module = "flat_aggregation_n1"
-label = "outbe.flat_aggregation.n1"
-version = "1.0.0"
-status = "active"
-
-[[circuit]]
-module = "flat_aggregation_n2"
-label = "outbe.flat_aggregation.n2"
-version = "1.0.0"
-status = "active"
-
-[[circuit]]
-module = "flat_aggregation_n4"
-label = "outbe.flat_aggregation.n4"
-version = "1.0.0"
-status = "active"
-
-[[circuit]]
-module = "flat_aggregation_n8"
-label = "outbe.flat_aggregation.n8"
-version = "1.0.0"
-status = "active"
-
-[[circuit]]
-module = "flat_aggregation_n16"
-label = "outbe.flat_aggregation.n16"
-version = "1.0.0"
-status = "active"
-
-[[circuit]]
-module = "flat_aggregation_n32"
-label = "outbe.flat_aggregation.n32"
-version = "1.0.0"
-status = "active"
-
-[[circuit]]
-module = "flat_aggregation_n64"
-label = "outbe.flat_aggregation.n64"
-version = "1.0.0"
-status = "active"
 
 [[circuit]]
 module = "commitment_nullifier_proof"
@@ -102,8 +66,8 @@ status = "deprecated"
 circuit_hash = "b3708b87579e41438ea070d6c1cfa8f60a4c00a4480f3b1b8a15e412d7e29766"
 
 [[circuit]]
-module = "full_proof"
-label = "outbe.full_proof"
+module = "demo_tribute"
+label = "demo.tribute"
 version = "1.1.0"
 status = "deprecated"
 circuit_hash = "aebb21f5f4c12129c278849321c8414db0ee4a24f94882bf27c873f3c7690484"
@@ -170,7 +134,13 @@ version = "1.2.0"
 status = "active"
 
 [[circuit]]
-module = "full_proof"
-label = "outbe.full_proof"
+module = "demo_tribute"
+label = "demo.tribute"
 version = "1.2.0"
+status = "active"
+
+[[circuit]]
+module = "niflheim_tribute"
+label = "niflheim.tribute"
+version = "1.0.0"
 status = "active"

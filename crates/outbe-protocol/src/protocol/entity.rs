@@ -57,12 +57,12 @@ pub trait Owned<S: Suite> {
 /// and entity hash. This is what an attester sends the client after
 /// minting (the full body stays attester-side), and what the client
 /// persists to later prove ownership and to reference the NFT on
-/// submission (the `id`); `(owner, nft_hash)` are exactly the
-/// per-slot public inputs the aggregation circuit consumes.
+/// submission (the `id`); `(owner, nft_hash)` provide the ownership
+/// statement's entity data.
 ///
 /// It is an [`Entity`] whose hash is *already known*: `entity_hash` returns
-/// the stored value, so ownership-witness derivation and aggregation work
-/// on a receipt with no access to the original body.
+/// the stored value, so ownership-witness derivation works on a receipt
+/// with no access to the original body.
 pub struct OwnershipReceipt<S: Suite> {
     /// Stored entity id
     pub id: S::Field,

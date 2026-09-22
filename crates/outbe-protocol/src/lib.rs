@@ -8,7 +8,7 @@
 //! - [`suite`] — the `Suite` trait + default formulas. The production
 //!   [`OutbeV1`] selection lives at the crate root; a test-only `Mock` suite
 //!   lives in the core crate's tests.
-//! - [`protocol`] — entity hashing, ownership proofs, and aggregation,
+//! - [`protocol`] — entity hashing, ownership, and generic proof interfaces,
 //!   all generic over `S: Suite`.
 //!
 //! `outbe-circuits` and `outbe-integration` depend on this crate for the
@@ -33,8 +33,8 @@ pub use suite::Suite;
 /// as `OutbeV2`, etc. The **core protocol logic** (`crate::protocol`, the `Suite`
 /// formulas, the signature/curve/hash *traits*) is generic over `S: Suite`;
 /// this type is one concrete selection of the swappable instances. (The
-/// noir circuits fix the proving field.) `DOMAIN = 1` preserves the V1
-/// submission-binding interface and separates it from future suite versions.
+/// noir circuits fix the proving field.) `DOMAIN = 1` identifies the V1
+/// submission-binding domain and separates it from future suite versions.
 ///
 /// Every formula is inherited from the [`Suite`] defaults, so this is just the
 /// primitive selection. Swapping, say, `Hash` here would re-key the entire

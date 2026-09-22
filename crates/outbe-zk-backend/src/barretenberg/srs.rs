@@ -63,19 +63,22 @@ const G1_POINT_SIZE: u32 = 64;
 /// a pinned size that mismatches is rejected (tampered CRS); an unpinned size
 /// is allowed through but its hash is reported so an operator can pin it (pin
 /// every size you deploy, or flip the `None` arm in [`verify_g1`] to fail
-/// closed). `(1<<20)+1` is the largest tier (n64) and the [`super::preinit_srs`]
-/// size; its digest is the canonical Aztec `g1.dat` prefix.
+/// closed). The canonical set's [`super::preinit_srs`] size is `(1<<16)+1`.
+/// The `(1<<20)+1` prefix stays pinned for future circuits without increasing
+/// the default initialization size. Every digest is a prefix of the canonical
+/// Aztec `g1.dat`.
 const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
-    // (1<<13)+1 — Emit mint + Paynote circuits (same 2^13 domain).
+    // (1<<14)+1 — Emit mint + Paynote circuits (same 2^14 domain).
     (
-        (1 << 13) + 1,
+        (1 << 14) + 1,
         [
-            0xec, 0x2c, 0x34, 0xc5, 0x09, 0x67, 0x9e, 0x61, 0x52, 0xde, 0xe9, 0x3f, 0x36, 0xf5,
-            0x0d, 0x93, 0xde, 0xf3, 0x18, 0x09, 0xe1, 0xbe, 0x0f, 0x05, 0x19, 0x03, 0x6d, 0xcb,
-            0xa8, 0xfd, 0xc2, 0xcb,
+            0x8d, 0x53, 0x95, 0x34, 0x50, 0xcd, 0x6e, 0x90, 0xa9, 0x45, 0x83, 0x7d, 0x49, 0x82,
+            0x98, 0x15, 0x13, 0xe2, 0xf4, 0x4d, 0xb7, 0xb2, 0x0f, 0xd4, 0x77, 0xf1, 0x04, 0xb0,
+            0x41, 0xbe, 0x30, 0x4d,
         ],
     ),
-    // (1<<16)+1 — ownership circuit + aggregation tiers n1/n2/n4 (same 2^16 domain).
+    // (1<<16)+1 — the canonical set's largest domain (ownership, demo tribute,
+    // Niflheim tribute) and the `preinit_srs` size.
     (
         (1 << 16) + 1,
         [
@@ -84,34 +87,7 @@ const PINNED_G1_SHA256: &[(u32, [u8; 32])] = &[
             0x4f, 0x88, 0x70, 0x78,
         ],
     ),
-    // (1<<17)+1 — flat-aggregation tier n8.
-    (
-        (1 << 17) + 1,
-        [
-            0xe9, 0x7e, 0x6b, 0x26, 0x21, 0xd3, 0xce, 0x99, 0xec, 0x3c, 0x15, 0xe6, 0x36, 0x2b,
-            0x7a, 0xae, 0xf6, 0xbd, 0x55, 0x0b, 0x83, 0xe2, 0x41, 0xa9, 0x05, 0xa2, 0x59, 0x38,
-            0x0e, 0xc1, 0x86, 0xa9,
-        ],
-    ),
-    // (1<<18)+1 — flat-aggregation tier n16.
-    (
-        (1 << 18) + 1,
-        [
-            0x8f, 0x5c, 0xd7, 0x55, 0x19, 0xc2, 0xe9, 0x95, 0xfa, 0x47, 0xaa, 0x7e, 0xcd, 0x7b,
-            0x21, 0x3b, 0x9a, 0xe1, 0x38, 0x24, 0xbc, 0x4b, 0x0f, 0x15, 0x02, 0x5a, 0x63, 0xac,
-            0xd8, 0xc1, 0x39, 0xeb,
-        ],
-    ),
-    // (1<<19)+1 — flat-aggregation tier n32.
-    (
-        (1 << 19) + 1,
-        [
-            0x1d, 0xf3, 0x7a, 0x2c, 0xe1, 0xda, 0x37, 0x13, 0xc7, 0x30, 0x06, 0x91, 0xa6, 0x5f,
-            0xfe, 0x84, 0xde, 0x14, 0x4e, 0xa6, 0x48, 0x99, 0xd5, 0xcf, 0xbf, 0x00, 0x61, 0xaa,
-            0xae, 0xb6, 0xad, 0x31,
-        ],
-    ),
-    // (1<<20)+1 — the largest tier (n64) / `preinit_srs` size.
+    // (1<<20)+1 — reserved for future circuits; not initialized by default.
     (
         (1 << 20) + 1,
         [
@@ -313,4 +289,16 @@ pub fn ensure_srs_for(
 ) -> Result<(), Error> {
     let num_points = subgroup_size(api, acir_uncompressed, settings)? + 1;
     ensure_srs(api, num_points)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{verify_g1, G1_POINT_SIZE};
+
+    #[test]
+    fn emit_paynote_crs_rejects_untrusted_bytes() {
+        let num_points = (1 << 14) + 1;
+        let untrusted = vec![0; num_points as usize * G1_POINT_SIZE as usize];
+        assert!(verify_g1(num_points, &untrusted).is_err());
+    }
 }

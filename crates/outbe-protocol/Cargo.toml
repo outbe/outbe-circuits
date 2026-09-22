@@ -32,6 +32,7 @@ zeroize        = { workspace = true }
 
 [dev-dependencies]
 ark-std = { workspace = true, features = ["parallel"] }
+alloy-primitives = { workspace = true}
 # The companion derive macro — exercised by the entity-hash set-encoding tests
 # (`tests/sorted_set.rs`). A dev-dep keeps the published crate dependency-free
 # while letting the tests drive `#[derive(Entity)]` end-to-end.

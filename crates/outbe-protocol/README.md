@@ -40,14 +40,14 @@ pub trait Suite: 'static {
     fn derive_owner(pk: &Affine<Self::Curve>, nonce: Self::Field) -> Result<Self::Field, Error>;
     fn nft_hash(id: Self::Field, body: &[Self::Field]) -> Result<Self::Field, Error>;
     fn signing_payload(nft_hash: Self::Field, nonce: Self::Field, binding: Self::Field) -> Result<Self::Field, Error>;
-    fn binding(sender: &[u8; 20], commitment_id: &[u8; 32], chain_id: u64) -> Result<Self::Field, Error>;
+    fn binding(sender: &[u8; 20], commitment_id: &[u8; 32], host_chain_id: u64, l2_chain_id: u64) -> Result<Self::Field, Error>;
 }
 ```
 
 ### Identity vs submission context
 
 `DOMAIN` is folded into `binding` — and therefore into every signature
-(`signing_payload`) and the aggregation public inputs — so the protocol version
+(`signing_payload`) and the proof's public inputs — so the protocol version
 is bound into the whole submission/proof path. It is deliberately **not** folded
 into `derive_owner` or the entity hashes: an NFT keeps its identity across suite
 versions, while a submission is unambiguously tied to one version.
@@ -78,10 +78,18 @@ use outbe_protocol::{OutbeV1, Suite};
 // Associated functions on the suite (generic over S: Suite); each returns
 // Result<S::Field, Error>. OutbeV1 is the production selection.
 let owner   = OutbeV1::derive_owner(&pk, nonce)?;                   // H(pk.x, pk.y, nonce)
-let binding = OutbeV1::binding(&sender, &commitment_id, chain_id)?; // H([DOMAIN, sender, cid_lo, cid_hi, chain])
+let binding = OutbeV1::binding(&sender, &commitment_id, host_chain_id, l2_chain_id)?;
 let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;  // the field the owner signs
-// sender: &[u8; 20]   commitment_id: &[u8; 32]   chain_id: u64
+// sender: &[u8; 20]   commitment_id: &[u8; 32]   host_chain_id, l2_chain_id: u64
 ```
+
+`binding` hashes `[DOMAIN, sender, cid_lo128, cid_hi128, host_chain_id, l2_chain_id]`,
+with the commitment ID's low 128-bit limb first. The verifier recomputes it from
+the caller, commitment ID, its own host chain, and the selected L2. The L2 chain
+ID is required: this six-input formula replaces the former five-input formula,
+even when `l2_chain_id` is zero. Provers and verifiers must migrate together.
+The circuits consume the resulting hash as an opaque public input, so their
+verification keys do not change.
 
 ### Converting field values
 
@@ -138,7 +146,7 @@ let signer  = Signer::<OutbeV1>::local(&mut rng)?;     // fresh NFT key (self-is
 let pk      = signer.public_key();
 let owner   = OutbeV1::derive_owner(&pk, nonce)?;
 
-let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7)?;
+let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7, 0xdead)?;
 let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;
 let sig     = signer.sign(&mut rng, payload)?;       // Grumpkin Schnorr — satisfies the in-circuit verifier
 ```

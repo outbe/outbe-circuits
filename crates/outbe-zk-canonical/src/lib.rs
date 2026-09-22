@@ -24,10 +24,8 @@
 //!
 //! The `.nr` circuits remain the source of truth.
 
-pub mod aggregation;
+pub mod demo_tribute;
 pub mod emit_mint;
-pub mod full;
-pub mod full_proof;
 pub mod ownership;
 pub mod paynote;
 
@@ -38,9 +36,9 @@ pub mod paynote;
 pub use outbe_protocol::protocol::zk::{CircuitId, CircuitSuite};
 
 /// Depth of the perpetual TributeDraft commitment tree — the chain's
-/// `CommitmentWindowBase.TREE_DEPTH` and the `full_proof` circuit's Merkle path
+/// `CommitmentWindowBase.TREE_DEPTH` and the `demo_tribute` circuit's Merkle path
 /// length. The generic [`outbe_protocol::protocol::imt::Imt`] is depth-agnostic;
-/// this pins the canonical depth the full-proof circuit is built for.
+/// this pins the canonical depth the Demo Tribute circuit is built for.
 pub const INCLUSION_DEPTH: usize = 32;
 
 /// Lifecycle status of a registered circuit version (see `circuits/manifest.toml`).
