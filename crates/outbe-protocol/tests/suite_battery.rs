@@ -13,6 +13,7 @@
 //! carries its own minimal generic entity (`TestNft`) to drive the
 //! protocol.
 
+use alloy_primitives::hex;
 use ark_ff::One;
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
@@ -237,9 +238,6 @@ fn outbe_v1_binding_matches_the_tribute_vector() {
     let binding = OutbeV1::binding(&[1; 20], &[2; 32], 19_280_501, 57_005).unwrap();
     assert_eq!(
         OutbeV1::field_to_be_bytes(&binding),
-        [
-            31, 160, 169, 96, 32, 152, 89, 115, 167, 71, 5, 181, 231, 182, 245, 79, 60, 63, 155,
-            156, 161, 208, 222, 32, 12, 147, 86, 110, 46, 183, 52, 2,
-        ]
+        hex::decode("1fa0a96020985973a74705b5e7b6f54f3c3f9b9ca1d0de200c93566e2eb73402").unwrap()
     );
 }
