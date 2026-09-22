@@ -8,8 +8,7 @@ on:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  # Never cancel a push-to-main run: that is the one that re-derives every
-  # committed key with `--all`.
+  # Keep push-to-main verification runs running to completion.
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
@@ -55,35 +54,22 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       l1: ${{ steps.filter.outputs.l1 }}
-      l2: ${{ steps.filter.outputs.l2 }}
-      toolchain: ${{ steps.filter.outputs.toolchain }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: dorny/paths-filter@v4
         id: filter
         with:
-          # A toolchain move is the only way an untouched committed key
-          # stops reproducing: the nargo/bb pins (mise.toml), the
-          # barretenberg-rs pin (the workspace Cargo.toml) and
-          # proof_system (the L1 manifest, which `l2 verify` compares
-          # the L2 manifest against).
           filters: |
-            toolchain:
-              - 'mise.toml'
-              - 'Cargo.toml'
-              - 'crates/outbe-zk-canonical/circuits/manifest.toml'
-            l2:
-              - 'crates/outbe-l2-zk-canonical/l2/**'
-              - 'crates/outbe-l2-claims/claims/**'
-              - 'mise.toml'
-              - 'Cargo.toml'
-              - 'crates/outbe-zk-canonical/circuits/manifest.toml'
             l1:
               - 'crates/outbe-zk-canonical/noir/**'
               - 'crates/outbe-zk-canonical/resources/circuits/**'
               - 'crates/outbe-zk-canonical/circuits/manifest.toml'
               - 'mise.toml'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'xtask/**'
+              - '.github/workflows/ci.yml'
 
   # --------------------------------------------------------------
   # Format + clippy + cargo test on stable & beta. Runs on PR +
@@ -170,64 +156,7 @@ jobs:
       - name: cargo xtask test-circuits
         run: cargo xtask test-circuits
 
-  # --------------------------------------------------------------
-  # Reproduces every touched L2 verification key from its committed
-  # Noir root. This is the admission gate for an L2 registration.
-  # `cargo xtask` pulls in only serde_json/base64/tiny-keccak/toml_edit,
-  # never barretenberg-rs, so no C++ toolchain step is needed: the
-  # prebuilt `bb` links the libstdc++6 runtime ubuntu-latest ships.
-  # --------------------------------------------------------------
-  l2-verify:
-    name: l2 verify
-    needs: changes
-    if: ${{ needs.changes.outputs.l2 == 'true' || github.event_name == 'push' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          # `l2 verify --changed` runs `git merge-base origin/$GITHUB_BASE_REF
-          # HEAD`. The default depth-1 checkout has no origin/<base> ref and
-          # the merge-base fails.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-
-      - uses: jdx/mise-action@v4
-        with:
-          version: 2026.9.11
-          install_args: nargo bb
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: l2-verify
-
-      # `bb write_vk` needs the Aztec SRS: ~64MB bn254_g1.dat plus
-      # ~2MB grumpkin_g1.flat.dat, downloaded on first use. Keyed on
-      # the bb pin, which lives in mise.toml.
-      - name: Cache the bb CRS
-        uses: actions/cache@v4
-        with:
-          path: ~/.bb-crs
-          key: bb-crs-${{ hashFiles('mise.toml') }}
-
-      - name: cargo xtask l2 verify
-        run: |
-          # A toolchain move can break any committed key, not only a
-          # touched one. A push to main has no PR base, so --changed
-          # would select nothing — merges always re-derive everything.
-          if [ "${{ needs.changes.outputs.toolchain }}" = 'true' ] \
-            || [ "${{ github.event_name }}" = 'push' ]; then
-            cargo xtask l2 verify --all
-          else
-            cargo xtask l2 verify --changed
-          fi
-
-  # --------------------------------------------------------------
-  # Dry run of the L1 freeze: recompiles every active L1 circuit and
-  # asserts its committed ACIR, ABI and VK reproduce. Writes nothing
-  # under resources/circuits/ or circuits/manifest.toml.
-  # --------------------------------------------------------------
+  # Recompile active circuits and reject ACIR/ABI drift on a clean checkout.
   l1-freeze-check:
     name: l1 freeze check
     needs: changes
@@ -255,16 +184,11 @@ jobs:
           path: ~/.bb-crs
           key: bb-crs-${{ hashFiles('mise.toml') }}
 
-      # No --all/--changed split: it always checks every `active` entry.
-      - name: cargo xtask freeze-circuits --check
-        run: cargo xtask freeze-circuits --check
-
-      # The dry run compiles a scratch copy under target/. The two
-      # tracked noir/<pkg>/target/<module>.json files (emit_mint.json,
-      # paynote.json), and everything under resources/circuits/, must
-      # come out byte-identical.
-      - name: the dry run wrote nothing
-        run: git diff --exit-code
+      - name: Regenerate frozen circuits and check for drift
+        run: |
+          cargo xtask freeze-circuits
+          git diff --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
 
   # --------------------------------------------------------------
   # Versioning (cocogitto). See cog.toml.

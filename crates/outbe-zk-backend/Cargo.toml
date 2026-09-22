@@ -8,7 +8,7 @@ description = "Noir proving backend for the canonical Outbe circuits: a shared A
 publish = false
 
 [dependencies]
-outbe-zk-core = { workspace = true }
+outbe-protocol = { workspace = true }
 ark-ff = { workspace = true }
 ark-bn254 = { workspace = true }
 base64 = { workspace = true }
@@ -43,7 +43,14 @@ default = ["with-network-srs"]
 with-network-srs = ["dep:reqwest"]
 
 [dev-dependencies]
-# The concrete canonical circuits — only the tests need them; the
+# The concrete canonical circuits — only the tests/benches need them; the
 # library is generic over any circuit implementing the core seams.
-outbe-zk-canonical = { path = "../outbe-zk-canonical", features = ["alloy"] }
+outbe-zk-canonical = { path = "../outbe-zk-canonical", version = "0.23.0", features = ["alloy"] }
+ark-std = { workspace = true }
 alloy-primitives = { workspace = true }
+criterion = { workspace = true }
+
+# Cross-circuit proving/verification cost. Run with: cargo bench -p outbe-zk-backend
+[[bench]]
+name = "proving"
+harness = false

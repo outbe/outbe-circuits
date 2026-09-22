@@ -1,9 +1,0 @@
-{
-  "parameters": [
-    { "name": "owner",        "type": { "kind": "field" }, "visibility": "public" },
-    { "name": "nft_hash",     "type": { "kind": "field" }, "visibility": "public" },
-    { "name": "binding_hash", "type": { "kind": "field" }, "visibility": "public" },
-    { "name": "merkle_root",  "type": { "kind": "field" }, "visibility": "public" }
-  ],
-  "return_type": null
-}

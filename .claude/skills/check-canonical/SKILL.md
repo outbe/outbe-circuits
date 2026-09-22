@@ -14,7 +14,9 @@ Run `cargo build -p outbe-zk-canonical`. `build.rs` reads `circuits/manifest.tom
 
 ## Level 2 — ACIR drift vs sources (slow, needs the Noir toolchain)
 
-Only when `.nr` sources under `noir/` changed and you need to know whether a new frozen version is owed. Needs nargo + bb (`mise install`). Run `cargo xtask freeze-circuits --check` (mise task `freeze-circuits:check`), which writes nothing outside `target/`. It never mints — it only compares:
+Only when `.nr` sources under `noir/` changed and you need to know whether a new frozen version is owed. Needs nargo + bb (`mise run install:zk-toolchain`). Run `cargo xtask freeze-circuits`:
 
-- **`reproduces <module> @ <ver>` per circuit, then `all active L1 circuits reproduce.`** (exit 0) → the sources compile to the same ACIR, ABI and VK as the frozen artifacts; nothing to do.
-- **One line per failing module, then exit 1** (`the ACIR does not reproduce`, `abi.json does not match the compiled ABI`, `circuit.vk does not reproduce`) → a circuit drifted; recommend `/freeze-circuits` to mint and commit the new version alongside the source change.
+- **`0 minted` / all `unchanged`** → the sources compile to the same ACIR as the frozen artifacts; nothing to do.
+- **`minted ...`** → a circuit drifted; recommend `/freeze-circuits` to mint and commit the new version alongside the source change.
+
+Note: `freeze-circuits` **writes** to `manifest.toml` / `resources/` when it mints. For a purely read-only check prefer Level 1; reach for Level 2 only when you actually intend to freeze.
