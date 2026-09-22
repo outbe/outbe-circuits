@@ -156,9 +156,12 @@ where
         "entity hash not sensitive to body"
     );
 
-    // --- binding + KDF are reachable and deterministic ---
-    let binding = S::binding(&[7u8; 20], &[9u8; 32], 1234).unwrap();
-    assert_eq!(binding, S::binding(&[7u8; 20], &[9u8; 32], 1234).unwrap());
+    // --- binding separates L2 contexts; KDF remains deterministic ---
+    let binding = S::binding(&[7u8; 20], &[9u8; 32], 1234, 57_005).unwrap();
+    assert_ne!(
+        binding,
+        S::binding(&[7u8; 20], &[9u8; 32], 1234, 57_006).unwrap()
+    );
     let k = S::Kdf::derive(&[nonce, owner]).unwrap();
     assert_eq!(
         k,
@@ -229,13 +232,14 @@ fn mock_suite() {
 }
 
 #[test]
-fn outbe_v1_binding_keeps_the_established_vector() {
-    let binding = OutbeV1::binding(&[1; 20], &[2; 32], 19_280_501).unwrap();
+fn outbe_v1_binding_matches_the_tribute_vector() {
+    // outbe-l2-claims/tests/tribute.rs at upstream commit 2d494e9.
+    let binding = OutbeV1::binding(&[1; 20], &[2; 32], 19_280_501, 57_005).unwrap();
     assert_eq!(
         OutbeV1::field_to_be_bytes(&binding),
         [
-            20, 131, 18, 106, 193, 198, 150, 93, 53, 84, 154, 30, 9, 26, 205, 74, 180, 1, 86, 128,
-            194, 27, 97, 249, 56, 48, 105, 112, 124, 163, 153, 136,
+            31, 160, 169, 96, 32, 152, 89, 115, 167, 71, 5, 181, 231, 182, 245, 79, 60, 63, 155,
+            156, 161, 208, 222, 32, 12, 147, 86, 110, 46, 183, 52, 2,
         ]
     );
 }

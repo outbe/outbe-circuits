@@ -53,7 +53,7 @@ fn ownership_prove_verify_round_trip() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7).unwrap();
+    let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7, 0xdead).unwrap();
     let td = TestNft {
         id: owner,
         owner,
@@ -77,9 +77,9 @@ fn ownership_prove_verify_round_trip() {
         "valid proof must verify"
     );
 
-    // Verifying against a different claim (tampered binding) must fail.
+    // The same proof must fail for another L2, even under the same circuit key.
     let mut wrong = public.clone();
-    wrong.binding_hash += Fr::from(1u64);
+    wrong.binding_hash = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7, 0xdeae).unwrap();
     assert!(
         !ProofVerifier::<OutbeV1, OwnershipProof>::verify(&Barretenberg::default(), &wrong, &proof)
             .unwrap(),
@@ -93,7 +93,7 @@ fn full_proof_prove_verify_round_trip() {
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
     let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[3u8; 20], &[4u8; 32], 99).unwrap();
+    let binding = OutbeV1::binding(&[3u8; 20], &[4u8; 32], 99, 0xdead).unwrap();
     let td = TestNft {
         id: owner,
         owner,

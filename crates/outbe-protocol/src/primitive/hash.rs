@@ -2,7 +2,7 @@
 //!
 //! Two operations cover every Outbe hashing need:
 //!
-//! - [`FieldHasher::hash`] — fixed-arity single-shot (Poseidon-2/3/4/5).
+//! - [`FieldHasher::hash`] — fixed-arity single-shot (Poseidon-2/3/4/5/6).
 //!   Used for the owner commitment, the binding hash, Merkle nodes, and
 //!   the signing payload.
 //! - [`FieldHasher::iterate`] — iterated 2-to-1 over a seed. Used for

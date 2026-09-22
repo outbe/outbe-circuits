@@ -115,20 +115,32 @@ pub trait Suite: 'static {
         Self::Hash::hash(&[nft_hash, nonce, binding])
     }
 
-    /// Submission binding `Hash([DOMAIN, sender, cid_lo128, cid_hi128, chain_id])`.
+    /// Submission binding
+    /// `Hash([DOMAIN, sender, cid_lo128, cid_hi128, host_chain_id, l2_chain_id])`.
     ///
     /// The commitment ID uses its established two-limb Tribute encoding. This
     /// layout is independent of the three-limb encoding used for U256 amounts.
+    /// Both chain IDs are bound so identical circuits on different L2s cannot
+    /// share a submission context. The verifier must recompute this hash from
+    /// its own caller, commitment ID, host chain, and selected L2.
     fn binding(
         sender: &[u8; 20],
         commitment_id: &[u8; 32],
-        chain_id: u64,
+        host_chain_id: u64,
+        l2_chain_id: u64,
     ) -> Result<Self::Field, Error> {
         let domain = Self::Field::from(Self::DOMAIN);
         let sender = crate::codec::field_from_be_bytes::<Self::Field>(sender);
         let low = crate::codec::field_from_be_bytes::<Self::Field>(&commitment_id[16..]);
         let high = crate::codec::field_from_be_bytes::<Self::Field>(&commitment_id[..16]);
-        Self::Hash::hash(&[domain, sender, low, high, Self::Field::from(chain_id)])
+        Self::Hash::hash(&[
+            domain,
+            sender,
+            low,
+            high,
+            Self::Field::from(host_chain_id),
+            Self::Field::from(l2_chain_id),
+        ])
     }
 
     fn ascii_field(value: &str) -> Self::Field {
