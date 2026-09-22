@@ -2,6 +2,14 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 - - -
+## v0.25.0 - 2026-09-22
+#### Features
+- add niflheim tribute circuit (#28) - (9c1bd5a) - outvld
+#### Miscellaneous Chores
+- revert 919621a2 commit (#27) - (dbae682) - latexstone
+
+- - -
+
 ## v0.23.0 - 2026-09-21
 #### Miscellaneous Chores
 - remove unused workflows and update manual release process (#26) - (e5c9f42) - latexstone

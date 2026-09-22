@@ -36,4 +36,4 @@ alloy-primitives = { workspace = true}
 # The companion derive macro — exercised by the entity-hash set-encoding tests
 # (`tests/sorted_set.rs`). A dev-dep keeps the published crate dependency-free
 # while letting the tests drive `#[derive(Entity)]` end-to-end.
-outbe-protocol-derive = { path = "../outbe-protocol-derive", version = "0.23.0" }
+outbe-protocol-derive = { path = "../outbe-protocol-derive", version = "0.25.0" }

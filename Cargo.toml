@@ -1,5 +1,5 @@
 [workspace.package]
-version = "0.23.0"
+version = "0.25.0"
 edition = "2021"
 authors    = ["Outbe"]
 license    = "MIT"
@@ -20,7 +20,7 @@ resolver = "2"
 
 # Local crates. `version` next to `path` keeps the publishable crates
 # (outbe-zk-canonical) resolvable by cargo-deny / `cargo publish`.
-outbe-protocol = { path = "crates/outbe-protocol", version = "0.23.0" }
+outbe-protocol = { path = "crates/outbe-protocol", version = "0.25.0" }
 
 # BN254 Poseidon / Poseidon2 (Barretenberg/noir-compatible).
 outbe-poseidon = "0.13.0"
