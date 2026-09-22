@@ -1,5 +1,5 @@
 [package]
-name = "flat_aggregation_n64"
+name = "demo_tribute"
 type = "bin"
 authors = ["outbe"]
 compiler_version = ">=1.0.0"

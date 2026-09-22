@@ -14,9 +14,8 @@ use outbe_protocol::protocol::key::{NftSecret, Signer};
 use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
 use outbe_protocol::{OutbeV1, Suite};
 use outbe_zk_backend::barretenberg::Barretenberg;
-use outbe_zk_canonical::full::{full_circuit_domain, FullProvable};
-use outbe_zk_canonical::full_proof;
-use outbe_zk_canonical::noir::full_proof::FullProof;
+use outbe_zk_canonical::demo_tribute::{self, demo_tribute_domain, DemoTributeProvable};
+use outbe_zk_canonical::noir::demo_tribute::DemoTribute;
 use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
 use outbe_zk_canonical::ownership::Provable;
 use outbe_zk_canonical::INCLUSION_DEPTH;
@@ -88,7 +87,7 @@ fn ownership_prove_verify_round_trip() {
 }
 
 #[test]
-fn full_proof_prove_verify_round_trip() {
+fn demo_tribute_prove_verify_round_trip() {
     let mut rng = ark_std::test_rng();
     let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
@@ -100,24 +99,27 @@ fn full_proof_prove_verify_round_trip() {
         fields: vec![Fr::from(978u64), Fr::from(100u64)],
     };
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
-    let tree = Imt::<OutbeV1>::new(full_circuit_domain(), Fr::from(0u64), INCLUSION_DEPTH).unwrap();
+    let tree = Imt::<OutbeV1>::new(demo_tribute_domain(), Fr::from(0u64), INCLUSION_DEPTH).unwrap();
     let path = tree.empty_inclusion_path(0);
     let (witness, public) = td
-        .derive_full_witness(&mut rng, &signer, binding, &path)
+        .derive_demo_tribute_witness(&mut rng, &signer, binding, &path)
         .unwrap();
 
-    let proof =
-        ProofGenerator::<OutbeV1, FullProof>::generate(&Barretenberg::default(), &witness, &public)
-            .expect("bb prove");
+    let proof = ProofGenerator::<OutbeV1, DemoTribute>::generate(
+        &Barretenberg::default(),
+        &witness,
+        &public,
+    )
+    .expect("bb prove");
     assert!(
-        ProofVerifier::<OutbeV1, FullProof>::verify(&Barretenberg::default(), &public, &proof)
+        ProofVerifier::<OutbeV1, DemoTribute>::verify(&Barretenberg::default(), &public, &proof)
             .unwrap(),
-        "valid full proof must verify"
+        "valid demo tribute proof must verify"
     );
 
-    let combined = full_proof::encode_combined_proof(public.clone(), proof.proof).unwrap();
-    assert_eq!(combined.len(), full_proof::COMBINED_LEN);
-    let decoded = full_proof::decode_public_inputs(&combined).unwrap();
+    let combined = demo_tribute::encode_combined_proof(public.clone(), proof.proof).unwrap();
+    assert_eq!(combined.len(), demo_tribute::COMBINED_LEN);
+    let decoded = demo_tribute::decode_public_inputs(&combined).unwrap();
     assert_eq!(decoded.derived_owner, owner);
     assert_eq!(decoded.binding_hash, binding);
 }

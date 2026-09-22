@@ -4,7 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Concrete canonical circuit/witness types for the Outbe protocol (ownership + flat aggregation), built on the generic outbe-protocol traits."
+description = "Concrete canonical circuit/witness types and frozen circuit registry for the Outbe protocol, built on the generic outbe-protocol traits."
 readme = "README.md"
 
 [features]

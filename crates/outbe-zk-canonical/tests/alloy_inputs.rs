@@ -40,12 +40,8 @@ fn alloy_public_inputs_convert_back_to_circuit_abi() {
         )+};
     }
     check!(
-        ownership_proof => OwnershipProof, full_proof => FullProof,
+        ownership_proof => OwnershipProof, demo_tribute => DemoTribute,
         emit_mint => EmitMint, paynote => Paynote,
-        flat_aggregation_n1 => FlatAggregationN1, flat_aggregation_n2 => FlatAggregationN2,
-        flat_aggregation_n4 => FlatAggregationN4, flat_aggregation_n8 => FlatAggregationN8,
-        flat_aggregation_n16 => FlatAggregationN16, flat_aggregation_n32 => FlatAggregationN32,
-        flat_aggregation_n64 => FlatAggregationN64,
     );
 }
 
@@ -157,7 +153,7 @@ fn alloy_witnesses_preserve_amounts_points_and_nested_arrays() {
     );
     assert_eq!(alloy.signature, signature);
 
-    let witness: noir::full_proof::Witness = noir::full_proof::alloy::Witness {
+    let witness: noir::demo_tribute::Witness = noir::demo_tribute::alloy::Witness {
         pk: point(1),
         signature,
         nonce: word(3),
@@ -175,7 +171,7 @@ fn alloy_witnesses_preserve_amounts_points_and_nested_arrays() {
         witness.merkle_path_indices,
         std::array::from_fn(|i| i % 2 == 0)
     );
-    let alloy: noir::full_proof::alloy::Witness = witness.try_into().unwrap();
+    let alloy: noir::demo_tribute::alloy::Witness = witness.try_into().unwrap();
     assert_eq!(
         (alloy.pk.x, alloy.pk.y, alloy.nonce),
         (word(1), word(2), word(3))
@@ -188,39 +184,6 @@ fn alloy_witnesses_preserve_amounts_points_and_nested_arrays() {
     assert_eq!(
         alloy.merkle_path_indices,
         std::array::from_fn(|i| i % 2 == 0)
-    );
-
-    macro_rules! check_tiers {
-        ($($module:ident),+ $(,)?) => {$(
-            {
-                use noir::$module as c;
-                let witness: c::Witness = c::alloy::Witness {
-                    pk: std::array::from_fn(|i| point(i as u64)),
-                    nonce: std::array::from_fn(|i| word(i as u64 + 100)),
-                    signature: std::array::from_fn(|i| [i as u8; 64]),
-                }.try_into().unwrap();
-                for i in 0..witness.pk.len() {
-                    assert_eq!((witness.pk[i].x, witness.pk[i].y), (Fr::from(i as u64), Fr::from(i as u64 + 1)));
-                    assert_eq!(witness.nonce[i], Fr::from(i as u64 + 100));
-                    assert_eq!(witness.signature[i], [i as u8; 64]);
-                }
-                let alloy: c::alloy::Witness = witness.try_into().unwrap();
-                for i in 0..alloy.pk.len() {
-                    assert_eq!((alloy.pk[i].x, alloy.pk[i].y), (word(i as u64), word(i as u64 + 1)));
-                    assert_eq!(alloy.nonce[i], word(i as u64 + 100));
-                    assert_eq!(alloy.signature[i], [i as u8; 64]);
-                }
-            }
-        )+};
-    }
-    check_tiers!(
-        flat_aggregation_n1,
-        flat_aggregation_n2,
-        flat_aggregation_n4,
-        flat_aggregation_n8,
-        flat_aggregation_n16,
-        flat_aggregation_n32,
-        flat_aggregation_n64
     );
 }
 
@@ -243,20 +206,6 @@ fn conversions_reject_noncanonical_fields_including_nested_values() {
     .try_into()
     .unwrap();
     assert_eq!(public.owner, -Fr::from(1));
-
-    let mut public = noir::flat_aggregation_n64::alloy::PublicInputs {
-        public_inputs: [word(1); 129],
-    };
-    public.public_inputs[128] = B256::from(modulus);
-    assert!(noir::flat_aggregation_n64::PublicInputs::try_from(public).is_err());
-
-    let mut witness = noir::flat_aggregation_n64::alloy::Witness {
-        pk: [point(1); 64],
-        signature: [[0; 64]; 64],
-        nonce: [word(3); 64],
-    };
-    witness.pk[63].y = B256::from(modulus);
-    assert!(noir::flat_aggregation_n64::Witness::try_from(witness).is_err());
 
     let mut witness = noir::paynote::alloy::Witness {
         note_amount: U256::MAX,

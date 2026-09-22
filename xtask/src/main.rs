@@ -32,14 +32,7 @@ use toml_edit::{value, DocumentMut, Table};
 /// Vendored noir bin circuits: (package dir under `noir/`, nargo package name).
 const CIRCUITS: &[(&str, &str)] = &[
     ("outbe-ownership-circuit", "ownership_proof"),
-    ("outbe-flat-aggregation-circuit-n1", "flat_aggregation_n1"),
-    ("outbe-flat-aggregation-circuit-n2", "flat_aggregation_n2"),
-    ("outbe-flat-aggregation-circuit-n4", "flat_aggregation_n4"),
-    ("outbe-flat-aggregation-circuit-n8", "flat_aggregation_n8"),
-    ("outbe-flat-aggregation-circuit-n16", "flat_aggregation_n16"),
-    ("outbe-flat-aggregation-circuit-n32", "flat_aggregation_n32"),
-    ("outbe-flat-aggregation-circuit-n64", "flat_aggregation_n64"),
-    ("outbe-full-circuit", "full_proof"),
+    ("demo-tribute", "demo_tribute"),
     ("outbe-emit-mint-circuit", "emit_mint"),
     ("outbe-paynote-circuit", "paynote"),
     ("niflheim-tribute", "niflheim_tribute"),
@@ -331,16 +324,11 @@ fn bump(ver: &str, level: u8) -> String {
 fn label(module: &str) -> String {
     match module {
         "ownership_proof" => "outbe.ownership".to_string(),
-        "full_proof" => "outbe.full_proof".to_string(),
+        "demo_tribute" => "demo.tribute".to_string(),
         "emit_mint" => "outbe.emit.mint".to_string(),
         "paynote" => "outbe.paynote".to_string(),
         "niflheim_tribute" => "niflheim.tribute".to_string(),
-        m => {
-            let n = m
-                .strip_prefix("flat_aggregation_n")
-                .expect("unknown module");
-            format!("outbe.flat_aggregation.n{n}")
-        }
+        _ => panic!("unknown module: {module}"),
     }
 }
 

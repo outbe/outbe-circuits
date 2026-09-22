@@ -47,7 +47,7 @@ pub trait Suite: 'static {
 ### Identity vs submission context
 
 `DOMAIN` is folded into `binding` — and therefore into every signature
-(`signing_payload`) and the aggregation public inputs — so the protocol version
+(`signing_payload`) and the proof's public inputs — so the protocol version
 is bound into the whole submission/proof path. It is deliberately **not** folded
 into `derive_owner` or the entity hashes: an NFT keeps its identity across suite
 versions, while a submission is unambiguously tied to one version.

@@ -41,8 +41,11 @@ mod srs;
 /// [`srs::set_srs_path`].
 pub use srs::set_srs_path;
 
-/// Largest CRS required by the canonical circuit set.
-pub const CANONICAL_SRS_POINTS: u32 = (1 << 20) + 1;
+/// Largest CRS required by the canonical circuit set: ownership, the Demo
+/// Tribute proof, and the Niflheim tribute all prove in a 2^16 domain, so the
+/// SRS needs `2^16 + 1` G1 points (domain + one). Emit mint and Paynote are
+/// smaller (2^14 domain).
+pub const CANONICAL_SRS_POINTS: u32 = (1 << 16) + 1;
 
 /// Barretenberg's CRS factory, low-memory globals, and prover are **process-
 /// global** C++ state, and the API is not reentrant — so every bb operation
@@ -58,10 +61,10 @@ fn bb_lock() -> MutexGuard<'static, ()> {
 
 /// Pre-initialize bb's (one-shot, process-global) CRS to `num_points` G1 points.
 /// Call once at startup with the largest circuit's size when a process proves
-/// circuits of *different* sizes (e.g. several aggregation tiers) — otherwise
-/// the first, smaller circuit fixes the CRS and larger ones fail. For our
-/// canonical set the max is the n64 tier (`(1 << 20) + 1`). Single-circuit
-/// callers can skip this; the first prove sizes the CRS to its circuit.
+/// circuits of *different* sizes — otherwise the first, smaller circuit fixes
+/// the CRS and larger ones fail. For our canonical set that is
+/// [`CANONICAL_SRS_POINTS`] (`(1 << 16) + 1`). Single-circuit callers can skip
+/// this; the first prove sizes the CRS to its circuit.
 pub fn preinit_srs(num_points: u32) -> Result<(), Error> {
     let _bb = bb_lock();
     let mut api = Barretenberg::api()?;
@@ -159,9 +162,9 @@ pub struct Barretenberg {
 #[allow(clippy::derivable_impls)] // manual impl documents the security-critical disable_zk = false default
 impl Default for Barretenberg {
     fn default() -> Self {
-        // Zero-knowledge ON: the ownership/full witnesses carry a secret key, so
-        // the proof must not leak it. `disable_zk = true` is faster but not ZK —
-        // opt into it only for public-input-only statements.
+        // Zero-knowledge ON: the ownership/demo tribute witnesses carry a secret
+        // key, so the proof must not leak it. `disable_zk = true` is faster but
+        // not ZK — opt into it only for public-input-only statements.
         Self {
             disable_zk: false,
             low_memory: false,

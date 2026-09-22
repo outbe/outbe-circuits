@@ -8,7 +8,7 @@
 //! - [`suite`] — the `Suite` trait + default formulas. The production
 //!   [`OutbeV1`] selection lives at the crate root; a test-only `Mock` suite
 //!   lives in the core crate's tests.
-//! - [`protocol`] — entity hashing, ownership proofs, and aggregation,
+//! - [`protocol`] — entity hashing, ownership, and generic proof interfaces,
 //!   all generic over `S: Suite`.
 //!
 //! `outbe-circuits` and `outbe-integration` depend on this crate for the

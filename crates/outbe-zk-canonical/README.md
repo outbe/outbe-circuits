@@ -6,9 +6,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
 Concrete canonical circuit, witness, and verifier-wire types for the Outbe
-protocol (ownership, flat-aggregation tiers n1–n64, full proof, Emit mint, and
-Paynote), built on the generic seams and marshaling helpers in `outbe-protocol`.
-The `full_proof`, `emit_mint`, and `paynote` modules own their circuit-specific
+protocol (ownership, Demo Tribute, Emit mint, Paynote, and Niflheim Tribute),
+built on the generic seams and marshaling helpers in `outbe-protocol`.
+The `demo_tribute`, `emit_mint`, and `paynote` modules own their circuit-specific
 combined-proof layouts and public-input decoders. This crate is also the
 **in-code, versioned circuit registry**: the authoritative, append-only record
 of every released circuit version and its on-chain identity.
@@ -205,24 +205,24 @@ bytecode is dropped — the preserved `circuit_hash`.
 
 Add one `[[l2_chain]]` table per chain to `circuits/manifest.toml`. Each entry in
 `circuits` enables an exact frozen `(module, version)`. For example, a local
-development chain could enable both full-proof releases:
+development chain could enable both Demo Tribute releases:
 
 ```toml
 [[l2_chain]]
 chain_id = 31337
 circuits = [
-  { module = "full_proof", version = "1.0.0" },
-  { module = "full_proof", version = "1.1.0" },
+  { module = "demo_tribute", version = "1.0.0" },
+  { module = "demo_tribute", version = "1.1.0" },
 ]
 ```
 
 Niflheim (`9900501`) is pinned to `niflheim_tribute@1.0.0` for Tribute proofs.
 Its self-contained source lives in
 [`noir/niflheim-tribute/`](noir/niflheim-tribute), separate from the evolving canonical
-full-proof source. `cargo xtask freeze-circuits` regenerates its tracked
+Demo Tribute source. `cargo xtask freeze-circuits` regenerates its tracked
 `target/niflheim_tribute.json` and freezes its bytecode, ABI, and verification key
 under `resources/circuits/niflheim_tribute/<version>/`.
-The initial release has the same circuit hash and key as `full_proof@1.0.0`,
+The initial release has the same circuit hash and key as `demo_tribute@1.0.0`,
 but owns its source and frozen artifacts. The manifest format is unchanged.
 
 `version` is the circuit's frozen semver; there is no separate deployment version.
@@ -289,18 +289,6 @@ enforces the storage policy above (preserving `circuit_hash` before any deletion
 The new artifacts + manifest land in a **PR** — that review is the audit gate for
 admitting a circuit. Status transitions (active → deprecated → revoked) are edits
 to `manifest.toml`; the next `freeze-circuits` reconciles the on-disk artifacts.
-
-Example — bumping the n2 tier:
-
-```
-$ cargo xtask freeze-circuits
-  unchanged  flat_aggregation_n1 @ 1.0.0
-  minted     flat_aggregation_n2 1.0.0 -> 1.0.1  (old -> deprecated)
-  ...
-# manifest: n2 v1.0.0 deprecated (+circuit_hash), v1.0.1 active
-# resources: n2/1.0.0/ -> circuit.vk only;  n2/1.0.1/ -> bytecode+abi+vk
-# CIRCUIT_REGISTRY: both n2 entries;  pub mod flat_aggregation_n2 -> v1.0.1
-```
 
 ## Publishability
 

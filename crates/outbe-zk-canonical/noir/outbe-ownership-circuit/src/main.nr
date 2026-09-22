@@ -2,11 +2,7 @@
 // architecture sec.4.2.
 //
 // Used by wallets to prove ownership of one Spending Unit (or, with
-// different inputs, one Tribute Draft) outside the multi-SU
-// aggregation flow. The flat aggregation tier circuits
-// (`outbe-flat-aggregation-circuit-n*`) embed N copies of the same
-// constraint set inline -- they don't recursively verify proofs of
-// this circuit.
+// different inputs, one Tribute Draft).
 //
 // ## Public-input layout
 //

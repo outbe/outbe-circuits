@@ -78,7 +78,7 @@ impl<S> CircuitSuite for S where
 /// [`CircuitSuite`] proves it). Mirrors `outbe-circuits-canonical`'s
 /// `CircuitDescriptor`. Implemented (build-generated) by every circuit marker.
 pub trait CircuitId {
-    /// Canonical dotted label, e.g. `outbe.ownership` / `outbe.flat_aggregation.n2`.
+    /// Canonical dotted label, e.g. `outbe.ownership` / `demo.tribute`.
     const LABEL: &'static str;
     /// Semver-style version string ("1.0.0"). Not authoritative.
     const VERSION: &'static str;

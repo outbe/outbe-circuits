@@ -1,8 +1,13 @@
-//! Full proof (§4.2 ownership + Merkle inclusion), wired to the build-generated
-//! `full_proof` noir circuit.
+//! Demo Tribute (§4.2 ownership + Merkle inclusion) combined-proof layout,
+//! public-input codecs, and witness builder, wired to the build-generated
+//! `demo_tribute` noir circuit.
 //!
-//! The witness builder ([`FullProvable::derive_full_witness`]) extends the
-//! ownership witness with a depth-[`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH)
+//! This is the former `full_proof` circuit renamed to Demo Tribute: the
+//! witness/public-input ABI and every algorithm below are unchanged, so the
+//! frozen artifacts, hashes and VKs still apply.
+//!
+//! The witness builder ([`DemoTributeProvable::derive_demo_tribute_witness`])
+//! extends the ownership witness with a depth-[`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH)
 //! inclusion path against the perpetual TributeDraft commitment tree (the
 //! suite-generic [`Imt`](outbe_protocol::protocol::imt::Imt) in the core). The
 //! leaf is the entity's `nft_hash` itself — matching the on-chain tree, which
@@ -19,28 +24,41 @@ use outbe_protocol::protocol::imt::InclusionPath;
 use outbe_protocol::protocol::key::NftSigner;
 use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
 
-use crate::noir::full_proof::{FullProof, PublicInputs, Witness};
+#[cfg(feature = "alloy")]
+pub use crate::noir::demo_tribute::alloy;
+pub use crate::noir::demo_tribute::{
+    decode_public_inputs, encode_combined_proof, PublicInputs, COMBINED_LEN, PROOF_WORDS,
+    PUBLIC_INPUT_COUNT,
+};
+
+use crate::noir::demo_tribute::{DemoTribute, Witness};
 use crate::noir::EmbeddedCurvePoint;
 use crate::{CircuitSuite, INCLUSION_DEPTH};
 
-/// Domain prepended to every full-proof commitment-tree inner-node hash.
-pub const FULL_CIRCUIT_DOMAIN: &[u8; 18] = b"OUTBE_FULL_CIRCUIT";
+/// Domain prepended to every Demo Tribute commitment-tree inner-node hash.
+///
+/// The bytes are deliberately the legacy `OUTBE_FULL_CIRCUIT` literal: they are
+/// the field value baked into the frozen circuit
+/// (`0x4f555442455f46554c4c5f43495243554954`), so
+/// renaming the circuit renamed this symbol only. Editing the bytes would mint a
+/// different circuit identity and invalidate every released VK and proof.
+pub const DEMO_TRIBUTE_DOMAIN: &[u8; 18] = b"OUTBE_FULL_CIRCUIT";
 
-/// Full-proof commitment-tree domain as the canonical circuit field.
-pub fn full_circuit_domain() -> ark_bn254::Fr {
-    ark_bn254::Fr::from_be_bytes_mod_order(FULL_CIRCUIT_DOMAIN)
+/// Demo Tribute commitment-tree domain as the canonical circuit field.
+pub fn demo_tribute_domain() -> ark_bn254::Fr {
+    ark_bn254::Fr::from_be_bytes_mod_order(DEMO_TRIBUTE_DOMAIN)
 }
 
-/// NFT extension: an owned entity can build the full-proof witness (ownership +
-/// inclusion) and, given a backend, a proof. Blanket-implemented for every
+/// NFT extension: an owned entity can build the Demo Tribute witness (ownership
+/// and inclusion) and, given a backend, a proof. Blanket-implemented for every
 /// owned entity of a [`CircuitSuite`].
-pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
-    /// Build + sign the full-proof witness: the ownership witness plus the
+pub trait DemoTributeProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
+    /// Build + sign the Demo Tribute witness: the ownership witness plus the
     /// Merkle inclusion `path` proving `nft_hash` sits in the commitment tree.
-    /// The path must use [`FULL_CIRCUIT_DOMAIN`] and have
+    /// The path must use [`DEMO_TRIBUTE_DOMAIN`] and have
     /// [`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH) levels. The
     /// `merkle_root` public input is recomputed from the path.
-    fn derive_full_witness<R, K>(
+    fn derive_demo_tribute_witness<R, K>(
         &self,
         rng: &mut R,
         signer: &K,
@@ -58,7 +76,7 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
                 path.depth()
             )));
         }
-        if path.domain != full_circuit_domain() {
+        if path.domain != demo_tribute_domain() {
             return Err(Error::Merkle(
                 "inclusion path uses the wrong tree domain".into(),
             ));
@@ -106,8 +124,8 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
         Ok((witness, public))
     }
 
-    /// Build the full-proof witness and hand it to a ZK proof-generation backend.
-    fn generate_full_proof<R, K, G>(
+    /// Build the Demo Tribute witness and hand it to a ZK proof-generation backend.
+    fn generate_demo_tribute_proof<R, K, G>(
         &self,
         rng: &mut R,
         signer: &K,
@@ -118,16 +136,16 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
     where
         R: Rng,
         K: NftSigner<S>,
-        G: ProofGenerator<S, FullProof>,
+        G: ProofGenerator<S, DemoTribute>,
     {
-        let (witness, public) = self.derive_full_witness(rng, signer, binding, path)?;
+        let (witness, public) = self.derive_demo_tribute_witness(rng, signer, binding, path)?;
         generator.generate(&witness, &public)
     }
 
-    /// Full round-trip: build the witness, generate a proof, and verify it. The
-    /// `where`-clause pins `V::Proof = G::Proof`.
+    /// Demo Tribute round-trip: build the witness, generate a proof, and verify
+    /// it. The `where`-clause pins `V::Proof = G::Proof`.
     #[allow(clippy::too_many_arguments)]
-    fn full_prove_and_verify<R, K, G, V>(
+    fn demo_tribute_prove_and_verify<R, K, G, V>(
         &self,
         rng: &mut R,
         signer: &K,
@@ -139,13 +157,41 @@ pub trait FullProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
     where
         R: Rng,
         K: NftSigner<S>,
-        G: ProofGenerator<S, FullProof>,
-        V: ProofVerifier<S, FullProof, Proof = G::Proof>,
+        G: ProofGenerator<S, DemoTribute>,
+        V: ProofVerifier<S, DemoTribute, Proof = G::Proof>,
     {
-        let (witness, public) = self.derive_full_witness(rng, signer, binding, path)?;
+        let (witness, public) = self.derive_demo_tribute_witness(rng, signer, binding, path)?;
         let proof = generator.generate(&witness, &public)?;
         verifier.verify(&public, &proof)
     }
 }
 
-impl<S: CircuitSuite, E: Entity<S> + Owned<S> + ?Sized> FullProvable<S> for E {}
+impl<S: CircuitSuite, E: Entity<S> + Owned<S> + ?Sized> DemoTributeProvable<S> for E {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ark_bn254::Fr;
+    use outbe_protocol::{Codec, OutbeV1};
+
+    #[test]
+    fn generated_inputs_preserve_demo_tribute_names_and_order() {
+        let fields = [11u64, 22, 33, 44].map(Fr::from);
+        let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
+        for field in fields {
+            proof.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+        }
+        proof.resize(COMBINED_LEN, 0);
+        let public = PublicInputs {
+            derived_owner: fields[0],
+            nft_hash: fields[1],
+            binding_hash: fields[2],
+            merkle_root: fields[3],
+        };
+        assert_eq!(decode_public_inputs(&proof).unwrap(), public);
+        assert_eq!(
+            encode_combined_proof(public, vec![vec![0; 32]; PROOF_WORDS]).unwrap(),
+            proof
+        );
+    }
+}

@@ -345,7 +345,7 @@ fn hex_lit(bytes: &[u8; 32]) -> String {
     format!("::hex_literal::hex!({:?})", hex_str(bytes))
 }
 
-/// Marker (unit) type name: `flat_aggregation_n2` -> `FlatAggregationN2`.
+/// Marker (unit) type name: `demo_tribute` -> `DemoTribute`.
 fn marker_ident(module: &str) -> String {
     module
         .split('_')
