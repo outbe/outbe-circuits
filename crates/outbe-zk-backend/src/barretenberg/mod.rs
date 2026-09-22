@@ -26,8 +26,10 @@ use barretenberg_rs::generated_types::{CircuitInput, ProofSystemSettings};
 use base64::Engine;
 use flate2::read::GzDecoder;
 
-use outbe_zk_core::zk::{Circuit, CircuitId, ProofGenerator, ProofVerifier};
-use outbe_zk_core::Error;
+use outbe_protocol::error::Error;
+use outbe_protocol::protocol::zk::{
+    Circuit, CircuitId, CircuitSuite, ProofGenerator, ProofVerifier,
+};
 
 use crate::witness;
 
@@ -39,10 +41,7 @@ mod srs;
 /// [`srs::set_srs_path`].
 pub use srs::set_srs_path;
 
-/// CRS size [`init_crs`] fixes for the process: four tiers above the largest
-/// circuit this repository proves (the L2 demo tribute root, a 2^16 domain), so
-/// a bigger circuit registered later still fits the already-initialized,
-/// one-shot CRS. Pinned in `srs::PINNED_G1_SHA256`, so these are verified bytes.
+/// Largest CRS required by the canonical circuit set.
 pub const CANONICAL_SRS_POINTS: u32 = (1 << 20) + 1;
 
 /// Barretenberg's CRS factory, low-memory globals, and prover are **process-
@@ -59,11 +58,10 @@ fn bb_lock() -> MutexGuard<'static, ()> {
 
 /// Pre-initialize bb's (one-shot, process-global) CRS to `num_points` G1 points.
 /// Call once at startup with the largest circuit's size when a process proves
-/// circuits of *different* sizes — otherwise the first, smaller circuit fixes
-/// the CRS and larger ones fail. [`CANONICAL_SRS_POINTS`] is the size
-/// [`init_crs`] uses and covers every circuit here. Single-circuit callers can
-/// skip this; the first prove sizes the CRS to its own circuit (and pin that
-/// size — see `srs::PINNED_G1_SHA256`).
+/// circuits of *different* sizes (e.g. several aggregation tiers) — otherwise
+/// the first, smaller circuit fixes the CRS and larger ones fail. For our
+/// canonical set the max is the n64 tier (`(1 << 20) + 1`). Single-circuit
+/// callers can skip this; the first prove sizes the CRS to its circuit.
 pub fn preinit_srs(num_points: u32) -> Result<(), Error> {
     let _bb = bb_lock();
     let mut api = Barretenberg::api()?;
@@ -179,7 +177,11 @@ impl Barretenberg {
     }
 }
 
-impl<C: Circuit + CircuitId> ProofGenerator<C> for Barretenberg {
+impl<S, C> ProofGenerator<S, C> for Barretenberg
+where
+    S: CircuitSuite,
+    C: Circuit<S> + CircuitId,
+{
     type Proof = Proof;
 
     fn generate(
@@ -188,7 +190,7 @@ impl<C: Circuit + CircuitId> ProofGenerator<C> for Barretenberg {
         public: &C::PublicInputs,
     ) -> Result<Self::Proof, Error> {
         // Pure (ACVM solve + decode) — no bb global state, so outside the lock.
-        let solved = witness::solved_witness::<C>(witness, public)?;
+        let solved = witness::solved_witness::<S, C>(witness, public)?;
         let acir = acir_buffer_uncompressed::<C>()?;
         let settings = settings_ultra_honk_keccak(self.disable_zk);
 
@@ -211,11 +213,15 @@ impl<C: Circuit + CircuitId> ProofGenerator<C> for Barretenberg {
     }
 }
 
-impl<C: Circuit + CircuitId> ProofVerifier<C> for Barretenberg {
+impl<S, C> ProofVerifier<S, C> for Barretenberg
+where
+    S: CircuitSuite,
+    C: Circuit<S> + CircuitId,
+{
     type Proof = Proof;
 
     fn verify(&self, public: &C::PublicInputs, proof: &Self::Proof) -> Result<bool, Error> {
-        let public_inputs = witness::public_inputs::<C>(public);
+        let public_inputs = witness::public_inputs::<S, C>(public);
         let acir = acir_buffer_uncompressed::<C>()?;
         let settings = settings_ultra_honk_keccak(self.disable_zk);
 
@@ -260,17 +266,6 @@ pub trait RawVerifier {
     fn verify_combined(&self, vk_bytes: &[u8], combined_proof: &[u8]) -> Result<bool, Error>;
 }
 
-/// A section of whole 32-byte words as the `Vec<Vec<u8>>` bb's FFI takes.
-/// Any trailing partial word is dropped; callers length-check first.
-fn words32(bytes: &[u8]) -> Vec<Vec<u8>> {
-    bytes
-        .as_chunks::<32>()
-        .0
-        .iter()
-        .map(|c| c.to_vec())
-        .collect()
-}
-
 impl RawVerifier for Barretenberg {
     fn verify_combined(&self, vk_bytes: &[u8], combined_proof: &[u8]) -> Result<bool, Error> {
         // Header: big-endian u32 public-input count.
@@ -284,7 +279,12 @@ impl RawVerifier for Barretenberg {
         let pub_bytes = combined_proof
             .get(4..pub_end)
             .ok_or_else(|| Error::Proof("combined proof truncated in public inputs".into()))?;
-        let public_inputs = words32(pub_bytes);
+        let public_inputs: Vec<Vec<u8>> = pub_bytes
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .map(|c| c.to_vec())
+            .collect();
 
         // Remainder is the proof, as 32-byte field words.
         let proof_bytes = &combined_proof[pub_end..];
@@ -293,7 +293,12 @@ impl RawVerifier for Barretenberg {
                 "combined proof: proof section not a multiple of 32 bytes".into(),
             ));
         }
-        let proof = words32(proof_bytes);
+        let proof: Vec<Vec<u8>> = proof_bytes
+            .as_chunks::<32>()
+            .0
+            .iter()
+            .map(|c| c.to_vec())
+            .collect();
 
         let settings = settings_ultra_honk_keccak(self.disable_zk);
 

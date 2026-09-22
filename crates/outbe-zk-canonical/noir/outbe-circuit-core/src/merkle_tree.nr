@@ -6,14 +6,14 @@
 //!
 //! Aztec bakes the domain into a named hasher per tree (`merkle_hash`,
 //! `nullifier_merkle_hash`, ...). Here the domain is a parameter instead, so
-//! one function serves every tree — `EMIT_DOMAIN`, `PAYNOTE_DOMAIN`, ...
+//! one function serves every tree — `EMIT_DOMAIN`, `FULL_CIRCUIT_DOMAIN`, ...
 //! Distinct domains are what keeps the trees separated.
 
 use crate::hash::hash_3;
 
 /// Canonical tree depth across the protocol — the chain's
-/// `CommitmentWindowBase.TREE_DEPTH`, and the auth-path length of the
-/// `emit_mint` and `paynote` circuits.
+/// `CommitmentWindowBase.TREE_DEPTH`, mirrored in Rust as
+/// `outbe_zk_canonical::INCLUSION_DEPTH`.
 pub global DEPTH: u32 = 32;
 
 /// Inner-node hash: `Poseidon2(domain, left, right)`.

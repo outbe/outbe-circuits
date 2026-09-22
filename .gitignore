@@ -8,7 +8,3 @@ params
 # cargo-ndk output directory used by Android mobile builds.
 # Per-ABI subdirs hold liboutbe_zk_circuit_noir.so artifacts.
 jniLibs
-
-# `nargo test`/`nargo compile` output inside a committed L2 circuit root.
-# `/target` above is workspace-root-anchored and does not cover these.
-crates/outbe-l2-zk-canonical/l2/**/target/

@@ -4,11 +4,11 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Concrete canonical circuit/witness types for the Outbe protocol (Emit mint, Paynote), built on outbe-zk-core."
+description = "Concrete canonical circuit/witness types for the Outbe protocol (ownership + flat aggregation), built on the generic outbe-protocol traits."
 readme = "README.md"
 
 [features]
-alloy = ["dep:alloy-primitives", "outbe-zk-core/alloy"]
+alloy = ["dep:alloy-primitives", "outbe-protocol/alloy"]
 
 [build-dependencies]
 serde_json = { workspace = true }
@@ -17,10 +17,12 @@ base64 = { workspace = true }
 toml = { workspace = true }
 
 [dependencies]
-outbe-zk-core = { workspace = true }
+outbe-protocol = { workspace = true }
 ark-ff = { workspace = true }
+ark-std = { workspace = true }
 ark-bn254 = { workspace = true }
 alloy-primitives = { workspace = true, optional = true }
+thiserror = { workspace = true }
 # Compile-time `hex!("..")` -> `[u8; N]` for the generated circuit/vk hashes.
 hex-literal = { workspace = true }
 

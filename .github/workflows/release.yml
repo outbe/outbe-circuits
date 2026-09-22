@@ -174,7 +174,7 @@ jobs:
       - name: Package .crate
         run: >-
           cargo package --locked --workspace
-          --exclude outbe-zk-backend --exclude outbe-l2-demo --exclude xtask
+          --exclude outbe-zk-backend --exclude xtask
 
       - name: Upload .crate as workflow artifact
         uses: actions/upload-artifact@v4
@@ -261,7 +261,7 @@ jobs:
           {
             echo "## Install"
             echo
-            echo "    cargo add outbe-zk-core@${TAG#v}"
+            echo "    cargo add outbe-protocol@${TAG#v}"
             echo
             echo "## Artifacts"
             echo

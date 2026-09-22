@@ -2,17 +2,21 @@
 
 pub mod hash;
 
+use outbe_protocol::protocol::shielded_pool::ShieldedPool;
+use outbe_protocol::{OutbeV1, Suite};
+
 #[cfg(feature = "alloy")]
 pub use crate::noir::emit_mint::alloy::{self, Witness};
 pub use crate::noir::emit_mint::{decode_public_inputs, encode_combined_proof, PublicInputs};
 
-/// The proving field.
-pub type Field = outbe_zk_core::Fr;
+/// Cryptographic suite used by Emit.
+pub type EmitSuite = OutbeV1;
+pub type Field = <EmitSuite as Suite>::Field;
 
-pub type Pool = outbe_zk_core::shielded_pool::ShieldedPool;
+pub type Pool = ShieldedPool<OutbeV1>;
 
 /// In-memory commitment tree for Emit clients.
-pub type Tree = outbe_zk_core::imt::Imt;
+pub type Tree = outbe_protocol::protocol::imt::Imt<EmitSuite>;
 
 pub use crate::noir::emit_mint::{COMBINED_LEN, PROOF_WORDS, PUBLIC_INPUT_COUNT};
 
@@ -21,8 +25,8 @@ mod tests {
     use super::*;
     use ark_bn254::Fr;
     use ark_ff::{Field as _, PrimeField};
-    use outbe_zk_core::codec::field_to_be_bytes;
-    use outbe_zk_core::Error;
+    use outbe_protocol::error::Error;
+    use outbe_protocol::Codec;
 
     fn combined() -> Vec<u8> {
         let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
@@ -36,7 +40,7 @@ mod tests {
             Fr::from(3),
             Fr::from(104),
         ] {
-            proof.extend_from_slice(&field_to_be_bytes(&word));
+            proof.extend_from_slice(&OutbeV1::field_to_be_bytes(&word));
         }
         proof.resize(COMBINED_LEN, 0);
         proof
@@ -69,7 +73,7 @@ mod tests {
             let mut proof = combined();
             let start = 4 + index * 32;
             let invalid = Fr::from(2).pow([bits]);
-            proof[start..start + 32].copy_from_slice(&field_to_be_bytes(&invalid));
+            proof[start..start + 32].copy_from_slice(&OutbeV1::field_to_be_bytes(&invalid));
             assert!(matches!(
                 decode_public_inputs(&proof),
                 Err(Error::NonCanonical(what)) if what == expected

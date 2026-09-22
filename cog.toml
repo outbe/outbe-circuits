@@ -16,7 +16,7 @@ ignore_merge_commits = true
 # states each member's version TWICE - once in `[workspace.package]` and again
 # as the `version = "x.y.z"` beside `path` on every intra-workspace dependency,
 # which is what keeps the publishable crates resolvable for `cargo publish` and
-# cargo-deny. Rewriting only the first would leave `outbe-zk-core = "^0.11.0"`
+# cargo-deny. Rewriting only the first would leave `outbe-protocol = "^0.11.0"`
 # unsatisfiable by the crate it points at and break resolution outright.
 # It updates Cargo.lock too, so no separate `cargo update` is needed.
 #
