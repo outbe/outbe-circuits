@@ -216,9 +216,14 @@ circuits = [
 ]
 ```
 
-Niflheim (`9900501`) is pinned to `full_proof@1.0.0` for Tribute proofs.
-Although this circuit release is deprecated, its frozen verification key remains
-enabled for that chain.
+Niflheim (`9900501`) is pinned to `niflheim_tribute@1.0.0` for Tribute proofs.
+Its self-contained source lives in
+[`noir/niflheim-tribute/`](noir/niflheim-tribute), separate from the evolving canonical
+full-proof source. `cargo xtask freeze-circuits` regenerates its tracked
+`target/niflheim_tribute.json` and freezes its bytecode, ABI, and verification key
+under `resources/circuits/niflheim_tribute/<version>/`.
+The initial release has the same circuit hash and key as `full_proof@1.0.0`,
+but owns its source and frozen artifacts. The manifest format is unchanged.
 
 `version` is the circuit's frozen semver; there is no separate deployment version.
 Hashes are derived from the frozen artifacts (or preserved manifest identity for

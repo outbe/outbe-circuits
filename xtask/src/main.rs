@@ -42,6 +42,7 @@ const CIRCUITS: &[(&str, &str)] = &[
     ("outbe-full-circuit", "full_proof"),
     ("outbe-emit-mint-circuit", "emit_mint"),
     ("outbe-paynote-circuit", "paynote"),
+    ("niflheim-tribute", "niflheim_tribute"),
 ];
 
 fn main() {
@@ -333,6 +334,7 @@ fn label(module: &str) -> String {
         "full_proof" => "outbe.full_proof".to_string(),
         "emit_mint" => "outbe.emit.mint".to_string(),
         "paynote" => "outbe.paynote".to_string(),
+        "niflheim_tribute" => "niflheim.tribute".to_string(),
         m => {
             let n = m
                 .strip_prefix("flat_aggregation_n")

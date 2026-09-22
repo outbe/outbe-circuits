@@ -28,7 +28,7 @@ circuits = [
 [[l2_chain]]
 chain_id = 9900501 # Niflheim
 circuits = [
-  { module = "full_proof", version = "1.0.0" },
+  { module = "niflheim_tribute", version = "1.0.0" },
 ]
 
 [[circuit]]
@@ -179,4 +179,10 @@ status = "active"
 module = "full_proof"
 label = "outbe.full_proof"
 version = "1.2.0"
+status = "active"
+
+[[circuit]]
+module = "niflheim_tribute"
+label = "niflheim.tribute"
+version = "1.0.0"
 status = "active"
