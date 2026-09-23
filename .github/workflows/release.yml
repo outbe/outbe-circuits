@@ -7,15 +7,12 @@ name: release
 #      → package
 #      → GitHub Release (signed)
 #      → verify signatures
-#      → crates.io
 #
-# crates.io versions cannot be replaced, so the registry upload waits
-# until the signed GitHub Release is in place.
+# crates.io publishing is disabled: not all workspace artifacts can be published there.
 #
 # Secrets (see SECURITY.md):
 #   RELEASE_TOKEN          PAT that can push the bump commit to main
 #                          and the v* tag (bypass branch ruleset)
-#   CARGO_REGISTRY_TOKEN   crates.io API token (publish-new + publish-update)
 on:
   workflow_dispatch:
     inputs:
@@ -139,8 +136,7 @@ jobs:
           echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
 
   # ----------------------------------------------------------------
-  # Build the `.crate` once. github-release attaches these bytes;
-  # publish later uploads the same tree to crates.io.
+  # Build the `.crate` once. github-release attaches these bytes.
   # ----------------------------------------------------------------
   package:
     name: Package workspace crates
@@ -187,7 +183,7 @@ jobs:
   # ----------------------------------------------------------------
   # GitHub release. Attaches the packaged `.crate` and a SHA256SUMS
   # file alongside the auto-generated notes. This job is the signed
-  # distribution point; crates.io upload follows after verify.
+  # distribution point.
   # ----------------------------------------------------------------
   github-release:
     name: Create GitHub release
@@ -261,11 +257,11 @@ jobs:
           {
             echo "## Install"
             echo
-            echo "    cargo add outbe-protocol@${TAG#v}"
+            echo "    cargo add outbe-protocol --git https://github.com/outbe/outbe-circuits --tag ${TAG}"
             echo
             echo "## Artifacts"
             echo
-            echo "- \`*.crate\` — publishable workspace crates packaged from this tag; crates.io upload follows this release."
+            echo "- \`*.crate\` — workspace crates packaged from this tag; crates.io publishing is disabled."
             echo "- \`SHA256SUMS\` — SHA-256 of the .crate."
             echo "- \`*.sig\` + \`*.pem\` — sigstore cosign keyless signature + Fulcio cert per artifact."
             echo
@@ -293,8 +289,7 @@ jobs:
   # Smoke test the GitHub Release. Re-downloads every asset and runs
   # `cosign verify-blob` against each one. Hard-fails the workflow on
   # any bad signature — this is the regression test for both the
-  # action SHA pins and the cert-identity regex below. crates.io
-  # waits on this job so a bad signature never reaches the registry.
+  # action SHA pins and the cert-identity regex below.
   # ----------------------------------------------------------------
   verify-release:
     name: Verify signed release
@@ -363,57 +358,57 @@ jobs:
           echo "All artifacts verified."
 
   # ----------------------------------------------------------------
-  # crates.io upload from the same tagged tree. Re-cutting a tag
-  # whose version is already on crates.io skips the upload.
+  # Disabled: not all workspace artifacts can be published to crates.io.
+  # Keep the job below commented out until registry publishing is supported.
   # ----------------------------------------------------------------
-  publish:
-    name: Publish to crates.io
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: [bump, verify-release]
-    env:
-      TAG: ${{ needs.bump.outputs.tag }}
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.bump.outputs.tag }}
-          persist-credentials: false
+  # publish:
+  #   name: Publish to crates.io
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
+  #   needs: [bump, verify-release]
+  #   env:
+  #     TAG: ${{ needs.bump.outputs.tag }}
+  #   permissions:
+  #     contents: read
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #       with:
+  #         ref: ${{ needs.bump.outputs.tag }}
+  #         persist-credentials: false
 
-      - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          components: cargo
+  #     - uses: actions-rust-lang/setup-rust-toolchain@v1
+  #       with:
+  #         components: cargo
 
-      - name: Publish to crates.io
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
-            echo "::error::CARGO_REGISTRY_TOKEN is not set. See SECURITY.md (CI secrets)."
-            exit 1
-          fi
-          version="${TAG#v}"
-          cargo metadata --locked --no-deps --format-version 1 > /tmp/metadata.json
-          jq -r '.packages[] | select(.publish == null or (.publish | index("crates-io"))) | .name' /tmp/metadata.json > /tmp/crates.txt
-          args=()
-          while IFS= read -r crate; do
-            status="$(curl -sS -o /tmp/crate.json -w '%{http_code}' \
-              -A 'outbe-circuits-ci (https://github.com/outbe/outbe-circuits)' \
-              "https://crates.io/api/v1/crates/${crate}/${version}")"
-            case "$status" in
-              200)
-                echo "::notice::${crate}@${version} already on crates.io; skipping publish"
-                ;;
-              404) args+=(-p "$crate") ;;
-              *)
-                echo "::error::crates.io lookup failed for ${crate} (HTTP ${status})"
-                cat /tmp/crate.json
-                exit 1
-                ;;
-            esac
-          done < /tmp/crates.txt
-          if [ "${#args[@]}" -gt 0 ]; then
-            cargo publish --locked --no-verify --verbose "${args[@]}"
-          fi
+  #     - name: Publish to crates.io
+  #       env:
+  #         CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+  #       run: |
+  #         set -euo pipefail
+  #         if [ -z "${CARGO_REGISTRY_TOKEN}" ]; then
+  #           echo "::error::CARGO_REGISTRY_TOKEN is not set. See SECURITY.md (CI secrets)."
+  #           exit 1
+  #         fi
+  #         version="${TAG#v}"
+  #         cargo metadata --locked --no-deps --format-version 1 > /tmp/metadata.json
+  #         jq -r '.packages[] | select(.publish == null or (.publish | index("crates-io"))) | .name' /tmp/metadata.json > /tmp/crates.txt
+  #         args=()
+  #         while IFS= read -r crate; do
+  #           status="$(curl -sS -o /tmp/crate.json -w '%{http_code}' \
+  #             -A 'outbe-circuits-ci (https://github.com/outbe/outbe-circuits)' \
+  #             "https://crates.io/api/v1/crates/${crate}/${version}")"
+  #           case "$status" in
+  #             200)
+  #               echo "::notice::${crate}@${version} already on crates.io; skipping publish"
+  #               ;;
+  #             404) args+=(-p "$crate") ;;
+  #             *)
+  #               echo "::error::crates.io lookup failed for ${crate} (HTTP ${status})"
+  #               cat /tmp/crate.json
+  #               exit 1
+  #               ;;
+  #           esac
+  #         done < /tmp/crates.txt
+  #         if [ "${#args[@]}" -gt 0 ]; then
+  #           cargo publish --locked --no-verify --verbose "${args[@]}"
+  #         fi
