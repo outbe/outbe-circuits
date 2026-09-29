@@ -32,7 +32,7 @@ mod tests {
             Fr::from(202),
             Fr::from(203),
             Fr::from_be_bytes_mod_order(&[0x11; 20]),
-            Fr::from_be_bytes_mod_order(&[0x22; 20]),
+            Fr::from(205),
             Fr::from(1),
             Fr::from(2),
             Fr::from(3),
@@ -53,7 +53,7 @@ mod tests {
                 root: Fr::from(202),
                 nullifier: Fr::from(203),
                 asset: Fr::from_be_bytes_mod_order(&[0x11; 20]),
-                owner: Fr::from_be_bytes_mod_order(&[0x22; 20]),
+                context: Fr::from(205),
                 // Distinct limbs catch reversed order and shifted ABI offsets.
                 spend_amount: [1, 2, 3],
                 change_commitment: Fr::from(204),
@@ -66,7 +66,6 @@ mod tests {
         for (index, bits, expected) in [
             (0, 64, "u64"),
             (3, 160, "address"),
-            (4, 160, "address"),
             (5, 120, "uint256 limbs"),
             (6, 120, "uint256 limbs"),
             (7, 16, "uint256 limbs"),
@@ -82,7 +81,6 @@ mod tests {
             let mut public = decode_public_inputs(&combined()).unwrap();
             match index {
                 3 => public.asset = invalid,
-                4 => public.owner = invalid,
                 5..=7 => public.spend_amount[index - 5] = 1u128 << bits,
                 // An out-of-range u64 cannot be constructed in the circuit type.
                 _ => continue,

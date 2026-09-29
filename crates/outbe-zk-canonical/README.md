@@ -86,11 +86,12 @@ commitment, and authorize and execute the payout.
 
 ## Paynote statement
 
-`outbe.paynote@1.2.0` proves the right to spend part or all of a private ERC20
+`outbe.paynote@1.3.0` proves the right to spend part or all of a private ERC20
 payment note committed under a public chain root, without revealing the note's
 total value. The note is a **bearer instrument**: spend authority is knowledge of
-`note_spend_key`. There is no committed owner identity, no spender allow-list, and no
-action tag — the pool contract validates and routes those.
+`note_spend_key`. There is no committed owner identity and no spender allow-list.
+`context` is an opaque public field the verifier binds to one settlement; the
+circuit does not hash its preimage.
 
 | Input | Meaning |
 |---|---|
@@ -98,7 +99,7 @@ action tag — the pool contract validates and routes those.
 | `root` | Accepted depth-32 note-commitment root. |
 | `nullifier` | Deterministic identifier consumed to prevent a second spend. |
 | `asset` | ERC20 token address the note is denominated in. |
-| `owner` | Address authorized to receive the payout (`msg.sender`). |
+| `context` | Non-zero public commitment to the settlement this spend authorizes. |
 | `spend_amount` | Public 256-bit amount being spent from the private note. |
 | `change_commitment` | Commitment to unspent value, or zero for a full spend. |
 
@@ -108,7 +109,7 @@ limbs (`[u128; 3]`, little-endian radix $2^{120}$); both public and private
 limbs are constrained in-circuit to the canonical range $1..2^{256}-1$.
 The circuit checks:
 
-1. `asset` and `owner` are in-range (160-bit) addresses and nonzero.
+1. `asset` is an in-range (160-bit) nonzero address, and `context` is nonzero.
 2. `0 < spend_amount <= note_amount`, with a nonzero spend key and nullifier.
 3. The spend key derives the note serial.
 4. The chain, serial, asset, and three hidden amount limbs derive a nonzero
@@ -134,10 +135,13 @@ Every Paynote preimage is tagged with `Poseidon2(PAYNOTE_DOMAIN, TAG)`, where
 The circuit cannot enforce any of these, and each is a real vulnerability if
 missed:
 
-- **Pay out to the public `owner`, or require `msg.sender == owner`.**
-  Binding `owner` into the public inputs stops *redirection*, but the proof is
-  freely *transferable* — anyone can submit it verbatim. A contract that pays
-  `msg.sender` instead hands the entire `spend_amount` to the first front-runner.
+- **Require `context` to equal the settlement this call performs.** The circuit
+  authenticates the field and rejects zero. It does not hash a preimage and
+  does not bind an address, and the nullifier does not depend on `context`.
+  A copied proof verifies only for the same public inputs, so a verifier that
+  recomputes `context` from the operation rejects a substituted target. A
+  verifier that ignores `context` accepts the proof for any operation with the
+  same asset and amount. Anyone may submit the proof verbatim.
 - Derive the deposit leaf from the asset and amount actually transferred:
   `leaf = hash_multi(tag(PAYNOTE_DOMAIN, COMMITMENT), [chain_id, serial, asset,
   amount_limb_0, amount_limb_1, amount_limb_2])`, where `serial` is supplied by

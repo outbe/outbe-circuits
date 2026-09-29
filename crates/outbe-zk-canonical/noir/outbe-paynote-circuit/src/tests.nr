@@ -21,9 +21,7 @@ fn other_asset() -> EthAddress {
     EthAddress::from_field(0x2260fac5e5542a773aa44fbcfedf7c193bc2c599)
 }
 
-fn owner() -> EthAddress {
-    EthAddress::from_field(0x3333333333333333333333333333333333333333)
-}
+global CONTEXT: Field = 1;
 
 
 fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
@@ -66,7 +64,7 @@ fn full_spend_uses_zero_change_sentinel() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -85,7 +83,7 @@ fn partial_spend_rotates_change_key_and_inherits_asset() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(40),
         change,
         U256::from(AMOUNT),
@@ -105,7 +103,7 @@ fn wrong_asset_fails_membership() {
         root,
         n,
         other_asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -124,7 +122,7 @@ fn change_note_cannot_switch_asset() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(40),
         change,
         U256::from(AMOUNT),
@@ -143,7 +141,7 @@ fn zero_asset_fails() {
         root,
         n,
         zero,
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -154,17 +152,50 @@ fn zero_asset_fails() {
 }
 
 #[test(should_fail)]
-fn zero_owner_fails() {
+fn zero_context_fails() {
     let (root, n, path) = fixture();
-    let zero = EthAddress::from_field(0);
     main(
         CHAIN_ID,
         root,
         n,
         asset(),
-        zero,
+        0,
         U256::from(AMOUNT),
         0,
+        U256::from(AMOUNT),
+        KEY,
+        0,
+        path,
+    );
+}
+
+/// The published nullifier and change commitment are functions of the note,
+/// not of `context`, so two settlements of one note share one nullifier.
+#[test]
+fn context_does_not_change_nullifier_or_change_commitment() {
+    let (root, n, path) = fixture();
+    let change = expected_change(n, asset(), 40);
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        1,
+        U256::from(40),
+        change,
+        U256::from(AMOUNT),
+        KEY,
+        0,
+        path,
+    );
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        2,
+        U256::from(40),
+        change,
         U256::from(AMOUNT),
         KEY,
         0,
@@ -180,7 +211,7 @@ fn zero_spend_amount_fails() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(0),
         0,
         U256::from(AMOUNT),
@@ -198,7 +229,7 @@ fn overspend_fails() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT + 1),
         0,
         U256::from(AMOUNT),
@@ -222,7 +253,7 @@ fn wrong_tree_domain_fails_membership() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -237,7 +268,7 @@ fn wrong_tree_domain_fails_membership() {
 #[test(should_fail)]
 fn zero_key_fails() {
     let path = single_leaf_path(CHAIN_ID);
-    main(CHAIN_ID, 1, 1, asset(), owner(), U256::from(1), 0, U256::from(1), 0, 0, path);
+    main(CHAIN_ID, 1, 1, asset(), CONTEXT, U256::from(1), 0, U256::from(1), 0, 0, path);
 }
 
 #[test(should_fail)]
@@ -248,7 +279,7 @@ fn wrong_private_key_fails_membership() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -266,7 +297,7 @@ fn wrong_amount_fails_membership() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(99),
         0,
         U256::from(99),
@@ -286,7 +317,7 @@ fn wrong_path_fails_membership() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -304,7 +335,7 @@ fn wrong_leaf_index_fails_membership() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -322,7 +353,7 @@ fn wrong_nullifier_fails() {
         root,
         n + 1,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -342,7 +373,7 @@ fn wrong_change_amount_fails() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(41),
         change,
         U256::from(AMOUNT),
@@ -360,7 +391,7 @@ fn full_spend_rejects_nonzero_change_sentinel() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         1,
         U256::from(AMOUNT),
@@ -378,7 +409,7 @@ fn partial_spend_rejects_zero_change_commitment() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(40),
         0,
         U256::from(AMOUNT),
@@ -405,7 +436,7 @@ fn max_leaf_index_boundary_proves() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(AMOUNT),
         0,
         U256::from(AMOUNT),
@@ -425,7 +456,7 @@ fn u256_max_amounts_full_and_partial_spend() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), owner(), max, 0, max, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), CONTEXT, max, 0, max, KEY, 0, path);
 
     let next_key = change_key(KEY, n);
     let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), max - U256::from(1));
@@ -434,7 +465,7 @@ fn u256_max_amounts_full_and_partial_spend() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         U256::from(1),
         change,
         max,
@@ -454,11 +485,11 @@ fn amounts_above_u128_full_and_partial_spend() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), owner(), note, 0, note, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), CONTEXT, note, 0, note, KEY, 0, path);
 
     let next_key = change_key(KEY, n);
     let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), remaining);
-    main(CHAIN_ID, root, n, asset(), owner(), spend, change, note, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), CONTEXT, spend, change, note, KEY, 0, path);
 }
 
 /// Limb hashing must distinguish values that folding into one `Field` aliases.
@@ -482,7 +513,7 @@ fn non_canonical_amount_limb_fails() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), owner(), bad, 0, bad, KEY, 0, path);
+    main(CHAIN_ID, root, n, asset(), CONTEXT, bad, 0, bad, KEY, 0, path);
 }
 
 #[test(should_fail)]
@@ -497,7 +528,7 @@ fn modulus_zero_encoding_fails() {
         root,
         n,
         asset(),
-        owner(),
+        CONTEXT,
         modulus,
         0,
         modulus,
@@ -508,11 +539,10 @@ fn modulus_zero_encoding_fails() {
 }
 
 /// `EthAddress::from_field` is what bounds a constructed address at 160 bits --
-/// check it actually bites. The ABI-supplied path is different: `asset` and
-/// `owner` arrive as structs, so no constructor runs on them and
-/// `validate()` in `main` is the only guard. That one cannot be reached from
-/// Noir (`inner` is private), so it is covered by `oversized_asset_is_rejected`
-/// in `outbe-zk-backend/tests/paynote.rs`.
+/// check it actually bites. The ABI-supplied path is different: `asset` arrives
+/// as a struct, so no constructor runs on it and `validate()` in `main` is the
+/// only guard. That one cannot be reached from Noir (`inner` is private), so it
+/// is covered by `oversized_asset_is_rejected` in `outbe-zk-backend/tests/paynote.rs`.
 #[test(should_fail)]
 fn address_above_160_bits_fails() {
     let _ = EthAddress::from_field(0x010000000000000000000000000000000000000000);

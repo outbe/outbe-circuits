@@ -53,7 +53,7 @@ fn circuit_public_inputs_convert_to_alloy_with_checked_ranges() {
         root: -Fr::from(1),
         nullifier: Fr::from(2),
         asset: Fr::from_be_bytes_mod_order(&[0xff; 20]),
-        owner: Fr::from_be_bytes_mod_order(&[0x22; 20]),
+        context: Fr::from(5),
         spend_amount: [(1u128 << 120) - 1, (1u128 << 120) - 1, 65535],
         change_commitment: Fr::from(3),
     };
@@ -64,23 +64,16 @@ fn circuit_public_inputs_convert_to_alloy_with_checked_ranges() {
         B256::from(U256::from_be_slice(&Fr::MODULUS.to_bytes_be()) - U256::from(1))
     );
     assert_eq!(alloy.asset, alloy_primitives::Address::from([0xff; 20]));
-    assert_eq!(alloy.owner, alloy_primitives::Address::from([0x22; 20]));
+    assert_eq!(alloy.context, B256::from(U256::from(5)));
     assert_eq!(alloy.spend_amount, U256::MAX);
     assert_eq!(paynote::PublicInputs::try_from(alloy).unwrap(), public);
 
-    for field in ["asset", "owner"] {
-        let mut invalid = public.clone();
-        let oversized = Fr::from_be_bytes_mod_order(&[1; 21]);
-        if field == "asset" {
-            invalid.asset = oversized;
-        } else {
-            invalid.owner = oversized;
-        }
-        assert!(matches!(
-            paynote::alloy::PublicInputs::try_from(invalid),
-            Err(Error::NonCanonical("address"))
-        ));
-    }
+    let mut invalid = public.clone();
+    invalid.asset = Fr::from_be_bytes_mod_order(&[1; 21]);
+    assert!(matches!(
+        paynote::alloy::PublicInputs::try_from(invalid),
+        Err(Error::NonCanonical("address"))
+    ));
     for (index, bits) in [(0, 120), (1, 120), (2, 16)] {
         let mut invalid = public.clone();
         invalid.spend_amount[index] = 1u128 << bits;
