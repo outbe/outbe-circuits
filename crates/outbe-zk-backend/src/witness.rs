@@ -20,22 +20,20 @@ use flate2::read::GzDecoder;
 use std::io::Read;
 
 use outbe_protocol::error::Error;
-use outbe_protocol::protocol::zk::{Circuit, CircuitId, CircuitSuite};
+use outbe_protocol::protocol::zk::{Circuit, CircuitId};
+use outbe_protocol::Fr;
 
-/// `ark_bn254::Fr` → the toolchain's `FieldElement`, via canonical big-endian
-/// bytes. Going through bytes keeps this independent of how the two crates'
-/// ark versions happen to unify.
-fn to_field(f: &ark_bn254::Fr) -> FieldElement {
+/// Convert the protocol's BN254 field into the toolchain's field representation.
+fn to_field(f: &Fr) -> FieldElement {
     FieldElement::from_repr(*f)
 }
 
 /// Lower a circuit's typed `(witness, public)` into the ACVM initial
 /// [`WitnessMap`]: every ABI input flattened in witness-index order
 /// ([`Circuit::witness_inputs`]), each at its `Witness(i)` slot.
-pub fn witness_map<S, C>(witness: &C::Witness, public: &C::PublicInputs) -> WitnessMap<FieldElement>
+pub fn witness_map<C>(witness: &C::Witness, public: &C::PublicInputs) -> WitnessMap<FieldElement>
 where
-    S: CircuitSuite,
-    C: Circuit<S>,
+    C: Circuit,
 {
     let mut map = WitnessMap::new();
     for (i, f) in C::witness_inputs(witness, public).iter().enumerate() {
@@ -57,13 +55,9 @@ fn program<C: CircuitId>() -> Result<Program<FieldElement>, Error> {
 /// the bytes a prover backend takes. Errors via [`Error::Proof`] if the circuit
 /// is unsatisfiable for these inputs (e.g. a bad signature or a mismatched
 /// owner), so this doubles as an in-protocol witness check.
-pub fn solved_witness<S, C>(
-    witness: &C::Witness,
-    public: &C::PublicInputs,
-) -> Result<Vec<u8>, Error>
+pub fn solved_witness<C>(witness: &C::Witness, public: &C::PublicInputs) -> Result<Vec<u8>, Error>
 where
-    S: CircuitSuite,
-    C: Circuit<S> + CircuitId,
+    C: Circuit + CircuitId,
 {
     let program = program::<C>()?;
     let circuit = program
@@ -75,7 +69,7 @@ where
     let mut acvm = ACVM::new(
         &solver,
         &circuit.opcodes,
-        witness_map::<S, C>(witness, public),
+        witness_map::<C>(witness, public),
         &program.unconstrained_functions,
         &circuit.assert_messages,
     );
@@ -104,10 +98,9 @@ where
 ///
 /// One materialization per field (field → padded 32-byte `Vec`); `to_bytes_be`
 /// is minimal-length, so each is left-padded to 32.
-pub fn public_inputs<S, C>(public: &C::PublicInputs) -> Vec<Vec<u8>>
+pub fn public_inputs<C>(public: &C::PublicInputs) -> Vec<Vec<u8>>
 where
-    S: CircuitSuite,
-    C: Circuit<S>,
+    C: Circuit,
 {
     C::public_inputs(public)
         .iter()

@@ -5,7 +5,7 @@ edition.workspace    = true
 authors.workspace    = true
 license.workspace    = true
 repository.workspace = true
-description = "Generic, pluggable consensus primitives for the Outbe protocol (curve/hash/signature/KDF are swappable suite parameters)."
+description = "BN254, Grumpkin, Poseidon2, and Schnorr primitives for the Outbe protocol."
 readme      = "README.md"
 keywords    = ["outbe", "poseidon", "bn254", "zero-knowledge", "consensus"]
 categories  = ["cryptography"]
@@ -23,7 +23,6 @@ ark-ff        = { workspace = true, features = ["asm", "parallel"] }
 ark-ec        = { workspace = true, features = ["parallel"] }
 ark-std       = { workspace = true, features = ["parallel"] }
 ark-serialize = { workspace = true }
-generic-array = { workspace = true }
 outbe-poseidon  = { workspace = true }
 blake2        = { workspace = true }
 alloy-primitives = { workspace = true, optional = true }

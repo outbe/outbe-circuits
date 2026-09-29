@@ -6,51 +6,30 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](../../LICENSE)
 
 **Single source of truth** for Outbe's entity, owner, payload, and wire-format
-logic, written once against a swappable cryptographic [`Suite`].
+logic over BN254 / Grumpkin, Poseidon2, and Grumpkin Schnorr.
 
-A `Suite` selects the curve, field hash, signature scheme, KDF, and key
-exchange. The production selection is **`OutbeV1`** (BN254 / Grumpkin,
-Poseidon2, Grumpkin Schnorr).
+`Fr` is re-exported from the crate root. Cryptographic types are concrete;
+entity, signer, circuit, and backend traits describe application interfaces
+rather than selectable cryptographic suites.
 
 ## Architecture
 
-The crate is four layers, bottom to top. Each layer only depends on the one
-below it, so swapping a primitive never touches the protocol logic.
+The existing module paths separate encoding, concrete primitives, and protocol
+operations:
 
 | Layer | Module | Responsibility |
 | ----- | ------ | -------------- |
-| **codec** | `codec` | `Codec` byte conventions + the `FieldElement` / `FieldEncode` encoding seam — how a typed value becomes one or more field elements. |
-| **primitive** | `primitive::{curve, hash, signature, kdf, exchange}` | The swappable crypto traits and their instances: the embedded Grumpkin curve, the Poseidon2 field hash, Grumpkin Schnorr, the KDF, and the key-exchange "consent box". |
-| **protocol** | `protocol::{entity, key, imt, zk}` | Entity hashing, NFT keys/signers, the insertion Merkle tree, and core ZK traits and proof types. |
-| **suite** | `suite` (+ `OutbeV1` at the crate root) | The `Suite` trait selects primitives and supplies `derive_owner`, `nft_hash`, `signing_payload`, and domain-separated `binding`. |
+| **codec** | `codec` | Canonical byte functions and the `FieldElement` / `FieldEncode` traits — how a typed value becomes one or more BN254 field elements. |
+| **primitive** | `primitive::{curve, hash, signature, kdf, exchange}` | Concrete Grumpkin operations, Poseidon2 hash formulas, Schnorr signatures, KDF, and ECDH consent box. |
+| **protocol** | `protocol::{entity, key, imt, zk}` | Entity hashing, NFT keys/signers, the insertion Merkle tree, and circuit/prover/verifier interfaces. |
 
-### What a `Suite` fixes
-
-```rust
-pub trait Suite: 'static {
-    type Field: PrimeField;                                   // proving field — BN254 Fr
-    type Curve: EmbeddedCurve<Base = Self::Field>;            // signature curve — Grumpkin
-    type Hash: FieldHasher<Self::Field>;                      // field hash — Poseidon2
-    type Signature: SignatureScheme<Field = Self::Field, ..>; // Grumpkin Schnorr
-    type Kdf: Kdf<Self::Field>;
-    type Exchange: KeyExchange<Self::Field>;                  // consent box
-    const DOMAIN: u64 = 0;                                    // protocol-version tag (OutbeV1 = 1)
-
-    // Formulas — default methods; a suite overrides only what differs.
-    fn derive_owner(pk: &Affine<Self::Curve>, nonce: Self::Field) -> Result<Self::Field, Error>;
-    fn nft_hash(id: Self::Field, body: &[Self::Field]) -> Result<Self::Field, Error>;
-    fn signing_payload(nft_hash: Self::Field, nonce: Self::Field, binding: Self::Field) -> Result<Self::Field, Error>;
-    fn binding(sender: &[u8; 20], commitment_id: &[u8; 32], host_chain_id: u64, l2_chain_id: u64) -> Result<Self::Field, Error>;
-}
-```
 
 ### Identity vs submission context
 
-`DOMAIN` is folded into `binding` — and therefore into every signature
-(`signing_payload`) and the proof's public inputs — so the protocol version
-is bound into the whole submission/proof path. It is deliberately **not** folded
-into `derive_owner` or the entity hashes: an NFT keeps its identity across suite
-versions, while a submission is unambiguously tied to one version.
+`primitive::hash::BINDING_DOMAIN` remains `1` and is folded into `binding` —
+and therefore into each signed submission. It is deliberately not folded into
+`derive_owner` or the entity hashes. The concrete-API refactor changes neither
+these preimages nor any frozen circuit, verification key, or proof layout.
 
 ### The ZK boundary
 
@@ -73,17 +52,15 @@ outbe-protocol-derive = "0.8"   # for #[derive(Entity)]
 ### Protocol formulas
 
 ```rust
-use outbe_protocol::{OutbeV1, Suite};
+use outbe_protocol::primitive::hash;
 
-// Associated functions on the suite (generic over S: Suite); each returns
-// Result<S::Field, Error>. OutbeV1 is the production selection.
-let owner   = OutbeV1::derive_owner(&pk, nonce)?;                   // H(pk.x, pk.y, nonce)
-let binding = OutbeV1::binding(&sender, &commitment_id, host_chain_id, l2_chain_id)?;
-let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;  // the field the owner signs
+let owner   = hash::derive_owner(&pk, nonce)?;
+let binding = hash::binding(&sender, &commitment_id, host_chain_id, l2_chain_id)?;
+let payload = hash::signing_payload(nft_hash, nonce, binding)?;
 // sender: &[u8; 20]   commitment_id: &[u8; 32]   host_chain_id, l2_chain_id: u64
 ```
 
-`binding` hashes `[DOMAIN, sender, cid_lo128, cid_hi128, host_chain_id, l2_chain_id]`,
+`binding` hashes `[BINDING_DOMAIN, sender, cid_lo128, cid_hi128, host_chain_id, l2_chain_id]`,
 with the commitment ID's low 128-bit limb first. The verifier recomputes it from
 the caller, commitment ID, its own host chain, and the selected L2. The L2 chain
 ID is required: this six-input formula replaces the former five-input formula,
@@ -98,17 +75,18 @@ outside the target type's range. Custom `FieldElement` implementations must
 provide both `to_field` and `from_field`.
 
 ```rust
-use outbe_protocol::{FieldElement, OutbeV1, Suite};
+use outbe_protocol::{FieldElement, Fr};
 
-let field: <OutbeV1 as Suite>::Field = 42u64.to_field()?;
+let field: Fr = 42u64.to_field()?;
 let value = u64::from_field(&field)?;
 // With the alloy feature: B256::from_field(&field), Address::from_field(&field).
 ```
 
-With the `alloy` feature, `Codec::fields_from_u256` and `Codec::fields_to_u256`
+With the `alloy` feature, `codec::fields_from_u256` and `codec::fields_to_u256`
 convert full-width amounts using the same three `[120, 120, 16]`-bit limbs as
-`FieldEncode` and `u256_limbs_be`. They replace the singular `field_from_u256`
-and `field_to_u256` helpers. `B256` remains the type for a single field word.
+`FieldEncode` and `u256_limbs_be`. `B256` remains the type for a single field word.
+Key codec functions also live in `codec`; compressed public/secret keys use
+32-byte arrays and preserve the existing arkworks compressed encoding.
 
 ### Entity hashing with `#[derive(Entity)]`
 
@@ -117,7 +95,7 @@ hash preimage off per-field roles instead of a hand-built `Vec<Field>`. See
 [`outbe-protocol-derive`](../outbe-protocol-derive) for the full role reference.
 
 ```rust
-use outbe_protocol::{OutbeV1, protocol::entity::{Entity, Owned}};
+use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol_derive::Entity;
 use alloy_primitives::{Address, B256, U256};   // needs the `alloy` feature
 
@@ -126,12 +104,17 @@ struct SpendingUnit {
     #[outbe(id_seed)]              id: B256,
     #[outbe(body, owner, pos = 0)] derived_owner: B256,
     #[outbe(body, pos = 1)]        attester: Address,
-    #[outbe(body, pos = 2)]        amount: U256,   // `[120, 120, 16]`-bit limbs
+    #[outbe(body, limbed, pos = 2)] amount: U256,   // `[120, 120, 16]`-bit limbs
 }
 
-let su = SpendingUnit { /* … */ };
-let hash  = Entity::<OutbeV1>::entity_hash(&su)?;  // id = H(id_seed, id_body…); hash = H(id, body…)
-let owner = Owned::<OutbeV1>::owner(&su)?;          // the stored derivedOwner
+let su = SpendingUnit {
+    id: B256::ZERO,
+    derived_owner: B256::ZERO,
+    attester: Address::ZERO,
+    amount: U256::from(100),
+};
+let hash = su.entity_hash()?;  // id = H(id_seed, id_body…); hash = H(id, body…)
+let owner = su.owner()?;      // the stored derivedOwner
 ```
 
 ### Signing an ownership statement
@@ -140,39 +123,45 @@ The secret key stays encapsulated inside the `Signer`; you get a public key and
 signatures, never the raw scalar.
 
 ```rust
-use outbe_protocol::{OutbeV1, Suite, protocol::key::{NftSigner, Signer}};
+use outbe_protocol::{primitive::hash, protocol::key::{NftSigner, Signer}};
 
-let signer  = Signer::<OutbeV1>::local(&mut rng)?;     // fresh NFT key (self-issuance)
-let pk      = signer.public_key();
-let owner   = OutbeV1::derive_owner(&pk, nonce)?;
+let signer = Signer::local(&mut rng)?;
+let pk = signer.public_key();
+let nonce = signer.owner_seed().nonce;
+let owner = hash::derive_owner(&pk, nonce)?;
 
-let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7, 0xdead)?;
-let payload = OutbeV1::signing_payload(nft_hash, nonce, binding)?;
-let sig     = signer.sign(&mut rng, payload)?;       // Grumpkin Schnorr — satisfies the in-circuit verifier
+let binding = hash::binding(&[1u8; 20], &[2u8; 32], 7, 0xdead)?;
+let payload = hash::signing_payload(nft_hash, nonce, binding)?;
+let sig = signer.sign(&mut rng, payload)?; // Grumpkin Schnorr, verified in-circuit
 ```
 
-### A custom suite
+### Remote signer issuance
 
-Implement `Suite` to swap any primitive. The formulas are default methods, so a
-new suite typically only restates the associated types it changes and bumps
-`DOMAIN`:
+The consent-box flow remains available with concrete Grumpkin keys:
 
 ```rust
-struct MySuite;
-impl Suite for MySuite {
-    type Field = ark_bn254::Fr;
-    type Curve = /* … */;
-    type Hash  = /* … */;
-    type Signature = /* … */;
-    type Kdf = /* … */;
-    type Exchange = /* … */;
-    const DOMAIN: u64 = 2;
-    // derive_owner / binding / nft_hash / signing_payload inherited as defaults.
-}
+use outbe_protocol::{primitive::exchange, protocol::key::Signer};
+
+let (consent_sk, consent_pk) = exchange::random_keypair(&mut rng);
+let (seed, opaque_pk) = Signer::issue_for_remote(&mut rng, &consent_pk)?;
+let signer = Signer::from_exchange(&consent_sk, &opaque_pk, seed.nonce)?;
 ```
 
-The test-only `Mock` suite in `tests/suite_battery.rs` shows the full shape and
-exercises the cross-suite pluggability.
+The server returns public artifacts only and wipes its ephemeral and derived
+secrets. The recipient reconstructs the same NFT signing key through ECDH.
+
+### Migrating callers
+
+- Remove `Suite`, `CircuitSuite`, and `OutbeV1` imports and type arguments.
+- Call `primitive::hash` functions for formulas and `codec` functions for byte
+  conversions. Use `primitive::signature` and `primitive::exchange` for key operations.
+- Use concrete `Signer`, `Entity`, `Owned`, `Imt`, `InclusionPath`, and
+  `ShieldedPool` APIs; encoding traits no longer take a field parameter.
+- Implement `Circuit`, `ProofGenerator<C>`, and `ProofVerifier<C>` without a
+  suite parameter. The circuit type remains generic.
+- Keep `id_seed` and `id_body` roles: the entity id is still folded before its
+  body. Merkle `append` still returns the index and `Append` record, and the
+  stateless frontier API is retained.
 
 ## Verifying releases
 

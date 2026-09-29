@@ -1,203 +1,135 @@
-//! NFT key derivation — generic over the suite.
+//! NFT signing keys and the static-ECDH consent box on Grumpkin.
 //!
-//! A [`Signer`] is the one key primitive, encapsulating the NFT secret and
-//! exposing only the public [`OwnerSeed`] (the embedded public key + nonce
-//! that feed `derivedOwner`) and a signing operation. Three constructors
-//! cover the real flows:
-//!
-//! - [`Signer::local`] — local self-issuance: fresh key + nonce generated
-//!   internally (e.g. a Tribute Draft).
-//! - [`Signer::issue_for_remote`] — **server** side of the static-ECDH consent
-//!   box: holding only the recipient's `consent_pk`, derive the NFT key,
-//!   return the public [`OwnerSeed`] + the `opaque_pk` transcript, and
-//!   **destroy** the secret (forward secrecy). The server never retains a
-//!   signer.
-//! - [`Signer::from_exchange`] — **client** side: reconstruct the same NFT
-//!   secret from the retained `consent_sk`, the received `opaque_pk`, and
-//!   the nonce (DH symmetry), keeping it encapsulated.
-//!
-//! The box mechanic: server computes `nft_sk = KDF(([opaque_sk]·consent_pk).x,
-//! nonce)`; the client recomputes the same shared point as
-//! `[consent_sk]·opaque_pk`, so `nft_sk` never crosses the wire.
+//! A [`Signer`] encapsulates the NFT secret and exposes an [`OwnerSeed`] plus
+//! signing operations. [`Signer::local`] generates a fresh key and nonce.
+//! [`Signer::issue_for_remote`] derives a key for the recipient and destroys
+//! the server's secrets; [`Signer::from_exchange`] reconstructs that same key
+//! on the client. Both sides derive `KDF(shared_point.x, nonce)`, so the NFT
+//! secret never crosses the wire.
 
 use ark_std::rand::Rng;
 use ark_std::UniformRand;
 use zeroize::Zeroize;
 
 use crate::error::Error;
-use crate::primitive::curve::{base_to_scalar, Affine};
-use crate::primitive::exchange::KeyExchange;
-use crate::primitive::kdf::Kdf;
-use crate::primitive::signature::{EmbeddedSignature, SignatureScheme};
-use crate::suite::Suite;
+use crate::primitive::curve::{base_to_scalar, Affine, Scalar};
+use crate::primitive::{exchange, hash, kdf, signature};
+use crate::Fr;
 
-/// Convenience alias: the signing secret key type of a suite.
-pub type SecretKeyOf<S> = <<S as Suite>::Signature as SignatureScheme>::SecretKey;
-
-/// A stored secret scalar that wipes itself on drop and is never *implicitly*
-/// copied.
+/// A stored secret scalar that wipes itself on drop and is never implicitly copied.
 ///
-/// arkworks field elements (`Fr`) are `Copy` and *do* implement [`Zeroize`],
-/// but they never zeroize on drop: a `Copy` type cannot have a `Drop` impl, and
-/// `Copy` lets the compiler duplicate the value into temporaries a later
-/// `.zeroize()` can't reach. Holding a secret in this non-`Copy` newtype from
-/// the moment it is produced keeps it to a single, drop-wiped location instead
-/// of leaking copies the optimizer makes. Read it only by reference via
-/// [`expose`](Self::expose) for the curve arithmetic that needs it; never move
-/// or copy the inner value back out.
-///
-/// Caveat: this cannot un-`Copy` the scalar itself, so transient copies made by
-/// the arithmetic that consumes `expose()` (`[sk]·G`, `e·sk`) still live until
-/// their stack frames are reused. The guarantee is for the *stored* key, which
-/// is the long-lived target.
-pub struct SecretScalar<T: Zeroize>(T);
+/// The underlying arkworks scalar is `Copy` and implements [`Zeroize`], but
+/// cannot wipe itself on drop. Keeping it in this non-`Copy` wrapper protects
+/// the stored key. Read it only through [`expose`](Self::expose); arithmetic
+/// may still produce transient scalar copies outside the wrapper.
+pub struct SecretScalar(Scalar);
 
-impl<T: Zeroize> SecretScalar<T> {
-    /// Wrap a freshly-produced secret scalar.
-    pub fn new(secret: T) -> Self {
+impl SecretScalar {
+    pub fn new(secret: Scalar) -> Self {
         Self(secret)
     }
 
     /// Borrow the inner scalar for curve arithmetic. Do not copy it out.
-    pub fn expose(&self) -> &T {
+    pub fn expose(&self) -> &Scalar {
         &self.0
     }
 }
 
-impl<T: Zeroize> Drop for SecretScalar<T> {
+impl Drop for SecretScalar {
     fn drop(&mut self) {
         self.0.zeroize();
     }
 }
 
-impl<T: Zeroize> zeroize::ZeroizeOnDrop for SecretScalar<T> {}
+impl zeroize::ZeroizeOnDrop for SecretScalar {}
 
-/// The data that determines `derivedOwner`: the NFT public key (on the
-/// embedded curve) and its nonce.
-pub struct OwnerSeed<S: Suite> {
-    /// `nft_pk` on the embedded curve.
-    pub pk: Affine<S::Curve>,
-    /// Per-NFT nonce.
-    pub nonce: S::Field,
+/// The public key and nonce committed by `derivedOwner`.
+pub struct OwnerSeed {
+    pub pk: Affine,
+    pub nonce: Fr,
 }
 
-impl<S: Suite> OwnerSeed<S> {
-    /// `derivedOwner = owner_commit(pk, nonce)`.
-    pub fn derive_owner(&self) -> Result<S::Field, Error> {
-        S::derive_owner(&self.pk, self.nonce)
+impl OwnerSeed {
+    pub fn derive_owner(&self) -> Result<Fr, Error> {
+        hash::derive_owner(&self.pk, self.nonce)
     }
 }
 
 /// A retained NFT secret key, held in a wiping [`SecretScalar`].
-pub struct NftSecret<S: Suite> {
-    /// The signing secret. Private + zeroizing: construct via [`NftSecret::new`]
-    /// and read it only through [`public_key`](Self::public_key) / signing.
-    sk: SecretScalar<SecretKeyOf<S>>,
+pub struct NftSecret {
+    sk: SecretScalar,
 }
 
-impl<S: Suite> NftSecret<S> {
+impl NftSecret {
     /// Wrap a raw signing secret so it zeroizes on drop.
-    pub fn new(sk: SecretKeyOf<S>) -> Self {
+    pub fn new(sk: Scalar) -> Self {
         Self {
             sk: SecretScalar::new(sk),
         }
     }
-}
 
-impl<S> NftSecret<S>
-where
-    S: Suite,
-    S::Signature: EmbeddedSignature<S::Curve>,
-{
     /// `pk = [sk]·G`.
-    pub fn public_key(&self) -> Result<Affine<S::Curve>, Error> {
-        S::Signature::public_key(self.sk.expose())
+    pub fn public_key(&self) -> Result<Affine, Error> {
+        signature::public_key(self.sk.expose())
     }
 }
 
-/// A source of NFT signing authority that **never exposes the secret key**
-/// to the caller. It is bound to an [`OwnerSeed`] (the public key + nonce
-/// that `derivedOwner` commits to) and signs the ownership payload,
-/// keeping the secret inside. Implemented by the encapsulating [`Signer`];
-/// a custom impl can back signing with an HSM or a remote signer.
+/// NFT signing authority without exposing its secret key.
 ///
-/// Because the signer carries the nonce, `ownership_witness` takes only the
-/// signer — there is no separate nonce argument to keep in sync.
-pub trait NftSigner<S: Suite> {
-    /// The owner seed (public key + nonce) this signer is bound to.
-    fn owner_seed(&self) -> &OwnerSeed<S>;
-    /// Sign the ownership `payload`.
-    fn sign<R: Rng>(
-        &self,
-        rng: &mut R,
-        payload: S::Field,
-    ) -> Result<<S::Signature as SignatureScheme>::Signature, Error>;
-    /// The NFT public key (its coords are bound via `derivedOwner`).
-    fn public_key(&self) -> Affine<S::Curve> {
+/// Custom implementations can back signing with an HSM or a remote signer.
+/// The nonce lives in the owner seed so it cannot drift from the signer.
+pub trait NftSigner {
+    fn owner_seed(&self) -> &OwnerSeed;
+    fn sign<R: Rng>(&self, rng: &mut R, payload: Fr) -> Result<[u8; 64], Error>;
+    fn public_key(&self) -> Affine {
         self.owner_seed().pk
     }
 }
 
-/// An NFT signer that keeps its secret key **encapsulated** — the caller
-/// gets one of these instead of a raw key. Construct it with
-/// [`Signer::local`] (self-issuance), [`Signer::from_exchange`] (client
-/// side of the consent box), or [`Signer::from_secret`] (bind an existing
-/// key). The server side of the consent box uses [`Signer::issue_for_remote`],
-/// which returns the public artifacts *without* a retained signer.
+/// An NFT signer with an encapsulated secret.
 ///
-/// The public [`OwnerSeed`] is reached via [`NftSigner::owner_seed`]. Prove
-/// ownership by passing `&Signer` where an [`NftSigner`] is expected. If the
-/// caller genuinely needs the raw key (e.g. to persist it),
-/// [`Signer::secret`] / [`Signer::into_secret`] hand it over explicitly.
-pub struct Signer<S: Suite> {
-    secret: NftSecret<S>,
-    seed: OwnerSeed<S>,
+/// Construct locally, reconstruct through the consent box, or bind a stored
+/// [`NftSecret`]. [`secret`](Self::secret) and [`into_secret`](Self::into_secret)
+/// hand the wrapped key over explicitly when it must be retained elsewhere.
+pub struct Signer {
+    secret: NftSecret,
+    seed: OwnerSeed,
 }
 
-impl<S> Signer<S>
-where
-    S: Suite,
-    S::Signature: EmbeddedSignature<S::Curve>,
-{
-    /// Local self-issuance: generate a fresh NFT key + nonce internally.
+impl Signer {
+    /// Local self-issuance: generate a fresh NFT key and nonce.
     pub fn local(rng: &mut impl Rng) -> Result<Self, Error> {
-        let (sk, pk) = S::Signature::keypair(rng);
-        let nonce = S::Field::rand(rng);
+        let (sk, pk) = signature::keypair(rng);
+        let nonce = Fr::rand(rng);
         Ok(Self {
             secret: NftSecret::new(sk),
             seed: OwnerSeed { pk, nonce },
         })
     }
 
-    /// Server side of the consent box: holding only the recipient's
-    /// `consent_pk`, derive the NFT key via static ECDH, and return the
-    /// public [`OwnerSeed`] (→ `derivedOwner` to publish) plus the
-    /// `opaque_pk` transcript to ship. The NFT secret and the ephemeral
-    /// `opaque_sk` are dropped here — forward secrecy — so no signer is
-    /// returned (the *remote* reconstructs one via [`Signer::from_exchange`]).
-    pub fn issue_for_remote<X: KeyExchange<S::Field>>(
+    /// Server side: derive an NFT key using the recipient's consent public key.
+    /// Returns only public artifacts; the ephemeral and NFT secrets wipe on drop.
+    pub fn issue_for_remote(
         rng: &mut impl Rng,
-        consent_pk: &X::Public,
-    ) -> Result<(OwnerSeed<S>, X::Public), Error> {
-        let (opaque_sk, opaque_pk) = X::random_keypair(rng);
-        let nonce = S::Field::rand(rng);
+        consent_pk: &Affine,
+    ) -> Result<(OwnerSeed, Affine), Error> {
+        let (opaque_sk, opaque_pk) = exchange::random_keypair(rng);
+        let nonce = Fr::rand(rng);
         let opaque_sk = SecretScalar::new(opaque_sk);
-        let shared = X::shared(opaque_sk.expose(), consent_pk)?;
-        let nft_sk = SecretScalar::new(derive_nft_secret::<S>(shared, nonce)?);
-        let pk = S::Signature::public_key(nft_sk.expose())?;
-        // opaque_sk and nft_sk zeroize on drop here (forward secrecy).
+        let shared = exchange::shared(opaque_sk.expose(), consent_pk)?;
+        let nft_sk = SecretScalar::new(derive_nft_secret(shared, nonce)?);
+        let pk = signature::public_key(nft_sk.expose())?;
         Ok((OwnerSeed { pk, nonce }, opaque_pk))
     }
 
-    /// Client side of the consent box: reconstruct the NFT secret from the
-    /// retained `consent_sk`, the received `opaque_pk`, and the nonce.
-    pub fn from_exchange<X: KeyExchange<S::Field>>(
-        consent_sk: &X::Secret,
-        opaque_pk: &X::Public,
-        nonce: S::Field,
+    /// Client side: reconstruct the NFT secret from the consent-box transcript.
+    pub fn from_exchange(
+        consent_sk: &Scalar,
+        opaque_pk: &Affine,
+        nonce: Fr,
     ) -> Result<Self, Error> {
-        let shared = X::shared(consent_sk, opaque_pk)?;
-        let secret = NftSecret::new(derive_nft_secret::<S>(shared, nonce)?);
+        let shared = exchange::shared(consent_sk, opaque_pk)?;
+        let secret = NftSecret::new(derive_nft_secret(shared, nonce)?);
         let pk = secret.public_key()?;
         Ok(Self {
             secret,
@@ -205,9 +137,8 @@ where
         })
     }
 
-    /// Bind an existing NFT secret to the `nonce` its `derivedOwner`
-    /// commits to (recomputes the public key).
-    pub fn from_secret(secret: NftSecret<S>, nonce: S::Field) -> Result<Self, Error> {
+    /// Bind an existing NFT secret to its owner-commitment nonce.
+    pub fn from_secret(secret: NftSecret, nonce: Fr) -> Result<Self, Error> {
         let pk = secret.public_key()?;
         Ok(Self {
             secret,
@@ -215,42 +146,27 @@ where
         })
     }
 
-    /// Borrow the encapsulated NFT secret (e.g. to persist it to a keystore).
-    pub fn secret(&self) -> &NftSecret<S> {
+    pub fn secret(&self) -> &NftSecret {
         &self.secret
     }
 
-    /// Consume the signer and hand back the NFT secret.
-    pub fn into_secret(self) -> NftSecret<S> {
+    pub fn into_secret(self) -> NftSecret {
         self.secret
     }
 }
 
-impl<S> NftSigner<S> for Signer<S>
-where
-    S: Suite,
-    S::Signature: EmbeddedSignature<S::Curve>,
-{
-    fn owner_seed(&self) -> &OwnerSeed<S> {
+impl NftSigner for Signer {
+    fn owner_seed(&self) -> &OwnerSeed {
         &self.seed
     }
-    fn sign<R: Rng>(
-        &self,
-        rng: &mut R,
-        payload: S::Field,
-    ) -> Result<<S::Signature as SignatureScheme>::Signature, Error> {
-        S::Signature::sign(rng, self.secret.sk.expose(), payload)
+
+    fn sign<R: Rng>(&self, rng: &mut R, payload: Fr) -> Result<[u8; 64], Error> {
+        signature::sign(rng, self.secret.sk.expose(), payload)
     }
 }
 
-/// Map a KDF output (base field) into the embedded scalar field and adopt
-/// it as a signing secret: the shared `nft_sk` construction.
-fn derive_nft_secret<S>(shared: S::Field, nonce: S::Field) -> Result<SecretKeyOf<S>, Error>
-where
-    S: Suite,
-    S::Signature: EmbeddedSignature<S::Curve>,
-{
-    let kdf_out = S::Kdf::derive(&[shared, nonce])?;
-    let scalar = base_to_scalar::<S::Curve>(&kdf_out);
-    Ok(S::Signature::secret_from_scalar(scalar))
+/// Map the consent-box KDF output into Grumpkin's scalar field.
+fn derive_nft_secret(shared: Fr, nonce: Fr) -> Result<Scalar, Error> {
+    let kdf_out = kdf::derive(&[shared, nonce])?;
+    Ok(base_to_scalar(&kdf_out))
 }

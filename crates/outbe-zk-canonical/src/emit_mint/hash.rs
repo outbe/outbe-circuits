@@ -20,16 +20,16 @@
 use crate::emit_mint::{Field, Pool, Tree};
 #[cfg(feature = "alloy")]
 use alloy_primitives::{Address, U256};
-use outbe_protocol::{codec::field_from_be_bytes, error::Error, OutbeV1, Suite};
 #[cfg(feature = "alloy")]
-use outbe_protocol::{Codec, FieldElement};
+use outbe_protocol::{codec, FieldElement};
+use outbe_protocol::{codec::field_from_be_bytes, error::Error, primitive::hash};
 
 /// Big-endian ASCII domain; 9 bytes fit in the proving field.
 pub const EMIT_DOMAIN: &str = "OUTBE_EMIT";
 
 /// The circuit's domain as a field element.
 pub fn emit_domain() -> Field {
-    OutbeV1::ascii_field(EMIT_DOMAIN)
+    hash::ascii_field(EMIT_DOMAIN)
 }
 
 fn tag(base: Field) -> Result<Field, Error> {
@@ -76,7 +76,7 @@ pub fn note_sn_raw(note_owner: [u8; 20], note_spend_key: Field) -> Result<Field,
 /// amount injective across the BN254 field boundary.
 #[cfg(feature = "alloy")]
 pub fn note_commitment(chain_id: u64, note_sn: Field, note_amount: U256) -> Result<Field, Error> {
-    let [lo, mid, hi] = OutbeV1::fields_from_u256(&note_amount)?;
+    let [lo, mid, hi] = codec::fields_from_u256(&note_amount)?;
     Pool::hash_multi(
         tag_commitment()?,
         &[chain_id.to_field()?, note_sn, lo, mid, hi],

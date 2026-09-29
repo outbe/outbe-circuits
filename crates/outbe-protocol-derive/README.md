@@ -13,16 +13,16 @@ version.
 
 ## Architecture
 
-The macro emits, generic over `S: Suite`:
+The macro emits concrete BN254-field implementations:
 
-- `impl Entity<S>` — `id_seed()`, `encode_id_body()`, `encode_body()`. The
+- `impl Entity` — `id_seed()`, `encode_id_body()`, `encode_body()`. The
   protocol's default `entity_hash()` folds them: `id = H(id_seed, id_body…)`,
   then `hash = H(id, body…)`.
-- `impl Owned<S>` — `owner()`, emitted only when a field carries the `owner`
+- `impl Owned` — `owner()`, emitted only when a field carries the `owner`
   role.
 
-Field types must implement the encoding seam: `FieldElement<S::Field>` for the
-single-element roles (`id_seed`, `owner`) and `FieldEncode<S::Field>` for the
+Field types must implement the encoding seam: `FieldElement` for the
+single-element roles (`id_seed`, `owner`) and `FieldEncode` for the
 fold roles (`id_body`, `body`) — a `uint256`, for instance, uses the canonical
 three-limb `[120, 120, 16]`-bit representation. The `alloy` feature on
 `outbe-protocol` provides these impls for `Address` / `U256` / `B256`.
@@ -41,8 +41,8 @@ preimage must never silently omit a field.
 | `#[outbe(skip)]` | Explicitly excluded from the hash preimage. |
 | `#[outbe(pos = N)]` | Explicit fold position within the field's group (`body` or `id_body`). All-or-nothing per group; positions must be unique. Lets a struct mirroring a `sol!` layout fold in the protocol's canonical order regardless of declaration order. (`position` is an accepted alias.) |
 
-The struct must have named fields and no generic parameters — the suite `S` is
-introduced by the generated impl.
+The struct must have named fields and no generic parameters. Generated methods
+use `outbe_protocol::Fr`; the existing id/body fold and field roles are unchanged.
 
 ## Usage
 
@@ -53,7 +53,7 @@ outbe-protocol-derive = "0.8"
 ```
 
 ```rust
-use outbe_protocol::{OutbeV1, protocol::entity::{Entity, Owned}};
+use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol_derive::Entity;
 use alloy_primitives::{Address, B256, U256};   // needs outbe-protocol's `alloy` feature
 
@@ -62,13 +62,19 @@ struct SpendingUnit {
     #[outbe(id_seed)]              id: B256,
     #[outbe(body, owner, pos = 0)] derived_owner: B256,
     #[outbe(body, pos = 1)]        attester: Address,
-    #[outbe(body, pos = 5)]        base: U256,      // three canonical limbs
+    #[outbe(body, limbed, pos = 5)] base: U256,     // three canonical limbs
     #[outbe(skip)]                 cached_hash: B256,
 }
 
-let su = SpendingUnit { /* … */ };
-let hash  = Entity::<OutbeV1>::entity_hash(&su)?;
-let owner = Owned::<OutbeV1>::owner(&su)?;
+let su = SpendingUnit {
+    id: B256::ZERO,
+    derived_owner: B256::ZERO,
+    attester: Address::ZERO,
+    base: U256::from(100),
+    cached_hash: B256::ZERO,
+};
+let hash = su.entity_hash()?;
+let owner = su.owner()?;
 ```
 
 Declaration order is the fold order when no field sets `pos`; otherwise each

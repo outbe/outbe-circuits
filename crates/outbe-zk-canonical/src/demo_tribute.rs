@@ -7,22 +7,24 @@
 //! frozen artifacts, hashes and VKs still apply.
 //!
 //! The witness builder ([`DemoTributeProvable::derive_demo_tribute_witness`])
-//! extends the ownership witness with a depth-[`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH)
+//! extends the ownership witness with a depth-[`INCLUSION_DEPTH`]
 //! inclusion path against the perpetual TributeDraft commitment tree (the
-//! suite-generic [`Imt`](outbe_protocol::protocol::imt::Imt) in the core). The
+//! [`Imt`](outbe_protocol::protocol::imt::Imt) in the core). The
 //! leaf is the entity's `nft_hash` itself — matching the on-chain tree, which
 //! stores the entity hash directly — so the inclusion is over the same value
-//! the ownership constraint binds. Generic over any [`CircuitSuite`].
+//! the ownership constraint binds.
 
 use ark_ff::PrimeField;
 use ark_std::rand::Rng;
 
 use outbe_protocol::error::Error;
 use outbe_protocol::primitive::curve::coords;
+use outbe_protocol::primitive::hash;
 use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::imt::InclusionPath;
 use outbe_protocol::protocol::key::NftSigner;
 use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
+use outbe_protocol::Fr;
 
 #[cfg(feature = "alloy")]
 pub use crate::noir::demo_tribute::alloy;
@@ -33,7 +35,7 @@ pub use crate::noir::demo_tribute::{
 
 use crate::noir::demo_tribute::{DemoTribute, Witness};
 use crate::noir::EmbeddedCurvePoint;
-use crate::{CircuitSuite, INCLUSION_DEPTH};
+use crate::INCLUSION_DEPTH;
 
 /// Domain prepended to every Demo Tribute commitment-tree inner-node hash.
 ///
@@ -45,29 +47,29 @@ use crate::{CircuitSuite, INCLUSION_DEPTH};
 pub const DEMO_TRIBUTE_DOMAIN: &[u8; 18] = b"OUTBE_FULL_CIRCUIT";
 
 /// Demo Tribute commitment-tree domain as the canonical circuit field.
-pub fn demo_tribute_domain() -> ark_bn254::Fr {
-    ark_bn254::Fr::from_be_bytes_mod_order(DEMO_TRIBUTE_DOMAIN)
+pub fn demo_tribute_domain() -> Fr {
+    Fr::from_be_bytes_mod_order(DEMO_TRIBUTE_DOMAIN)
 }
 
 /// NFT extension: an owned entity can build the Demo Tribute witness (ownership
 /// and inclusion) and, given a backend, a proof. Blanket-implemented for every
-/// owned entity of a [`CircuitSuite`].
-pub trait DemoTributeProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
+/// owned entity.
+pub trait DemoTributeProvable: Entity + Owned {
     /// Build + sign the Demo Tribute witness: the ownership witness plus the
     /// Merkle inclusion `path` proving `nft_hash` sits in the commitment tree.
     /// The path must use [`DEMO_TRIBUTE_DOMAIN`] and have
-    /// [`INCLUSION_DEPTH`](crate::INCLUSION_DEPTH) levels. The
+    /// [`INCLUSION_DEPTH`] levels. The
     /// `merkle_root` public input is recomputed from the path.
     fn derive_demo_tribute_witness<R, K>(
         &self,
         rng: &mut R,
         signer: &K,
-        binding: S::Field,
-        path: &InclusionPath<S>,
+        binding: Fr,
+        path: &InclusionPath,
     ) -> Result<(Witness, PublicInputs), Error>
     where
         R: Rng,
-        K: NftSigner<S>,
+        K: NftSigner,
     {
         if path.depth() != INCLUSION_DEPTH {
             return Err(Error::Merkle(format!(
@@ -85,20 +87,20 @@ pub trait DemoTributeProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
         // Ownership: recompute owner from (pk, nonce), reject a mismatch, sign
         // the §4.2 payload — the same constraint the circuit enforces.
         let seed = signer.owner_seed();
-        let derived_owner = S::derive_owner(&seed.pk, seed.nonce)?;
+        let derived_owner = hash::derive_owner(&seed.pk, seed.nonce)?;
         if derived_owner != self.owner()? {
             return Err(Error::OwnerMismatch);
         }
         let nft_hash = self.entity_hash()?;
-        let payload = S::signing_payload(nft_hash, seed.nonce, binding)?;
+        let payload = hash::signing_payload(nft_hash, seed.nonce, binding)?;
         let signature = signer.sign(rng, payload)?;
-        let (x, y) = coords::<S::Curve>(&seed.pk)?;
+        let (x, y) = coords(&seed.pk)?;
 
         // Inclusion: the leaf IS `nft_hash` (the on-chain tree stores the entity
         // hash directly). Recompute the root the circuit will check against.
         let merkle_root = path.root(nft_hash)?;
 
-        let merkle_path_siblings: [S::Field; 32] = path
+        let merkle_path_siblings: [Fr; 32] = path
             .siblings
             .as_slice()
             .try_into()
@@ -129,14 +131,14 @@ pub trait DemoTributeProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
         &self,
         rng: &mut R,
         signer: &K,
-        binding: S::Field,
-        path: &InclusionPath<S>,
+        binding: Fr,
+        path: &InclusionPath,
         generator: &G,
     ) -> Result<G::Proof, Error>
     where
         R: Rng,
-        K: NftSigner<S>,
-        G: ProofGenerator<S, DemoTribute>,
+        K: NftSigner,
+        G: ProofGenerator<DemoTribute>,
     {
         let (witness, public) = self.derive_demo_tribute_witness(rng, signer, binding, path)?;
         generator.generate(&witness, &public)
@@ -149,16 +151,16 @@ pub trait DemoTributeProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
         &self,
         rng: &mut R,
         signer: &K,
-        binding: S::Field,
-        path: &InclusionPath<S>,
+        binding: Fr,
+        path: &InclusionPath,
         generator: &G,
         verifier: &V,
     ) -> Result<bool, Error>
     where
         R: Rng,
-        K: NftSigner<S>,
-        G: ProofGenerator<S, DemoTribute>,
-        V: ProofVerifier<S, DemoTribute, Proof = G::Proof>,
+        K: NftSigner,
+        G: ProofGenerator<DemoTribute>,
+        V: ProofVerifier<DemoTribute, Proof = G::Proof>,
     {
         let (witness, public) = self.derive_demo_tribute_witness(rng, signer, binding, path)?;
         let proof = generator.generate(&witness, &public)?;
@@ -166,20 +168,19 @@ pub trait DemoTributeProvable<S: CircuitSuite>: Entity<S> + Owned<S> {
     }
 }
 
-impl<S: CircuitSuite, E: Entity<S> + Owned<S> + ?Sized> DemoTributeProvable<S> for E {}
+impl<E: Entity + Owned + ?Sized> DemoTributeProvable for E {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ark_bn254::Fr;
-    use outbe_protocol::{Codec, OutbeV1};
+    use outbe_protocol::codec;
 
     #[test]
     fn generated_inputs_preserve_demo_tribute_names_and_order() {
         let fields = [11u64, 22, 33, 44].map(Fr::from);
         let mut proof = (PUBLIC_INPUT_COUNT as u32).to_be_bytes().to_vec();
         for field in fields {
-            proof.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+            proof.extend_from_slice(&codec::field_to_be_bytes(&field));
         }
         proof.resize(COMBINED_LEN, 0);
         let public = PublicInputs {

@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## Unreleased
+#### Breaking changes
+- Remove `Suite`, `CircuitSuite`, `OutbeV1`, and primitive-selection traits while preserving crate names and module paths. Protocol types and field encoding now use concrete BN254/Grumpkin crypto; formulas and codecs are module-level functions, and prover/verifier traits retain only the circuit parameter.
+- Preserve hash preimages, both chain IDs in binding, entity `id_seed`/`id_body` roles, remote signer issuance, Merkle frontier/append APIs, and all frozen circuit identities and proof layouts.
+
 - - -
 ## v0.25.0 - 2026-09-22
 #### Features

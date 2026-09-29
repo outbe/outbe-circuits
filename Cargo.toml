@@ -34,8 +34,6 @@ ark-ec        = { version = "0.6", default-features = false }
 ark-std       = { version = "0.6", default-features = false }
 ark-serialize = { version = "0.6", default-features = false }
 
-# Type-level byte-length sizing for the Codec key (de)serialization.
-generic-array = "1"
 # Pure-Rust BLAKE2s for the barretenberg-compatible Grumpkin Schnorr challenge.
 blake2        = { version = "0.10", default-features = false }
 alloy-primitives = { version = "1", default-features = false }

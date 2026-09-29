@@ -1,18 +1,18 @@
-//! Barretenberg backend (feature `barretenberg`): UltraHonkKeccak proving and
+//! Barretenberg backend: UltraHonkKeccak proving and
 //! verification over the canonical circuits, via `barretenberg-rs`'s FFI
 //! (`libbb-external`) — no `bb` subprocess, so it runs on-device.
 //!
 //! Mirrors the reference `outbe-zk-circuit-noir` backend: keccak oracle hash for
-//! on-chain (EVM) verification ([`settings_ultra_honk_keccak`]) and an optional
-//! **low-memory mode** ([`configure_memory`]) that file-backs barretenberg's
+//! on-chain (EVM) verification and an optional
+//! **low-memory mode** that file-backs barretenberg's
 //! polynomials (~2× slower, much less RAM — for proving on constrained
 //! devices). Bytecode and witness are handed to bb **uncompressed** (the
 //! committed bytecode and `WitnessStack::serialize()` are gzipped; bb wants raw
 //! msgpack).
 //!
-//! Thin shell: [`witness::solved_witness`](crate::witness::solved_witness)
+//! Thin shell: [`witness::solved_witness`]
 //! produces the ACVM-solved witness, this hands it to `circuit_prove` with the
-//! circuit's committed bytecode + VK ([`CircuitId`](outbe_zk_canonical::CircuitId));
+//! circuit's committed bytecode + VK ([`CircuitId`]);
 //! verification re-derives the public inputs from the claim and calls
 //! `circuit_verify`. Pinned to `barretenberg-rs` =5.0.0-nightly.20260522,
 //! matching the `bb` that writes the committed VKs (`-t evm-no-zk`).
@@ -27,9 +27,7 @@ use base64::Engine;
 use flate2::read::GzDecoder;
 
 use outbe_protocol::error::Error;
-use outbe_protocol::protocol::zk::{
-    Circuit, CircuitId, CircuitSuite, ProofGenerator, ProofVerifier,
-};
+use outbe_protocol::protocol::zk::{Circuit, CircuitId, ProofGenerator, ProofVerifier};
 
 use crate::witness;
 
@@ -180,10 +178,9 @@ impl Barretenberg {
     }
 }
 
-impl<S, C> ProofGenerator<S, C> for Barretenberg
+impl<C> ProofGenerator<C> for Barretenberg
 where
-    S: CircuitSuite,
-    C: Circuit<S> + CircuitId,
+    C: Circuit + CircuitId,
 {
     type Proof = Proof;
 
@@ -193,7 +190,7 @@ where
         public: &C::PublicInputs,
     ) -> Result<Self::Proof, Error> {
         // Pure (ACVM solve + decode) — no bb global state, so outside the lock.
-        let solved = witness::solved_witness::<S, C>(witness, public)?;
+        let solved = witness::solved_witness::<C>(witness, public)?;
         let acir = acir_buffer_uncompressed::<C>()?;
         let settings = settings_ultra_honk_keccak(self.disable_zk);
 
@@ -216,15 +213,14 @@ where
     }
 }
 
-impl<S, C> ProofVerifier<S, C> for Barretenberg
+impl<C> ProofVerifier<C> for Barretenberg
 where
-    S: CircuitSuite,
-    C: Circuit<S> + CircuitId,
+    C: Circuit + CircuitId,
 {
     type Proof = Proof;
 
     fn verify(&self, public: &C::PublicInputs, proof: &Self::Proof) -> Result<bool, Error> {
-        let public_inputs = witness::public_inputs::<S, C>(public);
+        let public_inputs = witness::public_inputs::<C>(public);
         let acir = acir_buffer_uncompressed::<C>()?;
         let settings = settings_ultra_honk_keccak(self.disable_zk);
 

@@ -4,7 +4,7 @@ use alloy_primitives::{B256, U256};
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
 use outbe_protocol::error::Error;
-use outbe_protocol::{protocol::zk::Circuit, Codec, OutbeV1};
+use outbe_protocol::{codec, protocol::zk::Circuit};
 use outbe_zk_canonical::noir;
 
 fn word(value: u64) -> B256 {
@@ -27,7 +27,7 @@ fn alloy_public_inputs_convert_back_to_circuit_abi() {
                 let fields: Vec<_> = (1..=c::PUBLIC_INPUT_COUNT).map(|i| Fr::from(i as u64)).collect();
                 let mut proof = (fields.len() as u32).to_be_bytes().to_vec();
                 for field in &fields {
-                    proof.extend_from_slice(&OutbeV1::field_to_be_bytes(field));
+                    proof.extend_from_slice(&codec::field_to_be_bytes(field));
                 }
                 let proof_words: Vec<_> = (0..c::PROOF_WORDS).map(|i| vec![i as u8; 32]).collect();
                 proof.extend(proof_words.iter().flatten());
@@ -35,7 +35,7 @@ fn alloy_public_inputs_convert_back_to_circuit_abi() {
                 let alloy: c::alloy::PublicInputs = decoded.clone().try_into().unwrap();
                 let public: c::PublicInputs = alloy.try_into().unwrap();
                 assert_eq!(public, decoded);
-                assert_eq!(<c::$marker as Circuit<OutbeV1>>::public_inputs(&public), fields);
+                assert_eq!(<c::$marker as Circuit>::public_inputs(&public), fields);
             }
         )+};
     }

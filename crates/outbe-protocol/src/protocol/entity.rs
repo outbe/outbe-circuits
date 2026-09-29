@@ -13,44 +13,44 @@
 //! field roles.
 
 use crate::error::Error;
-use crate::suite::Suite;
+use crate::{primitive::hash, Fr};
 
-/// A hashable entity, generic over the suite's field.
+/// A hashable entity over BN254 field elements.
 ///
-/// An entity says *what* to hash and in *what* order; the suite's `Hash`
-/// does the folding, so an entity never says *how*. `id_seed` plus
+/// An entity says what to hash and in what order; Poseidon2 performs the fold.
+/// `id_seed` plus
 /// `encode_id_body` fold to the id; the id plus `encode_body` fold to the
 /// entity hash.
-pub trait Entity<S: Suite> {
+pub trait Entity {
     /// Seed of the id accumulator (a single field element). Fallible
     /// because the seed may be a `bytes32` that must decode canonically.
-    fn id_seed(&self) -> Result<S::Field, Error>;
+    fn id_seed(&self) -> Result<Fr, Error>;
     /// Append the fields folded onto the seed to produce the id (push
     /// nothing if the id is stored directly, e.g. a random id).
-    fn encode_id_body(&self, out: &mut Vec<S::Field>) -> Result<(), Error>;
+    fn encode_id_body(&self, out: &mut Vec<Fr>) -> Result<(), Error>;
     /// Append the entity body, folded from the id to produce the hash.
-    fn encode_body(&self, out: &mut Vec<S::Field>) -> Result<(), Error>;
+    fn encode_body(&self, out: &mut Vec<Fr>) -> Result<(), Error>;
 
     /// The entity id (rolling-hash seed of the entity hash).
-    fn id(&self) -> Result<S::Field, Error> {
+    fn id(&self) -> Result<Fr, Error> {
         let mut body = Vec::new();
         self.encode_id_body(&mut body)?;
-        S::nft_hash(self.id_seed()?, &body)
+        hash::nft_hash(self.id_seed()?, &body)
     }
 
     /// The canonical entity hash.
-    fn entity_hash(&self) -> Result<S::Field, Error> {
+    fn entity_hash(&self) -> Result<Fr, Error> {
         let mut body = Vec::new();
         self.encode_body(&mut body)?;
-        S::nft_hash(self.id()?, &body)
+        hash::nft_hash(self.id()?, &body)
     }
 }
 
 /// An entity that carries a `derivedOwner`.
-pub trait Owned<S: Suite> {
+pub trait Owned {
     /// The stored owner commitment. Fallible for the same reason as
     /// [`Entity::id_seed`]: it may decode from a `bytes32`.
-    fn owner(&self) -> Result<S::Field, Error>;
+    fn owner(&self) -> Result<Fr, Error>;
 }
 
 /// The ownership-relevant projection of an entity: its id, `derivedOwner`,
@@ -63,32 +63,32 @@ pub trait Owned<S: Suite> {
 /// It is an [`Entity`] whose hash is *already known*: `entity_hash` returns
 /// the stored value, so ownership-witness derivation works on a receipt
 /// with no access to the original body.
-pub struct OwnershipReceipt<S: Suite> {
+pub struct OwnershipReceipt {
     /// Stored entity id
-    pub id: S::Field,
+    pub id: Fr,
     /// Stored `derivedOwner`.
-    pub owner: S::Field,
+    pub owner: Fr,
     /// Precomputed entity hash.
-    pub nft_hash: S::Field,
+    pub nft_hash: Fr,
 }
 
-impl<S: Suite> Entity<S> for OwnershipReceipt<S> {
-    fn id_seed(&self) -> Result<S::Field, Error> {
+impl Entity for OwnershipReceipt {
+    fn id_seed(&self) -> Result<Fr, Error> {
         Ok(self.id)
     }
-    fn encode_id_body(&self, _out: &mut Vec<S::Field>) -> Result<(), Error> {
+    fn encode_id_body(&self, _out: &mut Vec<Fr>) -> Result<(), Error> {
         Ok(())
     }
-    fn encode_body(&self, _out: &mut Vec<S::Field>) -> Result<(), Error> {
+    fn encode_body(&self, _out: &mut Vec<Fr>) -> Result<(), Error> {
         Ok(())
     }
     // The hash is known up front; skip the body fold entirely.
-    fn entity_hash(&self) -> Result<S::Field, Error> {
+    fn entity_hash(&self) -> Result<Fr, Error> {
         Ok(self.nft_hash)
     }
 }
-impl<S: Suite> Owned<S> for OwnershipReceipt<S> {
-    fn owner(&self) -> Result<S::Field, Error> {
+impl Owned for OwnershipReceipt {
+    fn owner(&self) -> Result<Fr, Error> {
         Ok(self.owner)
     }
 }

@@ -1,23 +1,20 @@
 //! Concrete canonical circuit and witness types for the Outbe protocol.
 //!
-//! The generic core (`outbe-protocol`) defines only the seams — the
+//! The core (`outbe-protocol`) defines the seams — the
 //! [`Circuit`](outbe_protocol::protocol::zk::Circuit),
 //! [`ProofGenerator`](outbe_protocol::protocol::zk::ProofGenerator), and
 //! [`ProofVerifier`](outbe_protocol::protocol::zk::ProofVerifier) traits plus
-//! the `Suite` formulas. This crate supplies the *concrete* statements built
+//! concrete BN254/Grumpkin/Poseidon2/Schnorr formulas. This crate supplies the statements built
 //! on top of them, generated from the vendored noir circuits.
 //!
-//! The noir circuits fix the proving field to BN254, so the witness types are
-//! `ark_bn254::Fr`-based. Rather than hardcode `OutbeV1`, the circuit layer is
-//! generic over [`CircuitSuite`] — any suite on the BN254/Grumpkin cycle that
-//! signs with the in-circuit 64-byte Grumpkin Schnorr. `OutbeV1` satisfies it;
-//! a future same-cycle `OutbeV2` would reuse the same circuits.
+//! The noir circuits and Rust witness types use the same concrete BN254 field
+//! and 64-byte Grumpkin Schnorr signatures as the protocol.
 //!
 //! The [`noir`] module is **build-generated** at compile time from committed
 //! frozen artifacts in `resources/circuits/`; normal builds do not invoke
 //! `nargo` or `bb`. Per circuit it derives Rust `Witness` / `PublicInputs`
-//! types, a marker type with a generic
-//! [`Circuit<S>`](outbe_protocol::protocol::zk::Circuit) impl + a suite-independent
+//! types, a marker type with a
+//! [`Circuit`](outbe_protocol::protocol::zk::Circuit) impl + a
 //! [`CircuitId`] identity impl, and the canonical descriptor
 //! constants (`LABEL` / `VERSION` / `CIRCUIT_HASH` / `BYTECODE_B64` /
 //! `VK_BYTES` / `VK_HASH`).
@@ -31,13 +28,12 @@ pub mod paynote;
 
 /// The circuit seams live in the core (`outbe-protocol`), so a noir backend can be
 /// generic over circuits without depending on this crate. Re-exported here for
-/// convenience — `outbe_zk_canonical::{CircuitSuite, CircuitId}` and the
-/// build-generated `crate::{…}` impls keep resolving.
-pub use outbe_protocol::protocol::zk::{CircuitId, CircuitSuite};
+/// convenience and the build-generated identity implementations.
+pub use outbe_protocol::protocol::zk::CircuitId;
 
 /// Depth of the perpetual TributeDraft commitment tree — the chain's
 /// `CommitmentWindowBase.TREE_DEPTH` and the `demo_tribute` circuit's Merkle path
-/// length. The generic [`outbe_protocol::protocol::imt::Imt`] is depth-agnostic;
+/// length. The [`outbe_protocol::protocol::imt::Imt`] is depth-agnostic;
 /// this pins the canonical depth the Demo Tribute circuit is built for.
 pub const INCLUSION_DEPTH: usize = 32;
 

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project shape
 
-Rust workspace (version `0.11.0`, edition 2021) for the Outbe zero-knowledge protocol: pluggable consensus primitives, a Noir/barretenberg proving backend, and a frozen, versioned canonical circuit registry. Members:
+Rust workspace (version `0.25.0`, edition 2021) for the Outbe zero-knowledge protocol: concrete consensus cryptography, a Noir/barretenberg proving backend, and a frozen, versioned canonical circuit registry. Members:
 
-- `crates/outbe-protocol` — Generic, pluggable consensus primitives. The curve / hash / signature / KDF are swappable `Suite` parameters; `OutbeV1` is the production selection (BN254 / Grumpkin / Poseidon2 / Schnorr). Owns the generic verifier envelope and combined-proof validation; concrete circuit layouts stay downstream. Hashing routes through **`outbe-poseidon`** (git dep, tag `v0.11.0`). `rlib`. Optional `alloy` feature adds field-encoding impls for alloy ABI scalars.
+- `crates/outbe-protocol` — Concrete BN254 / Grumpkin / Poseidon2 / Schnorr consensus primitives. Exposes `Fr`, module-level formulas in `primitive::hash`, and concrete entity/signer/Merkle types under the existing module paths. No `Suite` or `OutbeV1` selector remains. Owns the verifier envelope and combined-proof validation; concrete circuit layouts stay downstream. Hashing routes through **`outbe-poseidon`**. `rlib`. Optional `alloy` feature adds field-encoding impls for alloy ABI scalars.
 - `crates/outbe-protocol-derive` — `#[derive(Entity)]` proc-macro. Per-field `#[outbe(...)]` roles (`id_seed` / `id_body` / `body` / `owner` / `skip` / `limbed` / `pos = N`) generate the canonical entity-hash preimage. Exercised by the protocol crate's tests.
 - `crates/outbe-zk-backend` — Noir proving backend: a shared ACVM witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier, generic over the `outbe-protocol` ZK seams. `publish = false` (consumes noir git deps + native libs). Feature `with-network-srs` (on by default) pulls `reqwest` for the Aztec SRS download fallback; `default-features = false` is the offline/mobile build.
 - `crates/outbe-zk-canonical` — Concrete canonical circuit/witness types, circuit-specific DemoTribute/Emit/Paynote combined-proof decoders, and the in-code append-only versioned circuit registry. Builds from committed frozen artifacts (no git/noir deps), so it ships to crates.io and `cargo build` is deterministic with or without the noir toolchain. `INCLUSION_DEPTH = 32`.
@@ -19,7 +19,7 @@ Rust workspace (version `0.11.0`, edition 2021) for the Outbe zero-knowledge pro
 - `circuits/manifest.toml` — append-only registry index: a global `proof_system` (the bb pin, `bb-keccak-v1`) plus one `[[circuit]]` per `(module, version)` with `label`, `status` (`active` / `deprecated` / `revoked`), and a preserved `circuit_hash` once bytecode is dropped.
 - `resources/circuits/<module>/<version>/` — frozen, immutable artifacts: `bytecode.b64` (ACIR, active only), `abi.json` (drives the Rust witness types, active only), `circuit.vk` (kept while not revoked).
 
-and emits into `outbe_zk_canonical::noir`: a `pub mod <module>` for the latest **active** version of each circuit (Witness / PublicInputs types + `Circuit<S>`/`CircuitId` impls + identity consts) and `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** non-revoked version (VK-only verification view). Identity is cryptographic: `circuit_hash = keccak256(decode(bytecode.b64))`, `vk_hash = keccak256(circuit.vk)` — **labels do not affect either hash**.
+and emits into `outbe_zk_canonical::noir`: a `pub mod <module>` for the latest **active** version of each circuit (Witness / PublicInputs types + `Circuit`/`CircuitId` impls + identity consts) and `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** non-revoked version (VK-only verification view). Identity is cryptographic: `circuit_hash = keccak256(decode(bytecode.b64))`, `vk_hash = keccak256(circuit.vk)` — **labels do not affect either hash**.
 
 ### Noir sub-projects under `crates/outbe-zk-canonical/noir/`
 

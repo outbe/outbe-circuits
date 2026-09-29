@@ -40,7 +40,12 @@
 //!
 //! Every field must carry a `#[outbe(...)]` attribute: a consensus preimage
 //! must not silently omit a field. The struct must have named fields and
-//! no generic parameters (the suite `S` is introduced by the impl).
+//! no generic parameters; generated methods use `outbe_protocol::Fr`.
+//!
+//! [`outbe_protocol::protocol::entity::Entity`]: https://docs.rs/outbe-protocol/latest/outbe_protocol/protocol/entity/trait.Entity.html
+//! [`outbe_protocol::codec::SortedSet`]: https://docs.rs/outbe-protocol/latest/outbe_protocol/codec/struct.SortedSet.html
+//! [`outbe_protocol::FieldElement`]: https://docs.rs/outbe-protocol/latest/outbe_protocol/codec/trait.FieldElement.html
+//! [`outbe_protocol::FieldEncode`]: https://docs.rs/outbe-protocol/latest/outbe_protocol/codec/trait.FieldEncode.html
 //!
 //! ```ignore
 //! #[derive(Entity)]
@@ -184,11 +189,11 @@ fn vec_elem(ty: &Type) -> Option<Type> {
 /// - scalar (default)      → a single `FieldElement` (exactly one element).
 fn emit_encode(ident: &Ident, ty: &Type, limbed: bool) -> proc_macro2::TokenStream {
     if vec_elem(ty).is_some() {
-        quote! { ::outbe_protocol::FieldEncode::<S::Field>::encode(&::outbe_protocol::codec::SortedSet(&self.#ident), out)?; }
+        quote! { ::outbe_protocol::FieldEncode::encode(&::outbe_protocol::codec::SortedSet(&self.#ident), out)?; }
     } else if limbed {
-        quote! { ::outbe_protocol::FieldEncode::<S::Field>::encode(&self.#ident, out)?; }
+        quote! { ::outbe_protocol::FieldEncode::encode(&self.#ident, out)?; }
     } else {
-        quote! { out.push(::outbe_protocol::FieldElement::<S::Field>::to_field(&self.#ident)?); }
+        quote! { out.push(::outbe_protocol::FieldElement::to_field(&self.#ident)?); }
     }
 }
 
@@ -196,7 +201,7 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     if !input.generics.params.is_empty() {
         return Err(syn::Error::new(
             input.generics.span(),
-            "#[derive(Entity)] requires a struct with no generic parameters; the suite `S` is introduced by the generated impl",
+            "#[derive(Entity)] requires a struct with no generic parameters",
         ));
     }
     let name = &input.ident;
@@ -276,9 +281,9 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         let key = (single, quote!(#ty).to_string());
         if seen.insert(key) {
             predicates.push(if single {
-                quote!(#ty: ::outbe_protocol::FieldElement<S::Field>)
+                quote!(#ty: ::outbe_protocol::FieldElement)
             } else {
-                quote!(#ty: ::outbe_protocol::FieldEncode<S::Field>)
+                quote!(#ty: ::outbe_protocol::FieldEncode)
             });
         }
     };
@@ -300,19 +305,19 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
     let body_encode = body.iter().map(|(i, (t, l))| emit_encode(i, t, *l));
 
     let entity_impl = quote! {
-        impl<S: ::outbe_protocol::Suite> ::outbe_protocol::protocol::entity::Entity<S> for #name
+        impl ::outbe_protocol::protocol::entity::Entity for #name
         where #(#predicates),*
         {
-            fn id_seed(&self) -> ::core::result::Result<S::Field, ::outbe_protocol::error::Error> {
-                <#seed_ty as ::outbe_protocol::FieldElement<S::Field>>::to_field(&self.#seed_ident)
+            fn id_seed(&self) -> ::core::result::Result<::outbe_protocol::Fr, ::outbe_protocol::error::Error> {
+                <#seed_ty as ::outbe_protocol::FieldElement>::to_field(&self.#seed_ident)
             }
-            fn encode_id_body(&self, out: &mut ::std::vec::Vec<S::Field>)
+            fn encode_id_body(&self, out: &mut ::std::vec::Vec<::outbe_protocol::Fr>)
                 -> ::core::result::Result<(), ::outbe_protocol::error::Error>
             {
                 #( #id_body_encode )*
                 ::core::result::Result::Ok(())
             }
-            fn encode_body(&self, out: &mut ::std::vec::Vec<S::Field>)
+            fn encode_body(&self, out: &mut ::std::vec::Vec<::outbe_protocol::Fr>)
                 -> ::core::result::Result<(), ::outbe_protocol::error::Error>
             {
                 #( #body_encode )*
@@ -323,11 +328,11 @@ fn expand(input: DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
 
     let owned_impl = owner.map(|(owner_ident, owner_ty)| {
         quote! {
-            impl<S: ::outbe_protocol::Suite> ::outbe_protocol::protocol::entity::Owned<S> for #name
-            where #owner_ty: ::outbe_protocol::FieldElement<S::Field>
+            impl ::outbe_protocol::protocol::entity::Owned for #name
+            where #owner_ty: ::outbe_protocol::FieldElement
             {
-                fn owner(&self) -> ::core::result::Result<S::Field, ::outbe_protocol::error::Error> {
-                    <#owner_ty as ::outbe_protocol::FieldElement<S::Field>>::to_field(&self.#owner_ident)
+                fn owner(&self) -> ::core::result::Result<::outbe_protocol::Fr, ::outbe_protocol::error::Error> {
+                    <#owner_ty as ::outbe_protocol::FieldElement>::to_field(&self.#owner_ident)
                 }
             }
         }

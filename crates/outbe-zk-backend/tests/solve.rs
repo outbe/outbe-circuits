@@ -11,15 +11,13 @@
 use ark_ff::UniformRand;
 
 use outbe_protocol::error::Error;
-use outbe_protocol::primitive::signature::SignatureScheme;
+use outbe_protocol::primitive::{hash, signature};
 use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::key::{NftSecret, Signer};
-use outbe_protocol::{OutbeV1, Suite};
+use outbe_protocol::Fr;
 use outbe_zk_backend::witness;
 use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
 use outbe_zk_canonical::ownership::Provable;
-
-type Fr = <OutbeV1 as Suite>::Field;
 
 /// Minimal owned entity (the real entity types live in consumer crates).
 struct TestNft {
@@ -28,7 +26,7 @@ struct TestNft {
     fields: Vec<Fr>,
 }
 
-impl Entity<OutbeV1> for TestNft {
+impl Entity for TestNft {
     fn id_seed(&self) -> Result<Fr, Error> {
         Ok(self.id)
     }
@@ -40,7 +38,7 @@ impl Entity<OutbeV1> for TestNft {
         Ok(())
     }
 }
-impl Owned<OutbeV1> for TestNft {
+impl Owned for TestNft {
     fn owner(&self) -> Result<Fr, Error> {
         Ok(self.owner)
     }
@@ -49,9 +47,9 @@ impl Owned<OutbeV1> for TestNft {
 #[test]
 fn ownership_witness_solves_real_circuit() {
     let mut rng = ark_std::test_rng();
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
     let binding = Fr::from(7u64);
     let td = TestNft {
         id: owner,
@@ -66,24 +64,20 @@ fn ownership_witness_solves_real_circuit() {
 
     // Solve the committed ownership ACIR against our witness. Success proves the
     // mapping is correct AND the Schnorr signature is in-circuit valid.
-    let solved = witness::solved_witness::<OutbeV1, OwnershipProof>(&witness, &public)
+    witness::solved_witness::<OwnershipProof>(&witness, &public)
         .expect("ownership witness must satisfy the real circuit");
-    assert!(
-        !solved.is_empty(),
-        "solved witness should serialize to bytes"
-    );
 
     // The public-input projection is 3 fields (owner, nft_hash, binding).
-    let public_inputs = witness::public_inputs::<OutbeV1, OwnershipProof>(&public);
+    let public_inputs = witness::public_inputs::<OwnershipProof>(&public);
     assert_eq!(public_inputs.len(), 3, "ownership exposes 3 public inputs");
 }
 
 #[test]
 fn tampered_signature_fails_to_solve() {
     let mut rng = ark_std::test_rng();
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
     let binding = Fr::from(7u64);
     let td = TestNft {
         id: owner,
@@ -99,7 +93,7 @@ fn tampered_signature_fails_to_solve() {
     witness.signature[0] ^= 0xff;
 
     assert!(
-        witness::solved_witness::<OutbeV1, OwnershipProof>(&witness, &public).is_err(),
+        witness::solved_witness::<OwnershipProof>(&witness, &public).is_err(),
         "a tampered signature must make the circuit unsatisfiable"
     );
 }

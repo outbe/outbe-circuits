@@ -13,15 +13,13 @@
 //! `C` necessarily agree on the witness and public-input types.
 
 use crate::error::Error;
-use crate::primitive::curve::Grumpkin;
-use crate::primitive::signature::{EmbeddedSignature, SignatureScheme};
-use crate::suite::Suite;
+use crate::Fr;
 
 /// A circuit / statement: the binding between a *witness* (the private
 /// inputs the circuit constrains) and the *public inputs* (the claim the
 /// proof attests). The two are separate types — the public inputs are not
 /// derived from the witness here; the prover supplies both.
-pub trait Circuit<S: Suite> {
+pub trait Circuit {
     /// The private witness the circuit constrains.
     type Witness;
     /// The public inputs (the claim) the circuit exposes.
@@ -31,7 +29,7 @@ pub trait Circuit<S: Suite> {
     /// the values (owner / hashes / binding …) bound into the proof. The
     /// *verify-side* mapping (what the on-chain verifier checks the proof
     /// against).
-    fn public_inputs(public: &Self::PublicInputs) -> Vec<S::Field>;
+    fn public_inputs(public: &Self::PublicInputs) -> Vec<Fr>;
 
     /// Flatten the full witness — every ABI parameter (private and public, in
     /// `main()` declaration order; structs, arrays and byte elements expanded) —
@@ -42,41 +40,12 @@ pub trait Circuit<S: Suite> {
     /// Sits next to [`public_inputs`](Circuit::public_inputs) so the
     /// prover and verifier consume one build-derived source of truth and cannot
     /// drift from the ABI.
-    fn witness_inputs(witness: &Self::Witness, public: &Self::PublicInputs) -> Vec<S::Field>;
+    fn witness_inputs(witness: &Self::Witness, public: &Self::PublicInputs) -> Vec<Fr>;
 }
 
-/// A [`Suite`] usable with the canonical noir circuits. The circuits are
-/// compiled for the BN254/Grumpkin cycle and verify a 64-byte `s ‖ e` Grumpkin
-/// Schnorr in-circuit, so a compatible suite must select exactly those: field
-/// `ark_bn254::Fr`, curve [`Grumpkin`], and a signature scheme producing
-/// `[u8; 64]`. The circuit layer is generic over this bound instead of
-/// hardcoding `OutbeV1` — so `OutbeV1` and any future same-cycle `OutbeV2` both work.
-///
-/// Lives here (the circuit seam) rather than in the concrete circuit crate so a
-/// noir backend can be generic over circuits without depending on
-/// `outbe-circuits-canonical`.
-pub trait CircuitSuite:
-    Suite<
-    Field = ark_bn254::Fr,
-    Curve = Grumpkin,
-    Signature: EmbeddedSignature<Grumpkin> + SignatureScheme<Signature = [u8; 64]>,
->
-{
-}
-
-impl<S> CircuitSuite for S where
-    S: Suite<
-        Field = ark_bn254::Fr,
-        Curve = Grumpkin,
-        Signature: EmbeddedSignature<Grumpkin> + SignatureScheme<Signature = [u8; 64]>,
-    >
-{
-}
-
-/// The canonical on-chain identity of a circuit — content-derived and
-/// **suite-independent** (a circuit's bytecode/VK don't depend on which
-/// [`CircuitSuite`] proves it). Mirrors `outbe-circuits-canonical`'s
-/// `CircuitDescriptor`. Implemented (build-generated) by every circuit marker.
+/// The canonical on-chain identity of a circuit, derived from its content.
+/// Mirrors `outbe-zk-canonical`'s `CircuitDescriptor`. Implemented
+/// (build-generated) by every circuit marker.
 pub trait CircuitId {
     /// Canonical dotted label, e.g. `outbe.ownership` / `demo.tribute`.
     const LABEL: &'static str;
@@ -95,7 +64,7 @@ pub trait CircuitId {
 
 /// A proof-generation backend for a specific [`Circuit`] — implemented by
 /// the proof crate (e.g. `outbe-circuits` for noir).
-pub trait ProofGenerator<S: Suite, C: Circuit<S>> {
+pub trait ProofGenerator<C: Circuit> {
     /// The proof representation this backend produces (bytes, a noir
     /// proof, …).
     type Proof;
@@ -110,7 +79,7 @@ pub trait ProofGenerator<S: Suite, C: Circuit<S>> {
 
 /// A proof-verification backend for a specific [`Circuit`] — implemented
 /// next to the verifier.
-pub trait ProofVerifier<S: Suite, C: Circuit<S>> {
+pub trait ProofVerifier<C: Circuit> {
     /// The proof representation this backend verifies.
     type Proof;
     /// Verify `proof` against `public`.

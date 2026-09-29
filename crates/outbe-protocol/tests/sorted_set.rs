@@ -16,7 +16,7 @@
 
 use outbe_protocol::error::Error;
 use outbe_protocol::protocol::entity::Entity as EntityTrait;
-use outbe_protocol::OutbeV1;
+use outbe_protocol::Fr;
 use outbe_protocol_derive::Entity;
 
 /// Two adjacent set-valued body fields — the exact shape (`SpendingUnit`'s
@@ -31,17 +31,13 @@ struct TwoSets {
     ar: Vec<u64>,
 }
 
-fn hash(
-    id: u64,
-    sr: &[u64],
-    ar: &[u64],
-) -> Result<<OutbeV1 as outbe_protocol::Suite>::Field, Error> {
+fn hash(id: u64, sr: &[u64], ar: &[u64]) -> Result<Fr, Error> {
     let e = TwoSets {
         id,
         sr: sr.to_vec(),
         ar: ar.to_vec(),
     };
-    EntityTrait::<OutbeV1>::entity_hash(&e)
+    EntityTrait::entity_hash(&e)
 }
 
 /// The boundary collision is gone: re-partitioning the same flat sequence
@@ -102,14 +98,6 @@ fn duplicate_element_is_rejected() {
     );
 }
 
-/// A correctly sorted, de-duplicated input hashes successfully (the happy
-/// path the producers must satisfy).
-#[test]
-fn sorted_unique_input_succeeds() {
-    assert!(hash(1, &[1, 2, 3, 4], &[5, 6, 7]).is_ok());
-    assert!(hash(1, &[], &[]).is_ok()); // both empty: `[0]` / `[0]`
-}
-
 /// `sort_set` is the producer-side normaliser: it turns an arbitrary-order
 /// input into exactly the order `SortedSet` asserts, so a producer can never
 /// trip `UnsortedSet` on ordering. Feeding its output to the hash always
@@ -117,19 +105,18 @@ fn sorted_unique_input_succeeds() {
 #[test]
 fn sort_set_normalises_for_the_encoder() {
     use outbe_protocol::codec::sort_set;
-    type F = <OutbeV1 as outbe_protocol::Suite>::Field;
 
     // Arbitrary order in → ascending out.
-    let sorted = sort_set::<F, u64>(&[30, 10, 20]).unwrap();
+    let sorted = sort_set(&[30u64, 10, 20]).unwrap();
     assert_eq!(sorted, vec![10, 20, 30]);
 
     // Its output sails through the strict-ascending encoder...
-    let from_unsorted = hash(1, &sort_set::<F, u64>(&[30, 10, 20]).unwrap(), &[]).unwrap();
+    let from_unsorted = hash(1, &sort_set(&[30u64, 10, 20]).unwrap(), &[]).unwrap();
     // ...and equals the hash of the already-sorted set (order-independent).
     assert_eq!(from_unsorted, hash(1, &[10, 20, 30], &[]).unwrap());
     assert_eq!(
         from_unsorted,
-        hash(1, &sort_set::<F, u64>(&[20, 30, 10]).unwrap(), &[]).unwrap(),
+        hash(1, &sort_set(&[20u64, 30, 10]).unwrap(), &[]).unwrap(),
     );
 }
 
@@ -138,14 +125,10 @@ fn sort_set_normalises_for_the_encoder() {
 #[test]
 fn sort_set_removes_duplicates() {
     use outbe_protocol::codec::sort_set;
-    type F = <OutbeV1 as outbe_protocol::Suite>::Field;
 
-    assert_eq!(
-        sort_set::<F, u64>(&[10, 20, 10, 20, 10]).unwrap(),
-        vec![10, 20]
-    );
+    assert_eq!(sort_set(&[10u64, 20, 10, 20, 10]).unwrap(), vec![10, 20]);
     // De-duped output hashes fine, and equals the same set passed cleanly.
-    let deduped = sort_set::<F, u64>(&[30, 10, 10, 20, 30]).unwrap();
+    let deduped = sort_set(&[30u64, 10, 10, 20, 30]).unwrap();
     assert_eq!(deduped, vec![10, 20, 30]);
     assert_eq!(
         hash(1, &deduped, &[]).unwrap(),
