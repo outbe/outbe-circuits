@@ -1,9 +1,7 @@
-use super::{
-    main,
-    paynote::{
-        change_key, empty_leaf, merkle_root, note_commitment, note_nullifier, note_sn,
-        PAYNOTE_DOMAIN,
-    },
+use super::main;
+use paynote_lib::{
+    change_key, empty_leaf, merkle_root, note_commitment, note_nullifier, note_sn,
+    PAYNOTE_DOMAIN,
 };
 use bignum::{BigNum, U256};
 use outbe_circuit_core::{hash, merkle_tree::{DEPTH, merkle_root_from_indices}};

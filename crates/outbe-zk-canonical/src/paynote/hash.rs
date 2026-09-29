@@ -1,7 +1,7 @@
 //! Rust mirror of the PayNote hash and tree formulas.
 //!
 //! Mirrors the frozen circuit formulas in
-//! `outbe-paynote-circuit/src/paynote.nr` and
+//! `outbe-paynote-lib/src/lib.nr` and
 //! `outbe-circuit-core/src/{hash,tags,merkle_tree}.nr`:
 //!
 //! - BN254 fields use canonical 32-byte big-endian encodings; a word that
