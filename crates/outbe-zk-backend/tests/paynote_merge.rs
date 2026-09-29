@@ -41,8 +41,8 @@ fn fixture(count: usize, amounts: [U256; 4]) -> (Witness, PublicInputs, Tree, U2
         public.nullifiers[i] = note_nullifier(commitment, key).unwrap();
         total = total.checked_add(amount).unwrap();
     }
-    for i in 0..count {
-        witness.auth_paths[i] = tree
+    for (i, auth_path) in witness.auth_paths.iter_mut().enumerate().take(count) {
+        *auth_path = tree
             .inclusion_path(i as u64)
             .unwrap()
             .siblings
