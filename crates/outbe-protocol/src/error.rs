@@ -2,10 +2,10 @@
 
 use thiserror::Error;
 
-/// Errors produced by suite primitives and protocol logic.
+/// Errors produced by cryptographic primitives and protocol logic.
 #[derive(Debug, Error)]
 pub enum Error {
-    /// A pluggable hash/KDF primitive failed.
+    /// A hash/KDF operation failed.
     #[error("hash error: {0}")]
     Hash(String),
 

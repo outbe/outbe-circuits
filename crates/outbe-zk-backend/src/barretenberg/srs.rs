@@ -31,7 +31,7 @@ static SRS_PATH_OVERRIDE: OnceLock<std::path::PathBuf> = OnceLock::new();
 
 /// Point the SRS loader at an explicit G1 `.dat` file. The embedding app calls
 /// this **once, before any proof** (e.g. with a bundled SRS asset path) so
-/// [`ensure_srs`] reads locally instead of downloading. Required when built
+/// the SRS loader reads locally instead of downloading. Required when built
 /// without `with-network-srs`; optional otherwise (it just overrides the cache
 /// location).
 pub fn set_srs_path(path: std::path::PathBuf) {

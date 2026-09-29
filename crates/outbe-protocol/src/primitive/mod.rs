@@ -1,5 +1,4 @@
-//! Swappable cryptographic primitives. Each is a trait plus one or more
-//! instances; a [`crate::suite::Suite`] selects one of each.
+//! BN254 / Grumpkin / Poseidon2 / Schnorr cryptographic primitives.
 
 pub mod curve;
 pub mod exchange;

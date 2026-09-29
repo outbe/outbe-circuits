@@ -1,12 +1,12 @@
 # outbe-circuits
 
-Rust workspace for the **Outbe zero-knowledge protocol**: pluggable consensus primitives, a Noir + barretenberg proving backend, and a frozen, versioned canonical circuit registry.
+Rust workspace for the **Outbe zero-knowledge protocol**: concrete BN254/Grumpkin consensus primitives, a Noir + barretenberg proving backend, and a frozen, versioned canonical circuit registry.
 
 ## Crates
 
 | Crate | What it is |
 |-------|------------|
-| [`outbe-protocol`](crates/outbe-protocol) | Generic, pluggable consensus primitives — curve / hash / signature / KDF are swappable `Suite` parameters. `OutbeV1` is the production selection (BN254 / Grumpkin / Poseidon2 / Schnorr). Hashing routes through [`outbe-poseidon`](https://github.com/outbe/outbe-poseidon). |
+| [`outbe-protocol`](crates/outbe-protocol) | Concrete BN254 / Grumpkin / Poseidon2 / Schnorr consensus primitives. Module-level formulas live in `primitive::hash`; entity, signer, circuit and backend interfaces remain extensible. Hashing routes through [`outbe-poseidon`](https://github.com/outbe/outbe-poseidon). |
 | [`outbe-protocol-derive`](crates/outbe-protocol-derive) | `#[derive(Entity)]` — maps a typed struct's `#[outbe(...)]`-annotated fields to the canonical entity-hash preimage. |
 | [`outbe-zk-backend`](crates/outbe-zk-backend) | Noir proving backend: an ACVM witness solver plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Generic over any circuit implementing the `outbe-protocol` zk seams. |
 | [`outbe-zk-canonical`](crates/outbe-zk-canonical) | Concrete canonical circuit/witness types **and** the in-code, append-only, versioned circuit registry. Builds from committed frozen artifacts — ships to crates.io, no Noir toolchain required. |

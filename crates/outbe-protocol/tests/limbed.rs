@@ -11,13 +11,10 @@
 //! commented `WithoutLimbed` struct below is that compile-fail (no `trybuild`
 //! dep, so it's documented rather than asserted).
 
-use ark_ff::PrimeField;
 use outbe_protocol::error::Error;
 use outbe_protocol::protocol::entity::Entity as EntityTrait;
-use outbe_protocol::{FieldElement, FieldEncode, OutbeV1, Suite};
+use outbe_protocol::{FieldElement, FieldEncode, Fr as F};
 use outbe_protocol_derive::Entity;
-
-type F = <OutbeV1 as Suite>::Field;
 
 /// A two-element scalar (a stand-in for a `uint256`): its `FieldEncode` emits
 /// two elements, and it is deliberately **not** a `FieldElement`, so it can
@@ -25,10 +22,10 @@ type F = <OutbeV1 as Suite>::Field;
 #[derive(Clone)]
 struct Pair(u64, u64);
 
-impl<Fp: PrimeField> FieldEncode<Fp> for Pair {
-    fn encode(&self, out: &mut Vec<Fp>) -> Result<(), Error> {
-        out.push(Fp::from(self.0));
-        out.push(Fp::from(self.1));
+impl FieldEncode for Pair {
+    fn encode(&self, out: &mut Vec<F>) -> Result<(), Error> {
+        out.push(F::from(self.0));
+        out.push(F::from(self.1));
         Ok(())
     }
 }
@@ -49,7 +46,7 @@ struct WithLimbed {
 // #[derive(Entity)]
 // struct WithoutLimbed {
 //     #[outbe(id_seed)] id: u64,
-//     #[outbe(body)]    wide: Pair, // ERROR: the trait bound `Pair: FieldElement<_>` is not satisfied
+//     #[outbe(body)]    wide: Pair, // ERROR: the trait bound `Pair: FieldElement` is not satisfied
 // }
 
 /// A default scalar contributes exactly one element (its `to_field`); a
@@ -63,18 +60,18 @@ fn limbed_uses_field_encode_width_default_is_single() {
         wide: Pair(11, 22),
     };
     let mut body = Vec::new();
-    EntityTrait::<OutbeV1>::encode_body(&e, &mut body).unwrap();
+    EntityTrait::encode_body(&e, &mut body).unwrap();
 
     // single → 1 element; limbed `Pair` → 2 elements ⇒ 3 total.
     assert_eq!(body.len(), 3, "expected 1 (single) + 2 (limbed) elements");
 
     // The default scalar is exactly its `to_field` (so single fields stay
     // hash-neutral vs. the old `FieldEncode`-of-a-single path).
-    assert_eq!(body[0], FieldElement::<F>::to_field(&7u64).unwrap());
+    assert_eq!(body[0], FieldElement::to_field(&7u64).unwrap());
 
     // The limbed scalar is exactly its `FieldEncode` output.
     let mut wide = Vec::new();
-    FieldEncode::<F>::encode(&Pair(11, 22), &mut wide).unwrap();
+    FieldEncode::encode(&Pair(11, 22), &mut wide).unwrap();
     assert_eq!(&body[1..3], &wide[..], "limbed field != its FieldEncode");
 }
 
@@ -86,7 +83,7 @@ fn alloy_u256_uses_the_noir_bignum_limb_layout() {
 
     let value: U256 = (U256::from(1) << 200) + U256::from(100);
     let mut encoded = Vec::new();
-    FieldEncode::<F>::encode(&value, &mut encoded).unwrap();
+    FieldEncode::encode(&value, &mut encoded).unwrap();
 
     let limbs = u256_limbs_be(&value.to_be_bytes::<32>());
     assert_eq!(limbs, [100, 1u128 << 80, 0]);

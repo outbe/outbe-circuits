@@ -14,7 +14,7 @@
 //!
 //! Output (`$OUT_DIR/noir_generated.rs`):
 //!   * `pub mod <module> { … }` for the **latest active** version of each module
-//!     — witness / public-input types + identity consts + `Circuit<S>` /
+//!     — witness / public-input types + identity consts + `Circuit` /
 //!     `CircuitId` impls (the prover-facing API; carries `BYTECODE_B64`).
 //!   * `pub const CIRCUIT_REGISTRY: &[crate::RegistryEntry]` over **every** entry
 //!     (all versions) — the verification view (VK only, no bytecode).
@@ -162,7 +162,7 @@ fn generate_header() -> String {
 /// Shared circuit types and their Alloy representation.
 fn generate_default_types() -> String {
     let mut generated = String::new();
-    generated.push_str("use ark_bn254::Fr;\n\n");
+    generated.push_str("use outbe_protocol::Fr;\n\n");
     generated.push_str("#[derive(Clone, Copy, Debug)]\n");
     generated.push_str("pub struct EmbeddedCurvePoint {\n    pub x: Fr,\n    pub y: Fr,\n}\n\n");
     generated.push_str(
@@ -421,7 +421,7 @@ fn generate_circuit_imports(params: &[Value], module: &str) -> String {
     {
         generated.push_str("    use super::EmbeddedCurvePoint;\n");
     }
-    generated.push_str("    use ark_bn254::Fr;\n\n");
+    generated.push_str("    use outbe_protocol::Fr;\n\n");
     generated
 }
 
@@ -471,7 +471,7 @@ fn generate_circuit_constants(l: &Loaded, params: &[Value], proof_system: &str) 
     generated
 }
 
-/// One generic input struct, with fields in ABI order.
+/// One circuit input struct, with fields in ABI order.
 fn generate_circuit_struct(params: &[Value], module: &str, name: &str, visibility: &str) -> String {
     let (doc, derives) = match visibility {
         "private" => ("Private (witness) inputs, in ABI order.", "Clone, Debug"),
@@ -511,16 +511,14 @@ fn generate_circuit_impl(params: &[Value], module: &str) -> String {
     let flatten = generate_public_input_fields(params);
     let abi_flat = generate_witness_input_fields(params, module);
     let mut generated = String::new();
-    generated
-        .push_str("    impl<S: crate::CircuitSuite> outbe_protocol::protocol::zk::Circuit<S> for ");
+    generated.push_str("    impl outbe_protocol::protocol::zk::Circuit for ");
     generated.push_str(&format!("{marker} {{\n"));
     generated.push_str("        type Witness = Witness;\n");
     generated.push_str("        type PublicInputs = PublicInputs;\n");
-    generated.push_str("        fn public_inputs(p: &PublicInputs) -> Vec<S::Field> {\n");
+    generated.push_str("        fn public_inputs(p: &PublicInputs) -> Vec<Fr> {\n");
     generated.push_str(&flatten);
     generated.push_str("        }\n");
-    generated
-        .push_str("        fn witness_inputs(w: &Witness, p: &PublicInputs) -> Vec<S::Field> {\n");
+    generated.push_str("        fn witness_inputs(w: &Witness, p: &PublicInputs) -> Vec<Fr> {\n");
     generated.push_str(&abi_flat);
     generated.push_str("        }\n");
     generated.push_str("    }\n\n");
@@ -530,7 +528,7 @@ fn generate_circuit_impl(params: &[Value], module: &str) -> String {
 
 /// Public-input field flattening body for Circuit::public_inputs.
 fn generate_public_input_fields(params: &[Value]) -> String {
-    let mut flatten = String::from("            let mut v: Vec<S::Field> = Vec::new();\n");
+    let mut flatten = String::from("            let mut v: Vec<Fr> = Vec::new();\n");
     for p in params {
         if p["visibility"].as_str() != Some("public") {
             continue;
@@ -550,7 +548,7 @@ fn generate_public_input_fields(params: &[Value]) -> String {
 
 /// Full ABI field flattening body for Circuit::witness_inputs.
 fn generate_witness_input_fields(params: &[Value], module: &str) -> String {
-    let mut abi_flat = String::from("            let mut v: Vec<S::Field> = Vec::new();\n");
+    let mut abi_flat = String::from("            let mut v: Vec<Fr> = Vec::new();\n");
     for p in params {
         let name = p["name"].as_str().unwrap();
         let src = match p["visibility"].as_str() {
@@ -678,10 +676,10 @@ fn generate_public_decoder(params: &[Value], module: &str) -> String {
         r#"
     /// Decode public inputs from the canonical combined-proof encoding.
     pub fn decode_public_inputs(combined_proof: &[u8]) -> Result<PublicInputs, outbe_protocol::Error> {{
-        use outbe_protocol::{{Codec, OutbeV1}};
+        use outbe_protocol::codec;
 {field_element}
         let words = outbe_protocol::protocol::zkproof::decode_public_words::<PUBLIC_INPUT_COUNT>(combined_proof, COMBINED_LEN)?;
-        let fields = words.map(|word| OutbeV1::field_from_be32(&word));
+        let fields = words.map(|word| codec::field_from_be32(&word));
         Ok(PublicInputs {{
 {decoded}        }})
     }}
@@ -697,7 +695,7 @@ fn generate_combined_proof_encoder(module: &str) -> String {
     /// Encode the public-input count (big-endian u32), ABI-ordered public
     /// words, and proof words. Each proof word must contain exactly 32 bytes.
     pub fn encode_combined_proof(public_inputs: PublicInputs, proof: Vec<Vec<u8>>) -> Result<Vec<u8>, outbe_protocol::Error> {{
-        use outbe_protocol::{{protocol::zk::Circuit, Codec, OutbeV1}};
+        use outbe_protocol::{{protocol::zk::Circuit, codec}};
         if proof.len() != PROOF_WORDS {{
             return Err(outbe_protocol::Error::Proof(format!(
                 "proof has {{}} words, expected {{}}", proof.len(), PROOF_WORDS
@@ -705,8 +703,8 @@ fn generate_combined_proof_encoder(module: &str) -> String {
         }}
         let mut combined = Vec::with_capacity(COMBINED_LEN);
         combined.extend_from_slice(&(PUBLIC_INPUT_COUNT as u32).to_be_bytes());
-        for field in <{marker} as Circuit<OutbeV1>>::public_inputs(&public_inputs) {{
-            combined.extend_from_slice(&OutbeV1::field_to_be_bytes(&field));
+        for field in <{marker} as Circuit>::public_inputs(&public_inputs) {{
+            combined.extend_from_slice(&codec::field_to_be_bytes(&field));
         }}
         for (index, word) in proof.into_iter().enumerate() {{
             if word.len() != 32 {{
@@ -769,7 +767,7 @@ fn generate_alloy_struct(params: &[Value], module: &str, name: &str, visibility:
     generated
 }
 
-/// Checked conversion from a generic circuit struct to its Alloy representation.
+/// Checked conversion from a circuit struct to its Alloy representation.
 fn generate_circuit_to_alloy_impl(
     params: &[Value],
     module: &str,
@@ -800,7 +798,7 @@ fn generate_circuit_to_alloy_impl(
 /// Reverse the ABI mapping without reducing addresses or truncating limbs.
 fn circuit_to_alloy(ty: &Value, expr: &str, module: &str) -> String {
     match ty["kind"].as_str() {
-        Some("field") => format!("<outbe_protocol::OutbeV1 as outbe_protocol::Codec>::field_to_b256(&{expr})?"),
+        Some("field") => format!("outbe_protocol::codec::field_to_b256(&{expr})?"),
         Some("array") if alloy_type(ty, module) != rust_type(ty, module) => {
             let inner = circuit_to_alloy(&ty["type"], "item", module);
             format!(
@@ -819,7 +817,7 @@ fn circuit_to_alloy(ty: &Value, expr: &str, module: &str) -> String {
                 format!("crate::noir::alloy::EmbeddedCurvePoint {{ {} }}", members.join(", "))
             }
             Some("outbe_circuit_core::types::EthAddress") => format!(
-                "<Address as outbe_protocol::FieldElement<ark_bn254::Fr>>::from_field(&{expr})?"
+                "<Address as outbe_protocol::FieldElement>::from_field(&{expr})?"
             ),
             Some("bignum::fields::U256::U256") => format!(
                 "U256::from_be_bytes(outbe_protocol::codec::u256_from_limbs_be({expr}).ok_or(outbe_protocol::Error::NonCanonical(\"uint256 limbs\"))?)"
@@ -868,7 +866,7 @@ fn generate_alloy_to_circuit_impl(
 fn alloy_to_circuit(ty: &Value, expr: &str, module: &str) -> String {
     match ty["kind"].as_str() {
         Some("field") => {
-            format!("<outbe_protocol::OutbeV1 as outbe_protocol::Codec>::field_from_b256(&{expr})?")
+            format!("outbe_protocol::codec::field_from_b256(&{expr})?")
         }
         Some("array") if alloy_type(ty, module) != rust_type(ty, module) => {
             let inner = alloy_to_circuit(&ty["type"], "item", module);
@@ -894,7 +892,7 @@ fn alloy_to_circuit(ty: &Value, expr: &str, module: &str) -> String {
                 )
             }
             Some("outbe_circuit_core::types::EthAddress") => {
-                format!("outbe_protocol::FieldElement::<ark_bn254::Fr>::to_field(&{expr})?")
+                format!("outbe_protocol::FieldElement::to_field(&{expr})?")
             }
             Some("bignum::fields::U256::U256") => {
                 format!("outbe_protocol::codec::u256_limbs_be(&{expr}.to_be_bytes::<32>())")
@@ -948,9 +946,9 @@ fn generate_abi_leaf(ty: &Value, expr: &str, indent: &str, depth: usize) -> Stri
                 "signed" => format!("{expr} as u64"),
                 other => panic!("unexpected integer sign {other}"),
             };
-            format!("{indent}v.push(S::Field::from({repr}));\n")
+            format!("{indent}v.push(Fr::from({repr}));\n")
         }
-        Some("boolean") => format!("{indent}v.push(S::Field::from({expr} as u64));\n"),
+        Some("boolean") => format!("{indent}v.push(Fr::from({expr} as u64));\n"),
         Some("array") => {
             let var = format!("__e{depth}");
             let body = generate_abi_leaf(&ty["type"], &var, &format!("{indent}    "), depth + 1);

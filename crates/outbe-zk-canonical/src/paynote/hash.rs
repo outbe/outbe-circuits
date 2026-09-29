@@ -25,16 +25,16 @@
 use crate::paynote::{Field, Pool, Tree};
 #[cfg(feature = "alloy")]
 use alloy_primitives::{Address, U256};
-use outbe_protocol::{codec::field_from_be_bytes, error::Error, OutbeV1, Suite};
 #[cfg(feature = "alloy")]
-use outbe_protocol::{Codec, FieldElement};
+use outbe_protocol::{codec, FieldElement};
+use outbe_protocol::{codec::field_from_be_bytes, error::Error, primitive::hash};
 
 /// Big-endian ASCII domain; 12 bytes fit in the proving field.
 pub const PAYNOTE_DOMAIN: &str = "OUTBE_PAYNOTE";
 
 /// The circuit's domain as a field element.
 pub fn paynote_domain() -> Field {
-    OutbeV1::ascii_field(PAYNOTE_DOMAIN)
+    hash::ascii_field(PAYNOTE_DOMAIN)
 }
 
 fn tag(base: Field) -> Result<Field, Error> {
@@ -59,7 +59,7 @@ pub fn note_commitment(
     asset: Address,
     note_amount: U256,
 ) -> Result<Field, Error> {
-    let [lo, mid, hi] = OutbeV1::fields_from_u256(&note_amount)?;
+    let [lo, mid, hi] = codec::fields_from_u256(&note_amount)?;
     Pool::hash_multi(
         tag(Pool::tag_commitment())?,
         &[

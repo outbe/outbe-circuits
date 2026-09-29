@@ -17,7 +17,7 @@ Alloy support is optional and disabled by default. Enable `features = ["alloy"]`
 to use the Emit mint and Paynote `PublicInputs` and `decode_public_inputs` APIs
 and their Alloy hash helpers. Decoders return `Address`, `B256`, and `U256`
 values. Alloy hash helpers serialize addresses with `FieldElement` and amounts
-with `Codec::fields_from_u256`. The always-available `_raw` functions use
+with `codec::fields_from_u256`. The always-available `_raw` functions use
 `[u8; 20]` addresses and field elements; `note_commitment_raw` accepts
 `[Field; 3]` amount limbs. Hash helpers retain field elements
 for serials, keys, and results. Byte/ABI limb conversions are available directly
@@ -172,7 +172,7 @@ missed:
 `outbe_zk_canonical::noir`:
 
 - `pub mod <module> { … }` for the **latest active** version of each circuit —
-  `Witness` / `PublicInputs` types, the `Circuit<S>` + `CircuitId` impls on a
+  `Witness` / `PublicInputs` types, the `Circuit` + `CircuitId` impls on a
   marker, and identity consts (`LABEL`, `VERSION`, `CIRCUIT_HASH`, `BYTECODE_B64`,
   `VK_BYTES`, `VK_HASH`). This is the prover-facing API.
 - `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** version (the

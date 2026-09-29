@@ -7,12 +7,12 @@
 use ark_ff::UniformRand;
 
 use outbe_protocol::error::Error;
-use outbe_protocol::primitive::signature::SignatureScheme;
+use outbe_protocol::primitive::{hash, signature};
 use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::imt::Imt;
 use outbe_protocol::protocol::key::{NftSecret, Signer};
 use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
-use outbe_protocol::{OutbeV1, Suite};
+use outbe_protocol::Fr;
 use outbe_zk_backend::barretenberg::Barretenberg;
 use outbe_zk_canonical::demo_tribute::{self, demo_tribute_domain, DemoTributeProvable};
 use outbe_zk_canonical::noir::demo_tribute::DemoTribute;
@@ -20,15 +20,13 @@ use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
 use outbe_zk_canonical::ownership::Provable;
 use outbe_zk_canonical::INCLUSION_DEPTH;
 
-type Fr = <OutbeV1 as Suite>::Field;
-
 struct TestNft {
     id: Fr,
     owner: Fr,
     fields: Vec<Fr>,
 }
 
-impl Entity<OutbeV1> for TestNft {
+impl Entity for TestNft {
     fn id_seed(&self) -> Result<Fr, Error> {
         Ok(self.id)
     }
@@ -40,7 +38,7 @@ impl Entity<OutbeV1> for TestNft {
         Ok(())
     }
 }
-impl Owned<OutbeV1> for TestNft {
+impl Owned for TestNft {
     fn owner(&self) -> Result<Fr, Error> {
         Ok(self.owner)
     }
@@ -49,10 +47,10 @@ impl Owned<OutbeV1> for TestNft {
 #[test]
 fn ownership_prove_verify_round_trip() {
     let mut rng = ark_std::test_rng();
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7, 0xdead).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
+    let binding = hash::binding(&[1u8; 20], &[2u8; 32], 7, 0xdead).unwrap();
     let td = TestNft {
         id: owner,
         owner,
@@ -64,24 +62,19 @@ fn ownership_prove_verify_round_trip() {
         .unwrap();
 
     // Generate a real UltraHonkKeccak proof and verify it.
-    let proof = ProofGenerator::<OutbeV1, OwnershipProof>::generate(
-        &Barretenberg::default(),
-        &witness,
-        &public,
-    )
-    .expect("bb prove");
+    let proof =
+        ProofGenerator::<OwnershipProof>::generate(&Barretenberg::default(), &witness, &public)
+            .expect("bb prove");
     assert!(
-        ProofVerifier::<OutbeV1, OwnershipProof>::verify(&Barretenberg::default(), &public, &proof)
-            .unwrap(),
+        ProofVerifier::<OwnershipProof>::verify(&Barretenberg::default(), &public, &proof).unwrap(),
         "valid proof must verify"
     );
 
     // The same proof must fail for another L2, even under the same circuit key.
     let mut wrong = public.clone();
-    wrong.binding_hash = OutbeV1::binding(&[1u8; 20], &[2u8; 32], 7, 0xdeae).unwrap();
+    wrong.binding_hash = hash::binding(&[1u8; 20], &[2u8; 32], 7, 0xdeae).unwrap();
     assert!(
-        !ProofVerifier::<OutbeV1, OwnershipProof>::verify(&Barretenberg::default(), &wrong, &proof)
-            .unwrap(),
+        !ProofVerifier::<OwnershipProof>::verify(&Barretenberg::default(), &wrong, &proof).unwrap(),
         "proof must not verify against a different public input"
     );
 }
@@ -89,31 +82,27 @@ fn ownership_prove_verify_round_trip() {
 #[test]
 fn demo_tribute_prove_verify_round_trip() {
     let mut rng = ark_std::test_rng();
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
-    let binding = OutbeV1::binding(&[3u8; 20], &[4u8; 32], 99, 0xdead).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
+    let binding = hash::binding(&[3u8; 20], &[4u8; 32], 99, 0xdead).unwrap();
     let td = TestNft {
         id: owner,
         owner,
         fields: vec![Fr::from(978u64), Fr::from(100u64)],
     };
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
-    let tree = Imt::<OutbeV1>::new(demo_tribute_domain(), Fr::from(0u64), INCLUSION_DEPTH).unwrap();
+    let tree = Imt::new(demo_tribute_domain(), Fr::from(0u64), INCLUSION_DEPTH).unwrap();
     let path = tree.empty_inclusion_path(0);
     let (witness, public) = td
         .derive_demo_tribute_witness(&mut rng, &signer, binding, &path)
         .unwrap();
 
-    let proof = ProofGenerator::<OutbeV1, DemoTribute>::generate(
-        &Barretenberg::default(),
-        &witness,
-        &public,
-    )
-    .expect("bb prove");
+    let proof =
+        ProofGenerator::<DemoTribute>::generate(&Barretenberg::default(), &witness, &public)
+            .expect("bb prove");
     assert!(
-        ProofVerifier::<OutbeV1, DemoTribute>::verify(&Barretenberg::default(), &public, &proof)
-            .unwrap(),
+        ProofVerifier::<DemoTribute>::verify(&Barretenberg::default(), &public, &proof).unwrap(),
         "valid demo tribute proof must verify"
     );
 

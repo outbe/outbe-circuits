@@ -12,12 +12,13 @@ witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier.
 
 The proving core is **generic over any circuit** — it depends only on the
 `outbe-protocol` seams (`Circuit` with its prove-side `witness_inputs` /
-verify-side `public_inputs`, `CircuitId`, `CircuitSuite`), **not** on the
+verify-side `public_inputs`, and `CircuitId`), **not** on the
 concrete `outbe-zk-canonical` (only the tests/benches pull that in). A single
-[`Barretenberg`] value implements both core seams for every `C: Circuit<S>`:
+[`Barretenberg`] value implements both core seams for every `C: Circuit + CircuitId`,
+using the protocol's concrete BN254 `Fr`:
 
-- [`ProofGenerator<S, C>`](https://docs.rs/outbe-protocol) — `generate(witness, public) -> Proof`
-- [`ProofVerifier<S, C>`](https://docs.rs/outbe-protocol) — `verify(public, proof) -> bool`
+- [`ProofGenerator<C>`](https://docs.rs/outbe-protocol) — `generate(witness, public) -> Proof`
+- [`ProofVerifier<C>`](https://docs.rs/outbe-protocol) — `verify(public, proof) -> bool`
 
 So the same backend proves/verifies ownership, Demo Tribute, Emit mint, Paynote,
 Niflheim Tribute, **or any circuit you define** that implements
@@ -28,7 +29,6 @@ The matching `demo_tribute`, `emit_mint`, and `paynote` modules in
 `outbe-zk-canonical` own each circuit's strict layout and public-input decoder.
 
 ```rust
-use outbe_protocol::{OutbeV1, Suite};
 use outbe_protocol::protocol::zk::{ProofGenerator, ProofVerifier};
 use outbe_zk_backend::barretenberg::Barretenberg;
 use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
@@ -39,8 +39,8 @@ use outbe_zk_canonical::ownership::Provable;   // builds the witness from protoc
 let bb = Barretenberg::default();            // zero-knowledge ON (see below)
 
 // The circuit is chosen by the `C` type parameter — here `OwnershipProof`.
-let proof = ProofGenerator::<OutbeV1, OwnershipProof>::generate(&bb, &witness, &public)?;
-let ok    = ProofVerifier::<OutbeV1, OwnershipProof>::verify(&bb, &public, &proof)?;
+let proof = ProofGenerator::<OwnershipProof>::generate(&bb, &witness, &public)?;
+let ok    = ProofVerifier::<OwnershipProof>::verify(&bb, &public, &proof)?;
 assert!(ok);
 ```
 

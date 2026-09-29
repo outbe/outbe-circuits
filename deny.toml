@@ -90,8 +90,6 @@ skip = [
     { crate = "cpufeatures" },
     # blake2 0.10 (outbe-protocol) vs 0.11-rc (noir beta.22 bn254_blackbox_solver).
     { crate = "blake2" },
-    # generic-array 0.14 (digest 0.10 stack) vs 1.x (outbe-protocol codec).
-    { crate = "generic-array" },
     # thiserror 1.x (noir, some older deps) vs 2.x (rest of the tree).
     { crate = "thiserror" },
     { crate = "thiserror-impl" },

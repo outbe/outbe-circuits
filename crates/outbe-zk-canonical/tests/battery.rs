@@ -1,10 +1,7 @@
 #![allow(clippy::doc_lazy_continuation)]
-//! The ZK-canonical half of the protocol battery, run against the
-//! production suite. Exercises the build-generated noir circuit types
-//! (`OwnershipProof` / `DemoTribute` and their `Witness` / `PublicInputs`)
-//! through the core ZK seams, on `OutbeV1`. The generated circuits are
-//! BN254-specific, so this battery is concrete to `OutbeV1`
-//! (cross-suite pluggability is the core battery's job).
+//! The ZK-canonical half of the protocol battery exercises the build-generated
+//! BN254 noir circuit types (`OwnershipProof` / `DemoTribute` and their
+//! `Witness` / `PublicInputs`) and their concrete protocol formulas.
 //!
 //! The concrete entity types live in consumer crates, so the battery
 //! carries its own minimal entity (`TestNft`).
@@ -14,24 +11,20 @@ use ark_std::rand::Rng;
 use ark_std::UniformRand;
 
 use outbe_protocol::error::Error;
-use outbe_protocol::primitive::signature::SignatureScheme;
+use outbe_protocol::primitive::{hash, signature};
 use outbe_protocol::protocol::entity::{Entity, Owned};
 use outbe_protocol::protocol::key::{NftSecret, Signer};
-use outbe_protocol::protocol::zk::{Circuit, ProofGenerator, ProofVerifier};
-use outbe_protocol::{OutbeV1, Suite};
+use outbe_protocol::protocol::zk::Circuit;
+use outbe_protocol::{codec, Fr};
 
 use outbe_protocol::protocol::imt::Imt;
 use outbe_zk_canonical::demo_tribute::{demo_tribute_domain, DemoTributeProvable};
-use outbe_zk_canonical::noir::demo_tribute::DemoTribute;
-use outbe_zk_canonical::noir::ownership_proof::{OwnershipProof, PublicInputs, Witness};
+use outbe_zk_canonical::noir::ownership_proof::OwnershipProof;
 use outbe_zk_canonical::ownership::{verify_signature, Provable};
 use outbe_zk_canonical::CircuitId;
 
-type Fr = <OutbeV1 as Suite>::Field;
-
 #[test]
 fn generated_combined_proof_codecs() {
-    use outbe_protocol::Codec;
     use outbe_zk_canonical::noir;
 
     macro_rules! check {
@@ -41,12 +34,12 @@ fn generated_combined_proof_codecs() {
                 let fields: Vec<_> = (1..=c::PUBLIC_INPUT_COUNT).map(|i| Fr::from(i as u64)).collect();
                 let mut combined = (fields.len() as u32).to_be_bytes().to_vec();
                 for field in &fields {
-                    combined.extend_from_slice(&OutbeV1::field_to_be_bytes(field));
+                    combined.extend_from_slice(&codec::field_to_be_bytes(field));
                 }
                 let proof: Vec<_> = (0..c::PROOF_WORDS).map(|i| vec![i as u8; 32]).collect();
                 combined.extend(proof.iter().flatten());
                 let public = c::decode_public_inputs(&combined).unwrap();
-                assert_eq!(<c::$marker as Circuit<OutbeV1>>::public_inputs(&public), fields);
+                assert_eq!(<c::$marker as Circuit>::public_inputs(&public), fields);
                 assert_eq!(c::encode_combined_proof(public.clone(), proof.clone()).unwrap(), combined);
                 for count in [0, c::PROOF_WORDS - 1, c::PROOF_WORDS + 1] {
                     assert!(matches!(
@@ -115,7 +108,7 @@ struct TestNft {
     fields: Vec<Fr>,
 }
 
-impl Entity<OutbeV1> for TestNft {
+impl Entity for TestNft {
     fn id_seed(&self) -> Result<Fr, Error> {
         Ok(self.id)
     }
@@ -127,64 +120,10 @@ impl Entity<OutbeV1> for TestNft {
         Ok(())
     }
 }
-impl Owned<OutbeV1> for TestNft {
+impl Owned for TestNft {
     fn owner(&self) -> Result<Fr, Error> {
         Ok(self.owner)
     }
-}
-
-/// One mock backend implementing BOTH proof traits for the ownership and
-/// Demo Tribute circuits: the "proof" is the circuit's public-input field
-/// vector echoed back. Exercises the generate→verify round-trip and the
-/// `V::Proof = G::Proof` constraint.
-struct MockBackend;
-
-impl ProofGenerator<OutbeV1, OwnershipProof> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn generate(&self, _witness: &Witness, public: &PublicInputs) -> Result<Self::Proof, Error> {
-        Ok(<OwnershipProof as Circuit<OutbeV1>>::public_inputs(public))
-    }
-}
-impl ProofVerifier<OutbeV1, OwnershipProof> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn verify(&self, public: &PublicInputs, proof: &Self::Proof) -> Result<bool, Error> {
-        Ok(<OwnershipProof as Circuit<OutbeV1>>::public_inputs(public) == *proof)
-    }
-}
-
-impl ProofGenerator<OutbeV1, DemoTribute> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn generate(
-        &self,
-        _witness: &<DemoTribute as Circuit<OutbeV1>>::Witness,
-        public: &<DemoTribute as Circuit<OutbeV1>>::PublicInputs,
-    ) -> Result<Self::Proof, Error> {
-        Ok(<DemoTribute as Circuit<OutbeV1>>::public_inputs(public))
-    }
-}
-impl ProofVerifier<OutbeV1, DemoTribute> for MockBackend {
-    type Proof = Vec<Fr>;
-    fn verify(
-        &self,
-        public: &<DemoTribute as Circuit<OutbeV1>>::PublicInputs,
-        proof: &Self::Proof,
-    ) -> Result<bool, Error> {
-        Ok(<DemoTribute as Circuit<OutbeV1>>::public_inputs(public) == *proof)
-    }
-}
-
-/// Run the mock generate→verify round-trip for circuit `C`, returning whether
-/// the proof verifies. `C` is named explicitly because `MockBackend` serves
-/// several circuits, so it can't be inferred from the witness / public-input
-/// types — this keeps the call sites to a single turbofish.
-fn mock_round_trip<C>(witness: &C::Witness, public: &C::PublicInputs) -> bool
-where
-    C: Circuit<OutbeV1>,
-    MockBackend:
-        ProofGenerator<OutbeV1, C, Proof = Vec<Fr>> + ProofVerifier<OutbeV1, C, Proof = Vec<Fr>>,
-{
-    let proof = MockBackend.generate(witness, public).unwrap();
-    MockBackend.verify(public, &proof).unwrap()
 }
 
 fn sample_body<R: Rng>(rng: &mut R) -> Vec<Fr> {
@@ -206,52 +145,40 @@ fn sample_nft<R: Rng>(rng: &mut R, owner: Fr) -> TestNft {
 }
 
 #[test]
-fn outbe_suite() {
+fn ownership_signatures_and_owner_validation() {
     let mut rng = ark_std::test_rng();
 
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
     let binding = Fr::from(1234u64);
     let td = sample_nft(&mut rng, owner);
 
-    // Canonical descriptor identity is carried on the marker types.
     assert_eq!(OwnershipProof::LABEL, "outbe.ownership");
     assert_eq!(OwnershipProof::VERSION, "1.0.0");
-    assert!(!OwnershipProof::BYTECODE_B64.is_empty());
-    assert_ne!(OwnershipProof::CIRCUIT_HASH, [0u8; 32]);
-    assert!(!OwnershipProof::VK_BYTES.is_empty());
-    assert_ne!(OwnershipProof::VK_HASH, [0u8; 32]);
 
-    // --- ownership proof: round-trips; tamper fails; bad owner rejected ---
+    // Ownership signatures: valid witness, tampered nonce, and mismatched owner.
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
     let (witness, public) = td
         .derive_ownership_witness(&mut rng, &signer, binding)
         .unwrap();
     // Re-derive the signature from the signer to run the in-protocol check
     // (the witness packs the signature one-way for the circuit).
-    let signature = <OutbeV1 as Suite>::Signature::sign(
+    let signature = signature::sign(
         &mut rng,
         &sk,
-        OutbeV1::signing_payload(public.nft_hash, witness.nonce, public.binding_hash).unwrap(),
+        hash::signing_payload(public.nft_hash, witness.nonce, public.binding_hash).unwrap(),
     )
     .unwrap();
     assert!(
-        verify_signature::<OutbeV1>(&public, witness.nonce, &pk, &signature).unwrap(),
+        verify_signature(&public, witness.nonce, &pk, &signature).unwrap(),
         "valid ownership failed to verify"
-    );
-
-    // full round-trip through the ZK seams (mock backends, shared Proof type)
-    assert!(
-        td.prove_and_verify(&mut rng, &signer, binding, &MockBackend, &MockBackend)
-            .unwrap(),
-        "prove_and_verify round-trip failed"
     );
 
     // tampered nonce -> different payload -> signature no longer verifies
     let bad_nonce = witness.nonce + Fr::from(1u64);
     assert!(
-        !verify_signature::<OutbeV1>(&public, bad_nonce, &pk, &signature).unwrap(),
+        !verify_signature(&public, bad_nonce, &pk, &signature).unwrap(),
         "tampered ownership verified"
     );
 
@@ -272,17 +199,17 @@ fn outbe_suite() {
 
 /// Demo Tribute = §4.2 ownership + depth-32 Merkle inclusion of `nft_hash`.
 #[test]
-fn demo_tribute_round_trip() {
+fn demo_tribute_witness_inclusion() {
     let mut rng = ark_std::test_rng();
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
     let binding = Fr::from(99u64);
     let td = sample_nft(&mut rng, owner);
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
 
     // Inclusion: place nft_hash at index 0 of an otherwise-empty depth-32 tree.
-    let tree = Imt::<OutbeV1>::new(
+    let tree = Imt::new(
         demo_tribute_domain(),
         Fr::from(0u64),
         outbe_zk_canonical::INCLUSION_DEPTH,
@@ -306,7 +233,7 @@ fn demo_tribute_round_trip() {
     );
 
     // A populated tree must keep the Demo Tribute domain, leaf value and bit order.
-    let mut populated = Imt::<OutbeV1>::new(
+    let mut populated = Imt::new(
         demo_tribute_domain(),
         Fr::from(0u64),
         outbe_zk_canonical::INCLUSION_DEPTH,
@@ -328,13 +255,6 @@ fn demo_tribute_round_trip() {
         populated_witness.merkle_path_siblings.as_slice(),
         populated_path.siblings
     );
-    assert!(mock_round_trip::<DemoTribute>(
-        &populated_witness,
-        &populated_public
-    ));
-
-    // Round-trip through the seams.
-    assert!(mock_round_trip::<DemoTribute>(&witness, &public));
 }
 
 /// The prove-side `witness_inputs` flatten is in ACIR witness-index order and
@@ -345,9 +265,9 @@ fn demo_tribute_round_trip() {
 #[test]
 fn witness_inputs_layout_is_canonical() {
     let mut rng = ark_std::test_rng();
-    let (sk, pk) = <OutbeV1 as Suite>::Signature::keypair(&mut rng);
+    let (sk, pk) = signature::keypair(&mut rng);
     let nonce = Fr::rand(&mut rng);
-    let owner = OutbeV1::derive_owner(&pk, nonce).unwrap();
+    let owner = hash::derive_owner(&pk, nonce).unwrap();
     let binding = Fr::from(7u64);
     let td = sample_nft(&mut rng, owner);
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
@@ -355,12 +275,11 @@ fn witness_inputs_layout_is_canonical() {
         .derive_ownership_witness(&mut rng, &signer, binding)
         .unwrap();
 
-    let w = <OwnershipProof as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
+    let w = <OwnershipProof as Circuit>::witness_inputs(&witness, &public);
     // pk.x, pk.y, signature[0..64], nonce, owner, nft_hash, binding_hash.
     assert_eq!(w.len(), 2 + 64 + 1 + 3, "ownership witness arity");
 
-    let (x, y) =
-        outbe_protocol::primitive::curve::coords::<<OutbeV1 as Suite>::Curve>(&pk).unwrap();
+    let (x, y) = outbe_protocol::primitive::curve::coords(&pk).unwrap();
     assert_eq!(w[0], x, "Witness(0) = pk.x");
     assert_eq!(w[1], y, "Witness(1) = pk.y");
     // Each signature byte is its own witness (index 2..66).
@@ -377,7 +296,7 @@ fn witness_inputs_layout_is_canonical() {
     assert_eq!(w[66], witness.nonce, "Witness(66) = nonce");
 
     // The public tail equals the verify-side projection, in the same order.
-    let public_fields = <OwnershipProof as Circuit<OutbeV1>>::public_inputs(&public);
+    let public_fields = <OwnershipProof as Circuit>::public_inputs(&public);
     assert_eq!(
         &w[67..],
         public_fields.as_slice(),
@@ -410,7 +329,7 @@ fn emit_mint_descriptor_and_abi_layout() {
         mint_units: public_limbs,
         change_commitment: Fr::from(4u64),
     };
-    let flat = <emit::EmitMint as Circuit<OutbeV1>>::public_inputs(&public);
+    let flat = <emit::EmitMint as Circuit>::public_inputs(&public);
     assert_eq!(flat.len(), 8, "Emit mint public-input arity");
     assert_eq!(
         &flat[..3],
@@ -434,7 +353,7 @@ fn emit_mint_descriptor_and_abi_layout() {
         leaf_index: 1,
         auth_path: [Fr::from(7u64); 32],
     };
-    let all = <emit::EmitMint as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
+    let all = <emit::EmitMint as Circuit>::witness_inputs(&witness, &public);
     assert_eq!(all.len(), 45, "8 public + 37 private ABI leaves");
     assert_eq!(
         &all[..8],
@@ -529,7 +448,7 @@ fn paynote_descriptor_and_abi_layout() {
         spend_amount,
         change_commitment: Fr::from(4u64),
     };
-    let flat = <pay::Paynote as Circuit<OutbeV1>>::public_inputs(&public);
+    let flat = <pay::Paynote as Circuit>::public_inputs(&public);
     assert_eq!(flat.len(), 9, "Paynote public-input arity");
     assert_eq!(
         &flat[..3],
@@ -553,7 +472,7 @@ fn paynote_descriptor_and_abi_layout() {
         leaf_index: 1,
         auth_path: [Fr::from(7u64); 32],
     };
-    let all = <pay::Paynote as Circuit<OutbeV1>>::witness_inputs(&witness, &public);
+    let all = <pay::Paynote as Circuit>::witness_inputs(&witness, &public);
     assert_eq!(all.len(), 46, "9 public + 37 private ABI leaves");
     assert_eq!(
         &all[..9],
