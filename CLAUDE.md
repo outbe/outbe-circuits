@@ -10,7 +10,7 @@ Rust workspace (version `0.25.0`, edition 2021) for the Outbe zero-knowledge pro
 - `crates/outbe-protocol-derive` — `#[derive(Entity)]` proc-macro. Per-field `#[outbe(...)]` roles (`id_seed` / `id_body` / `body` / `owner` / `skip` / `limbed` / `pos = N`) generate the canonical entity-hash preimage. Exercised by the protocol crate's tests.
 - `crates/outbe-zk-backend` — Noir proving backend: a shared ACVM witness-solving core plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier, generic over the `outbe-protocol` ZK seams. `publish = false` (consumes noir git deps + native libs). Feature `with-network-srs` (on by default) pulls `reqwest` for the Aztec SRS download fallback; `default-features = false` is the offline/mobile build.
 - `crates/outbe-zk-canonical` — Concrete canonical circuit/witness types, circuit-specific DemoTribute/Emit/Paynote combined-proof decoders, and the in-code append-only versioned circuit registry. Builds from committed frozen artifacts (no git/noir deps), so it ships to crates.io and `cargo build` is deterministic with or without the noir toolchain. `INCLUSION_DEPTH = 32`.
-- `xtask/` — Circuit tooling: `cargo xtask test-circuits` runs every Noir package; `cargo xtask freeze-circuits` is the only command that runs `bb` or writes frozen artifacts.
+- `xtask/` — Circuit tooling: `cargo xtask test-circuits` runs every Noir package; `cargo xtask freeze-circuits` mints frozen versions, while `cargo xtask freeze-circuits --check` reproduces ACIR, ABI and VK without changing committed files.
 
 ### How the canonical registry works (`outbe-zk-canonical`)
 
@@ -43,7 +43,7 @@ Plain cargo works for everything and needs **no** Noir toolchain — `outbe-zk-c
 - `cargo build --workspace` / `cargo test --workspace` / `cargo fmt` / `cargo clippy` — standard.
 - First build compiles the bundled barretenberg C++ FFI (several minutes; not hung). Subsequent builds cache it.
 
-The Noir toolchain is needed **only** to evolve circuits. Install the pinned versions via `mise run install:zk-toolchain` (nargo + bb). `cargo xtask` is aliased in `.cargo/config.toml`.
+The Noir toolchain is needed only to evolve circuits or check their reproducibility. Install the pinned versions via `mise install nargo bb`. `cargo xtask` is aliased in `.cargo/config.toml`.
 
 ## Circuit-change workflow
 
@@ -52,6 +52,8 @@ Released circuit versions are frozen; editing the `.nr` sources changes nothing 
 1. `cargo xtask freeze-circuits` — compiles the head noir sources via `nargo`, derives VKs via `bb`, and for each circuit whose **ACIR changed** mints a new frozen version under `resources/circuits/` and records it `active` in `manifest.toml` (superseded version → `deprecated`, its `circuit_hash` preserved, bytecode/abi dropped, VK kept).
    - unchanged ACIR → skipped; changed ACIR + same ABI → patch bump; ABI change → pass `--abi-change` (minor) or `--semantic` (major + new `DOMAIN` decision).
 2. Review and commit the minted `resources/circuits/` artifacts **and** the modified `circuits/manifest.toml` **together** — the PR review is the audit gate for admitting a circuit. Status transitions (active → deprecated → revoked) are manifest edits reconciled by the next freeze.
+
+For read-only verification, run `cargo xtask freeze-circuits --check` (also `mise run freeze-circuits:check`). It asserts the `mise.toml` tool versions, compiles all five circuits in a per-process scratch copy under `target/`, and compares every active ACIR, ABI and freshly derived VK. It exits nonzero on mismatch and cleans the scratch tree on success or failure; no manifest, frozen artifact, or tracked compiler output is modified. CI uses this mode. Do not combine `--check` with version-bump flags.
 
 ## Dependency pinning
 

@@ -1,18 +1,21 @@
 ---
 name: freeze-circuits
-description: Run the circuit-freeze workflow when Noir sources under crates/outbe-zk-canonical/noir/ have changed. Runs `cargo xtask freeze-circuits` (the only step that runs nargo/bb), which mints a new frozen version for any circuit whose ACIR changed, updates the manifest + resources, then surfaces the dirty files to commit together with the source change.
+description: Run the circuit-freeze workflow when Noir sources under crates/outbe-zk-canonical/noir/ have changed. Runs `cargo xtask freeze-circuits` to mint new frozen versions, updates the manifest + resources, then checks reproduction and surfaces the files to commit together with the source change.
 ---
 
 Use this skill when `.nr` sources under `crates/outbe-zk-canonical/noir/` have been edited and the user wants to mint the new frozen circuit version(s) before committing.
 
-Prereq: the pinned Noir toolchain must be installed — `mise run install:zk-toolchain` (nargo 1.0.0-beta.22 + bb 5.0.0-nightly.20260522). The xtask locates them via `$NARGO`/`$BB` or `~/.nargo/bin/nargo` and `~/.bb/bb`.
+Prereq: the pinned Noir toolchain must be installed — `mise install nargo bb` (nargo 1.0.0-beta.22 + bb 5.0.0-nightly.20260522). The xtask locates them via `$NARGO`/`$BB`, then `~/.nargo/bin/nargo` and `~/.bb/bb`, then PATH.
+
+If the user only wants verification, use `cargo xtask freeze-circuits --check` instead of minting. It checks the tool versions and reproduces all active ACIR, ABI and VK in a scratch copy under `target/`, without changing committed files.
 
 ## Steps
 
 1. **Confirm what changed.** Run `git status` and confirm at least one file under `crates/outbe-zk-canonical/noir/` is modified. If nothing under `noir/` changed, this skill is the wrong tool — ask the user what they actually want.
 
-2. **Freeze.** Run `cargo xtask freeze-circuits`. For each of the all circuits it prints either `unchanged <module> @ <ver>` (ACIR identical → no-op) or `minted <module> X -> Y (old -> deprecated)` (ACIR changed → new frozen version; the superseded one is set `deprecated`, keeping only its VK). The first barretenberg build is multi-minute — do not kill it.
+2. **Freeze.** Run `cargo xtask freeze-circuits`. For each circuit it prints either `unchanged <module> @ <ver>` (ACIR and ABI identical → no-op) or `minted <module> X -> Y (old -> deprecated)` (a new frozen version; the superseded one is set `deprecated`, keeping only its VK).
    - **ABI changed?** The freeze requires explicit intent for a public-input-layout change: pass `--abi-change` (minor bump) or `--semantic` (major bump + a new `DOMAIN` decision).
+   - **Verify the result.** Run `cargo xtask freeze-circuits --check`. It always re-derives the VK, even for circuits a normal freeze skipped; all five active circuits must reproduce.
 
 3. **Show what to commit.** Run `git status` and list the modified `crates/outbe-zk-canonical/circuits/manifest.toml` plus the new `resources/circuits/<module>/<version>/` artifacts. These MUST be committed together with the `.nr` source change — the PR review is the audit gate for admitting a circuit.
 
