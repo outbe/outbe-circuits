@@ -3,7 +3,7 @@ use alloy_primitives::{Address, U256};
 use ark_bn254::Fr;
 use ark_ff::Field as _;
 use outbe_protocol::protocol::zk::ProofGenerator;
-use outbe_protocol::{Codec, FieldElement, OutbeV1};
+use outbe_protocol::{codec, FieldElement};
 use outbe_zk_backend::barretenberg::{verify_circuit, Barretenberg};
 use outbe_zk_canonical::{
     noir::paynote::Paynote,
@@ -61,8 +61,7 @@ fn fixture(count: usize, amounts: [U256; 4]) -> (Witness, PublicInputs, Tree, U2
 }
 
 fn prove(w: &Witness, p: &PublicInputs) -> Vec<u8> {
-    let proof =
-        ProofGenerator::<OutbeV1, PaynoteMerge>::generate(&Barretenberg::default(), w, p).unwrap();
+    let proof = ProofGenerator::<PaynoteMerge>::generate(&Barretenberg::default(), w, p).unwrap();
     encode_combined_proof(p.clone(), proof.proof).unwrap()
 }
 
@@ -78,8 +77,8 @@ fn merged_note_uses_ordinary_settlement_and_binds_every_public_word() {
         let mut altered = combined.clone();
         let start = 4 + i * 32;
         let word =
-            OutbeV1::field_from_be32(&altered[start..start + 32].try_into().unwrap()) + Fr::from(1);
-        altered[start..start + 32].copy_from_slice(&OutbeV1::field_to_be_bytes(&word));
+            codec::field_from_be32(&altered[start..start + 32].try_into().unwrap()) + Fr::from(1);
+        altered[start..start + 32].copy_from_slice(&codec::field_to_be_bytes(&word));
         assert!(
             !verify_circuit::<PaynoteMerge>(&altered).unwrap_or(false),
             "public word {i}"
@@ -116,8 +115,7 @@ fn merged_note_uses_ordinary_settlement_and_binds_every_public_word() {
             .unwrap(),
     };
     let proof =
-        ProofGenerator::<OutbeV1, Paynote>::generate(&Barretenberg::default(), &witness, &public)
-            .unwrap();
+        ProofGenerator::<Paynote>::generate(&Barretenberg::default(), &witness, &public).unwrap();
     let spend = outbe_zk_canonical::paynote::encode_combined_proof(public, proof.proof).unwrap();
     assert!(verify_circuit::<Paynote>(&spend).unwrap());
     assert!(!verify_circuit::<PaynoteMerge>(&spend).unwrap_or(false));
@@ -149,7 +147,7 @@ fn raw_abi_cannot_bypass_amount_address_and_padding_constraints() {
     wrong.asset = Fr::from(2).pow([160]);
     cases.push((w, wrong));
     for (witness, public) in cases {
-        assert!(ProofGenerator::<OutbeV1, PaynoteMerge>::generate(
+        assert!(ProofGenerator::<PaynoteMerge>::generate(
             &Barretenberg::default(),
             &witness,
             &public
@@ -159,6 +157,7 @@ fn raw_abi_cannot_bypass_amount_address_and_padding_constraints() {
 }
 
 #[test]
+#[allow(clippy::print_stderr)] // Reports benchmark timings under --nocapture.
 fn four_input_profile_benchmark_and_u256_boundary() {
     let (w, p, _, total) = fixture(
         4,
@@ -188,7 +187,7 @@ fn decoder_rejects_malformed_and_noncanonical_words() {
     for (i, bits) in [(0, 64), (1, 160), (3, 32), (4, 160)] {
         let mut bytes = valid.clone();
         let word = Fr::from(2).pow([bits]);
-        bytes[4 + i * 32..4 + (i + 1) * 32].copy_from_slice(&OutbeV1::field_to_be_bytes(&word));
+        bytes[4 + i * 32..4 + (i + 1) * 32].copy_from_slice(&codec::field_to_be_bytes(&word));
         assert!(decode_public_inputs(&bytes).is_err());
     }
     let mut bytes = valid;
