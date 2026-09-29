@@ -5,8 +5,10 @@
 //! `freeze-circuits` compiles the head Noir sources under
 //! `outbe-zk-canonical/noir/` and, for each circuit whose ACIR or ABI changed, mints a
 //! new frozen version under `outbe-zk-canonical/resources/circuits/<module>/<version>/`
-//! and records it (status `active`) in `circuits/manifest.toml`. It is the only
-//! command that invokes `bb` or writes frozen artifacts.
+//! and records it (status `active`) in `circuits/manifest.toml`. Without
+//! `--check`, it is the only command that writes frozen artifacts.
+//! `--check` uses the pinned toolchain to reproduce ACIR, ABI and VK in a
+//! scratch tree under `target/`, without modifying the committed files.
 //!
 //! When a new version supersedes the previously-active one, the old entry is set
 //! to `deprecated`, its `circuit_hash` is written into the manifest (preserving
@@ -22,6 +24,7 @@
 // `xtask` is a CLI binary; stdout/stderr is its interface.
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 
+use std::error::Error;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -41,12 +44,17 @@ const CIRCUITS: &[(&str, &str)] = &[
 fn main() {
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
-        Some("freeze-circuits") => freeze(&args.collect::<Vec<_>>()),
+        Some("freeze-circuits") => {
+            if let Err(error) = freeze(&args.collect::<Vec<_>>()) {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+        }
         Some("test-circuits") => test_circuits(),
         other => {
             eprintln!("unknown command {other:?}");
             eprintln!("usage:");
-            eprintln!("  cargo xtask freeze-circuits [--abi-change | --semantic]");
+            eprintln!("  cargo xtask freeze-circuits [--check | --abi-change | --semantic]");
             eprintln!("  cargo xtask test-circuits");
             std::process::exit(2);
         }
@@ -80,7 +88,17 @@ fn test_circuits() {
     println!("\n{tested} Noir package(s) tested.");
 }
 
-fn freeze(flags: &[String]) {
+fn freeze(flags: &[String]) -> Result<(), Box<dyn Error>> {
+    if flags.len() > 1
+        || flags
+            .iter()
+            .any(|flag| !matches!(flag.as_str(), "--check" | "--abi-change" | "--semantic"))
+    {
+        return Err(
+            "usage: cargo xtask freeze-circuits [--check | --abi-change | --semantic]".into(),
+        );
+    }
+    let check = flags.iter().any(|f| f == "--check");
     let semantic = flags.iter().any(|f| f == "--semantic");
     let abi_change = flags.iter().any(|f| f == "--abi-change");
 
@@ -92,6 +110,24 @@ fn freeze(flags: &[String]) {
 
     let nargo = locate("NARGO", ".nargo/bin/nargo", "nargo").expect("nargo not found (set $NARGO)");
     let bb = locate("BB", ".bb/bb", "bb").expect("bb not found (set $BB)");
+    if check {
+        assert_pinned(&root, &nargo, &bb)?;
+    }
+
+    // Copy the entire tree so relative dependencies still resolve. The guard
+    // is live before copying or compiling, including on errors and panics.
+    let scratch = if check {
+        Some(Scratch::new(&root.join("target"))?)
+    } else {
+        None
+    };
+    let noir = if let Some(scratch) = &scratch {
+        let copy = scratch.0.join("noir");
+        copy_noir(&noir, &copy)?;
+        copy
+    } else {
+        noir
+    };
 
     let mut doc: DocumentMut = std::fs::read_to_string(&manifest_path)
         .expect("read manifest.toml")
@@ -99,6 +135,7 @@ fn freeze(flags: &[String]) {
         .expect("parse manifest.toml");
 
     let mut minted = 0usize;
+    let mut failures = Vec::new();
     for (dir, module) in CIRCUITS {
         let pkg = noir.join(dir);
         let st = Command::new(&nargo)
@@ -128,6 +165,29 @@ fn freeze(flags: &[String]) {
             (t["module"].as_str() == Some(*module) && t["status"].as_str() == Some("active"))
                 .then(|| (i, t["version"].as_str().unwrap().to_string()))
         });
+
+        if let Some(scratch) = &scratch {
+            match active {
+                Some((_, ver)) => {
+                    // Always derive the VK, even when ACIR and ABI match.
+                    let result = write_vk(&bb, &json_path, &scratch.0.join(".bb").join(module))
+                        .and_then(|path| {
+                            check_version(
+                                &resources.join(module).join(&ver),
+                                &new_hash,
+                                &json["abi"],
+                                &std::fs::read(path)?,
+                            )
+                        });
+                    match result {
+                        Ok(()) => println!("  reproduces {module} @ {ver}"),
+                        Err(error) => failures.push(format!("{module} @ {ver}: {error}")),
+                    }
+                }
+                None => failures.push(format!("{module}: no active frozen version")),
+            }
+            continue;
+        }
 
         let (new_version, supersede) = match &active {
             Some((idx, ver)) => {
@@ -202,10 +262,120 @@ fn freeze(flags: &[String]) {
         minted += 1;
     }
 
+    // Return before any manifest writes or retired-artifact reconciliation.
+    // Returning also drops the scratch guard before main reports an error.
+    if check {
+        if !failures.is_empty() {
+            return Err(failures.join("\n").into());
+        }
+        println!("\nall active circuits reproduce.");
+        return Ok(());
+    }
+
     reconcile_artifacts(&mut doc, &resources);
 
     std::fs::write(&manifest_path, doc.to_string()).expect("write manifest.toml");
     println!("\n{minted} circuit(s) minted.");
+    Ok(())
+}
+
+/// A check owns only this newly created, per-process scratch directory.
+struct Scratch(PathBuf);
+
+impl Scratch {
+    fn new(parent: &Path) -> std::io::Result<Self> {
+        std::fs::create_dir_all(parent)?;
+        let path = parent.join(format!("xtask-freeze-check-{}", std::process::id()));
+        std::fs::create_dir(&path)?;
+        Ok(Self(path))
+    }
+}
+
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn copy_noir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name == "target" {
+            continue;
+        }
+        let to = dst.join(name);
+        if entry.file_type()?.is_dir() {
+            copy_noir(&entry.path(), &to)?;
+        } else {
+            std::fs::copy(entry.path(), to)?;
+        }
+    }
+    Ok(())
+}
+
+fn assert_pinned(root: &Path, nargo: &Path, bb: &Path) -> Result<(), Box<dyn Error>> {
+    let doc: DocumentMut = std::fs::read_to_string(root.join("mise.toml"))?.parse()?;
+    for (tool, bin) in [("nargo", nargo), ("bb", bb)] {
+        let pin = doc
+            .get("tools")
+            .and_then(|tools| tools.get(tool))
+            .and_then(|tool| tool.get("version"))
+            .and_then(toml_edit::Item::as_str)
+            .ok_or_else(|| format!("mise.toml: missing tools.{tool}.version"))?;
+        let output = Command::new(bin).arg("--version").output()?;
+        if !output.status.success() {
+            return Err(format!("{} --version failed: {}", bin.display(), output.status).into());
+        }
+        let stdout = String::from_utf8(output.stdout)?;
+        let first = stdout.lines().next().unwrap_or("").trim();
+        let version = if tool == "nargo" {
+            first.strip_prefix("nargo version = ").unwrap_or(first)
+        } else {
+            first
+        };
+        if version != pin {
+            return Err(format!(
+                "{} --version reports {first:?}; mise.toml pins {tool} {pin}",
+                bin.display()
+            )
+            .into());
+        }
+    }
+    Ok(())
+}
+
+fn check_version(
+    dir: &Path,
+    acir_hash: &str,
+    abi: &serde_json::Value,
+    vk: &[u8],
+) -> Result<(), Box<dyn Error>> {
+    let b64 = std::fs::read_to_string(dir.join("bytecode.b64"))?;
+    let acir = base64::engine::general_purpose::STANDARD.decode(b64.trim())?;
+    let frozen_hash = keccak_hex(&acir);
+    if frozen_hash != acir_hash {
+        return Err(format!(
+            "bytecode.b64 does not reproduce: committed {frozen_hash}, compiled {acir_hash}"
+        )
+        .into());
+    }
+    let frozen_abi: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(dir.join("abi.json"))?)?;
+    if &frozen_abi != abi {
+        return Err("abi.json does not match the compiled ABI".into());
+    }
+    let frozen_vk = std::fs::read(dir.join("circuit.vk"))?;
+    if frozen_vk != vk {
+        return Err(format!(
+            "circuit.vk does not reproduce: committed {}, derived {}",
+            keccak_hex(&frozen_vk),
+            keccak_hex(vk)
+        )
+        .into());
+    }
+    Ok(())
 }
 
 /// Enforce the on-disk artifacts of every entry to match its status (idempotent;
@@ -273,21 +443,26 @@ fn write_version(
     std::fs::write(dir.join("abi.json"), abi_str).expect("write abi.json");
 
     let tmp = dir.join(".bb");
-    std::fs::create_dir_all(&tmp).expect("mkdir bb tmp");
-    let st = Command::new(bb)
+    let produced =
+        write_vk(bb, json_path, &tmp).unwrap_or_else(|error| panic!("{module}: {error}"));
+    std::fs::rename(&produced, dir.join("circuit.vk")).expect("install circuit.vk");
+    let _ = std::fs::remove_dir_all(&tmp);
+}
+
+fn write_vk(bb: &Path, json_path: &Path, output: &Path) -> Result<PathBuf, Box<dyn Error>> {
+    std::fs::create_dir_all(output)?;
+    let status = Command::new(bb)
         .arg("write_vk")
         .arg("-b")
         .arg(json_path)
         .arg("-o")
-        .arg(&tmp)
+        .arg(output)
         .args(["-t", "evm-no-zk"])
-        .status()
-        .unwrap_or_else(|e| panic!("spawn bb for {module}: {e}"));
-    assert!(st.success(), "bb write_vk failed for {module}");
-    let produced = tmp.join("vk");
-    assert!(produced.exists(), "bb produced no vk for {module}");
-    std::fs::rename(&produced, dir.join("circuit.vk")).expect("install circuit.vk");
-    let _ = std::fs::remove_dir_all(&tmp);
+        .status()?;
+    if !status.success() {
+        return Err(format!("bb write_vk failed for {}: {status}", json_path.display()).into());
+    }
+    Ok(output.join("vk"))
 }
 
 /// keccak256 -> lower-case hex (no `0x`).
@@ -360,4 +535,43 @@ fn locate(env_var: &str, home_rel: &str, bin: &str) -> Option<PathBuf> {
         .ok()
         .filter(|s| s.success())
         .map(|_| PathBuf::from(bin))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frozen_check_rejects_each_artifact_drifting() {
+        let scratch = Scratch::new(&std::env::temp_dir()).unwrap();
+        let dir = &scratch.0;
+        let acir = b"compiled ACIR";
+        let hash = keccak_hex(acir);
+        let abi = serde_json::json!({"parameters": [], "return_type": null});
+        let vk = b"derived VK";
+        std::fs::write(
+            dir.join("bytecode.b64"),
+            format!(
+                "{}\n",
+                base64::engine::general_purpose::STANDARD.encode(acir)
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("abi.json"),
+            "{\n  \"return_type\": null,\n  \"parameters\": []\n}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.join("circuit.vk"), vk).unwrap();
+
+        // Base64 whitespace and JSON formatting/order are not circuit drift.
+        assert!(check_version(dir, &hash, &abi, vk).is_ok());
+        assert!(check_version(dir, &keccak_hex(b"changed ACIR"), &abi, vk).is_err());
+        let changed_abi = serde_json::json!({"parameters": [{"name": "new_input"}]});
+        assert!(check_version(dir, &hash, &changed_abi, vk).is_err());
+        // An unchanged ACIR and ABI must never hide a stale verification key.
+        assert!(check_version(dir, &hash, &abi, b"different VK").is_err());
+        std::fs::remove_file(dir.join("circuit.vk")).unwrap();
+        assert!(check_version(dir, &hash, &abi, vk).is_err());
+    }
 }

@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## Unreleased
+#### Features
+- Add read-only `cargo xtask freeze-circuits --check` with pinned-toolchain checks and bytecode, ABI, and verification-key reproduction for all five active circuits. CI now relies on this command's exit status instead of Git-diff and untracked-file checks.
+
 - - -
 ## v0.25.0 - 2026-09-22
 #### Features
