@@ -38,6 +38,7 @@ const CIRCUITS: &[(&str, &str)] = &[
     ("demo-tribute", "demo_tribute"),
     ("outbe-emit-mint-circuit", "emit_mint"),
     ("outbe-paynote-circuit", "paynote"),
+    ("outbe-paynote-merge-circuit", "paynote_merge"),
     ("niflheim-tribute", "niflheim_tribute"),
 ];
 
@@ -67,8 +68,12 @@ fn test_circuits() {
         .join("outbe-zk-canonical")
         .join("noir");
     let nargo = locate("NARGO", ".nargo/bin/nargo", "nargo").expect("nargo not found (set $NARGO)");
-    let packages = std::iter::once(("outbe-circuit-core", "outbe_circuit_core"))
-        .chain(CIRCUITS.iter().copied());
+    let packages = [
+        ("outbe-circuit-core", "outbe_circuit_core"),
+        ("outbe-paynote-lib", "paynote_lib"),
+    ]
+    .into_iter()
+    .chain(CIRCUITS.iter().copied());
 
     let mut tested = 0usize;
     for (dir, package) in packages {
@@ -502,6 +507,7 @@ fn label(module: &str) -> String {
         "demo_tribute" => "demo.tribute".to_string(),
         "emit_mint" => "outbe.emit.mint".to_string(),
         "paynote" => "outbe.paynote".to_string(),
+        "paynote_merge" => "outbe.paynote.merge".to_string(),
         "niflheim_tribute" => "niflheim.tribute".to_string(),
         _ => panic!("unknown module: {module}"),
     }

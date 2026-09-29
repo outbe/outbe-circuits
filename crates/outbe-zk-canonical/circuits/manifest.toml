@@ -144,3 +144,9 @@ module = "niflheim_tribute"
 label = "niflheim.tribute"
 version = "1.0.0"
 status = "active"
+
+[[circuit]]
+module = "paynote_merge"
+label = "outbe.paynote.merge"
+version = "1.0.0"
+status = "active"

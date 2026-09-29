@@ -6,7 +6,6 @@
 // (`bignum::U256`, three 120-bit little-endian limbs). The note is a bearer
 // instrument: spend authority is knowledge of `note_spend_key`.
 
-mod paynote;
 mod tests;
 
 // `nullifier` is deliberately NOT imported: the public parameter of the same
@@ -14,7 +13,7 @@ mod tests;
 use bignum::{BigNum, U256};
 use outbe_circuit_core::merkle_tree::DEPTH;
 use outbe_circuit_core::types::EthAddress;
-use paynote::{change_key, merkle_root, note_commitment, note_sn, note_nullifier};
+use paynote_lib::{change_key, merkle_root, note_commitment, note_sn, note_nullifier};
 
 // TODO consider implementing ownership verification?
 

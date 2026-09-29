@@ -288,7 +288,10 @@ pub fn ensure_srs_for(
     settings: &ProofSystemSettings,
 ) -> Result<(), Error> {
     let num_points = subgroup_size(api, acir_uncompressed, settings)? + 1;
-    ensure_srs(api, num_points)
+    // bb's SRS is process-global and cannot grow. A small canonical circuit
+    // may run before a larger one (PayNote spend, then merge), so reserve the
+    // already-pinned canonical capacity at the first operation.
+    ensure_srs(api, num_points.max(super::CANONICAL_SRS_POINTS))
 }
 
 #[cfg(test)]

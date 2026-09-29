@@ -41,8 +41,8 @@ pub use srs::set_srs_path;
 
 /// Largest CRS required by the canonical circuit set: ownership, the Demo
 /// Tribute proof, and the Niflheim tribute all prove in a 2^16 domain, so the
-/// SRS needs `2^16 + 1` G1 points (domain + one). Emit mint and Paynote are
-/// smaller (2^14 domain).
+/// SRS needs `2^16 + 1` G1 points (domain + one). Emit mint and Paynote spend are
+/// smaller (2^14 domain); PayNote merge uses a 2^15 domain.
 pub const CANONICAL_SRS_POINTS: u32 = (1 << 16) + 1;
 
 /// Barretenberg's CRS factory, low-memory globals, and prover are **process-
@@ -62,7 +62,7 @@ fn bb_lock() -> MutexGuard<'static, ()> {
 /// circuits of *different* sizes — otherwise the first, smaller circuit fixes
 /// the CRS and larger ones fail. For our canonical set that is
 /// [`CANONICAL_SRS_POINTS`] (`(1 << 16) + 1`). Single-circuit callers can skip
-/// this; the first prove sizes the CRS to its circuit.
+/// this; the first prove reserves at least the canonical set's capacity.
 pub fn preinit_srs(num_points: u32) -> Result<(), Error> {
     let _bb = bb_lock();
     let mut api = Barretenberg::api()?;
