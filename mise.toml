@@ -41,6 +41,10 @@ run = "cargo xtask test-circuits"
 description = "Recompile circuits + refresh frozen artifacts: cargo run -p xtask -- freeze-circuits"
 run = "cargo run -p xtask -- freeze-circuits"
 
+[tasks."freeze-circuits:check"]
+description = "Read-only check: reproduce every active circuit's bytecode, ABI and verification key"
+run = "cargo run -p xtask -- freeze-circuits --check"
+
 [tasks."freeze-circuits:abi-change"]
 description = "freeze-circuits minting a new circuit version on an ABI change (--abi-change)"
 run = "cargo run -p xtask -- freeze-circuits --abi-change"

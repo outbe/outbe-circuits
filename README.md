@@ -10,7 +10,7 @@ Rust workspace for the **Outbe zero-knowledge protocol**: pluggable consensus pr
 | [`outbe-protocol-derive`](crates/outbe-protocol-derive) | `#[derive(Entity)]` — maps a typed struct's `#[outbe(...)]`-annotated fields to the canonical entity-hash preimage. |
 | [`outbe-zk-backend`](crates/outbe-zk-backend) | Noir proving backend: an ACVM witness solver plus a barretenberg (UltraHonkKeccak, FFI) prover/verifier. Generic over any circuit implementing the `outbe-protocol` zk seams. |
 | [`outbe-zk-canonical`](crates/outbe-zk-canonical) | Concrete canonical circuit/witness types **and** the in-code, append-only, versioned circuit registry. Builds from committed frozen artifacts — ships to crates.io, no Noir toolchain required. |
-| `xtask` | Circuit tooling: `cargo xtask test-circuits` and `cargo xtask freeze-circuits`. |
+| `xtask` | Circuit tooling: `cargo xtask test-circuits`, `cargo xtask freeze-circuits`, and the read-only `cargo xtask freeze-circuits --check`. |
 
 ## Build
 
@@ -41,10 +41,10 @@ Released circuit versions are **frozen** and committed under `crates/outbe-zk-ca
 
 ### Toolchain
 
-The Noir toolchain is needed **only** to evolve circuits, pinned via `mise`:
+The Noir toolchain is needed only to evolve circuits or check their reproducibility, pinned via `mise`:
 
 ```bash
-mise run install:zk-toolchain    # nargo 1.0.0-beta.22 + bb 5.0.0-nightly.20260522
+mise install nargo bb    # nargo 1.0.0-beta.22 + bb 5.0.0-nightly.20260522
 ```
 
 `cargo xtask` is aliased in `.cargo/config.toml`.
@@ -52,10 +52,25 @@ mise run install:zk-toolchain    # nargo 1.0.0-beta.22 + bb 5.0.0-nightly.202605
 ### Circuit-change workflow
 
 ```bash
-cargo xtask freeze-circuits          # the only step that runs bb/writes frozen artifacts
+cargo xtask freeze-circuits          # mint versions and write frozen artifacts
 ```
 
 For each circuit whose **ACIR changed**, it mints a new frozen version under `resources/circuits/` and records it `active` in `circuits/manifest.toml` (the superseded version is set `deprecated`, keeping only its VK). Pass `--abi-change` (minor) or `--semantic` (major + new `DOMAIN` decision) when the public-input layout changes. Commit the minted artifacts **and** the modified `manifest.toml` together with the `.nr` source change — the PR review is the audit gate.
+
+To check without minting or changing committed files:
+
+```bash
+cargo xtask freeze-circuits --check
+# or: mise run freeze-circuits:check
+```
+
+The check requires the exact `nargo` and `bb` versions pinned in `mise.toml`.
+It compiles all five circuits in a per-process scratch copy under `target/`,
+compares decoded bytecode and structural ABI, and always re-derives and compares
+each verification key. A mismatch exits nonzero; scratch files are cleaned up
+on success or failure. The manifest, frozen artifacts, and tracked Noir compiler
+outputs remain unchanged. CI uses this mode. `--check` cannot be combined with
+`--abi-change` or `--semantic`.
 
 ## License
 

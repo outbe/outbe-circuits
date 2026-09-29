@@ -273,7 +273,7 @@ Editing the `.nr` sources does **not** change anything by itself — released
 versions are frozen. Minting a new version is a deliberate step:
 
 ```sh
-cargo xtask freeze-circuits          # the only step that runs nargo/bb
+cargo xtask freeze-circuits          # mint versions and write frozen artifacts
 ```
 
 For each circuit whose ACIR or ABI changed it mints a new frozen version:
@@ -290,9 +290,18 @@ The new artifacts + manifest land in a **PR** — that review is the audit gate 
 admitting a circuit. Status transitions (active → deprecated → revoked) are edits
 to `manifest.toml`; the next `freeze-circuits` reconciles the on-disk artifacts.
 
+For a read-only reproducibility check, run `cargo xtask freeze-circuits --check`
+or `mise run freeze-circuits:check`. This requires the exact `nargo`/`bb` pins
+from `mise.toml`, compiles all five circuits in a temporary copy under `target/`,
+and compares each active version's decoded bytecode, structural ABI, and freshly
+derived VK. Unlike a normal freeze, it re-derives the VK even when bytecode and
+ABI match. Any mismatch fails without minting versions, reconciling retired
+artifacts, or changing tracked compiler output; scratch files are removed on
+success or failure. CI uses this check.
+
 ## Publishability
 
 This crate stays acir-free (no git/noir deps) and ships to crates.io — `nargo`/`bb`
-are invoked only by the `xtask` at freeze time, never on a normal build. The
+are invoked by circuit tooling when freezing or checking, never on a normal build. The
 committed frozen artifacts make `cargo build` deterministic with or without the
 noir toolchain installed.

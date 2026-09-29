@@ -156,7 +156,7 @@ jobs:
       - name: cargo xtask test-circuits
         run: cargo xtask test-circuits
 
-  # Recompile active circuits and reject ACIR/ABI drift on a clean checkout.
+  # Reproduce active ACIR, ABI and VK without modifying committed artifacts.
   l1-freeze-check:
     name: l1 freeze check
     needs: changes
@@ -184,11 +184,8 @@ jobs:
           path: ~/.bb-crs
           key: bb-crs-${{ hashFiles('mise.toml') }}
 
-      - name: Regenerate frozen circuits and check for drift
-        run: |
-          cargo xtask freeze-circuits
-          git diff --exit-code
-          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Reproduce frozen circuits without writes
+        run: cargo xtask freeze-circuits --check
 
   # --------------------------------------------------------------
   # Versioning (cocogitto). See cog.toml.

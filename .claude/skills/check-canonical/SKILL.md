@@ -12,11 +12,11 @@ Run `cargo build -p outbe-zk-canonical`. `build.rs` reads `circuits/manifest.tom
 - **Clean build** → the committed registry is internally consistent. Stop.
 - **Build panic** → the manifest and the frozen artifacts disagree; report the panic message (it names the offending `<module>@<version>`).
 
-## Level 2 — ACIR drift vs sources (slow, needs the Noir toolchain)
+## Level 2 — source and VK reproducibility (needs the pinned Noir toolchain)
 
-Only when `.nr` sources under `noir/` changed and you need to know whether a new frozen version is owed. Needs nargo + bb (`mise run install:zk-toolchain`). Run `cargo xtask freeze-circuits`:
+Use when sources, frozen artifacts, or toolchain pins changed, or to reproduce the CI circuit check. Install the pins with `mise install nargo bb`, then run `cargo xtask freeze-circuits --check` (or `mise run freeze-circuits:check`).
 
-- **`0 minted` / all `unchanged`** → the sources compile to the same ACIR as the frozen artifacts; nothing to do.
-- **`minted ...`** → a circuit drifted; recommend `/freeze-circuits` to mint and commit the new version alongside the source change.
+- **`all active circuits reproduce.`** → all five active circuits' decoded bytecode, structural ABI, and freshly derived VK match the committed artifacts.
+- **Nonzero exit** → report the failing circuit and artifact or toolchain diagnostic. If a source change was intentional, use `/freeze-circuits` to mint and commit its new version.
 
-Note: `freeze-circuits` **writes** to `manifest.toml` / `resources/` when it mints. For a purely read-only check prefer Level 1; reach for Level 2 only when you actually intend to freeze.
+The check asserts the exact `mise.toml` nargo/bb versions and compiles a per-process scratch copy under `target/`, cleaned on success or failure. It never mints versions, reconciles retired artifacts, or modifies the manifest, frozen artifacts, or tracked Noir compiler output. A normal freeze can skip unchanged ACIR/ABI without checking the VK; `--check` always re-derives it. Do not combine `--check` with `--abi-change` or `--semantic`.
