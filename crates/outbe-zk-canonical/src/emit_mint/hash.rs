@@ -1,7 +1,7 @@
 //! Rust mirror of the Emit hash and tree formulas.
 //!
 //! Mirrors the frozen circuit formulas in
-//! `outbe-emit-mint-circuit/src/emit.nr` and `outbe-circuit-core`'s
+//! `noir/emit_mint/src/emit.nr` and `noir/outbe-circuit-core`'s
 //! `hash.nr` / `tags.nr` / `merkle_tree.nr`:
 //!
 //! - BN254 fields use canonical 32-byte big-endian encodings; a word that

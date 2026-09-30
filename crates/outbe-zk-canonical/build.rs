@@ -4,24 +4,21 @@
 //! artifacts. This script just reads them.
 //!
 //! Inputs:
-//!   * `circuits/manifest.toml` — the append-only registry index: one entry per
-//!     `(module, version)` with `label` + `status` (+ `circuit_hash` once the
-//!     bytecode has been dropped), and a global `proof_system`.
-//!   * `resources/circuits/<module>/<version>/` — frozen artifacts:
-//!       - `circuit.vk`     — always present (verification needs only the VK);
+//!   * `circuits/manifest.toml` — L1 releases and L2 chain-version package arrays.
+//!   * `resources/circuits/<module>/<version>/` — L1 frozen artifacts:
+//!       - `circuit.vk`     — present for every non-revoked version;
 //!       - `bytecode.b64`   — only for the **active** version (proving artifact);
 //!       - `abi.json`       — only for the active version (drives the Rust types).
+//!   * `l2/<chain_id>/<path>/` — a Nargo package with those frozen files at its root.
 //!
 //! Output (`$OUT_DIR/noir_generated.rs`):
 //!   * `pub mod <module> { … }` for the **latest active** version of each module
 //!     — witness / public-input types + identity consts + `Circuit` /
 //!     `CircuitId` impls (the prover-facing API; carries `BYTECODE_B64`).
-//!   * `pub const CIRCUIT_REGISTRY: &[crate::RegistryEntry]` over **every** entry
-//!     (all versions) — the verification view (VK only, no bytecode).
-//!   * `pub const L2_CIRCUITS_REGISTRY: &[crate::L2ChainEntry]` — explicitly
-//!     enabled circuit versions per L2 chain, declared in `[[l2_chain]]`.
+//!   * `pub static CIRCUIT_REGISTRY` over every non-revoked L1 version.
+//!   * Private L2 package descriptors and an exact chain-version index.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -30,18 +27,33 @@ use base64::Engine;
 use serde_json::Value;
 use tiny_keccak::{Hasher, Keccak};
 
-/// One manifest entry + its computed identity. `abi`/bytecode are present only
-/// for provable (active) versions; deprecated versions keep just the VK.
+/// Shared proving artifacts and computed identity for an L1 release or L2 package.
 struct Loaded {
     module: String,
     label: String,
+    // L2 uses the latest registered chain version descriptively, not as identity.
     version: String,
-    status: String,
+    artifacts: String,
     circuit_hash: [u8; 32],
     vk_hash: [u8; 32],
     vk: Vec<u8>,
     abi: Option<Value>,
     has_bytecode: bool,
+}
+
+struct Release {
+    status: String,
+    circuit: Loaded,
+}
+
+struct L2Package {
+    path: String,
+    circuit: Loaded,
+}
+
+struct L2Registry {
+    packages: Vec<L2Package>,
+    versions: BTreeMap<(u64, String), Vec<usize>>,
 }
 
 fn main() {
@@ -61,101 +73,147 @@ fn main() {
         .expect("manifest: proof_system must be a string")
         .to_string();
     let loaded = load_circuits(&manifest, &manifest_dir);
+    let l2 = load_l2_circuits(&manifest, &manifest_dir, &loaded);
 
     let mut generated = String::new();
     generated.push_str(&generate_header());
     generated.push_str(&generate_default_types());
     generated.push_str(&generate_circuit_modules(&loaded, &proof_system));
     generated.push_str(&generate_circuit_registry(&loaded, &proof_system));
-    generated.push_str(&generate_l2_registry(&manifest, &loaded));
+    for package in &l2.packages {
+        generated.push_str(&generate_circuit_module(&package.circuit, &proof_system));
+    }
+    generated.push_str(&generate_l2_registry(&l2));
 
     fs::write(out_dir.join("noir_generated.rs"), generated)
         .expect("failed to write noir_generated.rs");
 }
 
 /// Read frozen artifacts and derive the identities needed by code generation.
-fn load_circuits(manifest: &toml::Value, manifest_dir: &Path) -> Vec<Loaded> {
+fn load_circuits(manifest: &toml::Value, manifest_dir: &Path) -> Vec<Release> {
     let circuits = manifest["circuit"]
         .as_array()
         .expect("manifest: [[circuit]] array required");
 
-    let mut loaded: Vec<Loaded> = Vec::new();
-    for c in circuits {
-        let module = c["module"].as_str().expect("circuit.module").to_string();
-        let label = c["label"].as_str().expect("circuit.label").to_string();
-        let version = c["version"].as_str().expect("circuit.version").to_string();
-        let status = c["status"].as_str().expect("circuit.status").to_string();
-        let manifest_hash = c.get("circuit_hash").and_then(|v| v.as_str());
-
-        // Revoked = obsolete: its VK has been dropped, so it can't be a registry
-        // entry (verification needs the VK). The manifest keeps the record.
-        if status == "revoked" {
-            continue;
+    let mut loaded = Vec::new();
+    for circuit in circuits {
+        let module = circuit["module"].as_str().expect("circuit.module");
+        let label = circuit["label"].as_str().expect("circuit.label");
+        let versions = circuit["versions"]
+            .as_array()
+            .expect("circuit.versions must be an array");
+        for release in versions {
+            if let Some(entry) = load_release(module, label, release, manifest_dir) {
+                loaded.push(entry);
+            }
         }
-
-        let dir = manifest_dir.join(format!("resources/circuits/{module}/{version}"));
-        let vk_path = dir.join("circuit.vk");
-        let b64_path = dir.join("bytecode.b64");
-        let abi_path = dir.join("abi.json");
-        println!("cargo:rerun-if-changed={}", vk_path.display());
-        println!("cargo:rerun-if-changed={}", b64_path.display());
-        println!("cargo:rerun-if-changed={}", abi_path.display());
-
-        // VK is always present — verification needs only it.
-        let vk = fs::read(&vk_path).unwrap_or_else(|e| panic!("read {}: {e}", vk_path.display()));
-        let vk_hash = keccak256(&vk);
-
-        // Bytecode is kept only for the active version. If absent, the identity
-        // is preserved in the manifest's `circuit_hash`.
-        let has_bytecode = b64_path.exists();
-        let circuit_hash = if has_bytecode {
-            let bytecode = fs::read_to_string(&b64_path)
-                .unwrap_or_else(|e| panic!("read {}: {e}", b64_path.display()));
-            let acir = base64::engine::general_purpose::STANDARD
-                .decode(bytecode.trim())
-                .unwrap_or_else(|e| panic!("{module}@{version}: bad base64: {e}"));
-            keccak256(&acir)
-        } else {
-            hex_to_32(manifest_hash.unwrap_or_else(|| {
-                panic!("{module}@{version}: bytecode dropped but manifest has no circuit_hash")
-            }))
-        };
-
-        let abi = if abi_path.exists() {
-            Some(
-                serde_json::from_str(
-                    &fs::read_to_string(&abi_path)
-                        .unwrap_or_else(|e| panic!("read {}: {e}", abi_path.display())),
-                )
-                .unwrap_or_else(|e| panic!("parse {}: {e}", abi_path.display())),
-            )
-        } else {
-            None
-        };
-
-        loaded.push(Loaded {
-            module,
-            label,
-            version,
-            status,
-            circuit_hash,
-            vk_hash,
-            vk,
-            abi,
-            has_bytecode,
-        });
     }
 
     loaded
+}
+
+fn load_release(
+    module: &str,
+    label: &str,
+    release: &toml::Value,
+    manifest_dir: &Path,
+) -> Option<Release> {
+    let version = release["version"]
+        .as_str()
+        .expect("circuit.versions.version")
+        .to_string();
+    let status = release["status"]
+        .as_str()
+        .expect("circuit.versions.status")
+        .to_string();
+    let manifest_hash = release.get("circuit_hash").and_then(|v| v.as_str());
+
+    // Revoked releases retain their catalog record but no verification key.
+    if status == "revoked" {
+        return None;
+    }
+
+    let artifacts = format!("resources/circuits/{module}/{version}");
+    Some(Release {
+        status,
+        circuit: load_artifacts(
+            module,
+            label,
+            &version,
+            &artifacts,
+            manifest_hash,
+            manifest_dir,
+        ),
+    })
+}
+
+fn load_artifacts(
+    module: &str,
+    label: &str,
+    version: &str,
+    artifacts: &str,
+    manifest_hash: Option<&str>,
+    manifest_dir: &Path,
+) -> Loaded {
+    let dir = manifest_dir.join(artifacts);
+    let vk_path = dir.join("circuit.vk");
+    let b64_path = dir.join("bytecode.b64");
+    let abi_path = dir.join("abi.json");
+    println!("cargo:rerun-if-changed={}", vk_path.display());
+    println!("cargo:rerun-if-changed={}", b64_path.display());
+    println!("cargo:rerun-if-changed={}", abi_path.display());
+
+    // VK is always present — verification needs only it.
+    let vk = fs::read(&vk_path).unwrap_or_else(|e| panic!("read {}: {e}", vk_path.display()));
+    let vk_hash = keccak256(&vk);
+
+    // Bytecode is kept only for the active version. If absent, the identity
+    // is preserved in the manifest's `circuit_hash`.
+    let has_bytecode = b64_path.exists();
+    let circuit_hash = if has_bytecode {
+        let bytecode = fs::read_to_string(&b64_path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", b64_path.display()));
+        let acir = base64::engine::general_purpose::STANDARD
+            .decode(bytecode.trim())
+            .unwrap_or_else(|e| panic!("{module}@{version}: bad base64: {e}"));
+        keccak256(&acir)
+    } else {
+        hex_to_32(manifest_hash.unwrap_or_else(|| {
+            panic!("{module}@{version}: bytecode dropped but manifest has no circuit_hash")
+        }))
+    };
+
+    let abi = if abi_path.exists() {
+        Some(
+            serde_json::from_str(
+                &fs::read_to_string(&abi_path)
+                    .unwrap_or_else(|e| panic!("read {}: {e}", abi_path.display())),
+            )
+            .unwrap_or_else(|e| panic!("parse {}: {e}", abi_path.display())),
+        )
+    } else {
+        None
+    };
+
+    Loaded {
+        module: module.to_string(),
+        label: label.to_string(),
+        version: version.to_string(),
+        artifacts: artifacts.to_string(),
+        circuit_hash,
+        vk_hash,
+        vk,
+        abi,
+        has_bytecode,
+    }
 }
 
 /// Generated-file provenance.
 fn generate_header() -> String {
     let mut generated = String::new();
     generated.push_str("// @generated by build.rs from the frozen circuit registry.\n");
-    generated.push_str(
-        "// Source of truth: circuits/manifest.toml + resources/circuits/<module>/<version>/.\n",
-    );
+    generated
+        .push_str("// Source of truth: circuits/manifest.toml and committed frozen artifacts.\n");
     generated
 }
 
@@ -180,13 +238,14 @@ fn generate_default_types() -> String {
 }
 
 /// Modules for the latest provable active version of each circuit.
-fn generate_circuit_modules(loaded: &[Loaded], proof_system: &str) -> String {
+fn generate_circuit_modules(loaded: &[Release], proof_system: &str) -> String {
     let mut generated = String::new();
     // Per module, the latest **active** version that is provable (has bytecode +
     // ABI) is the prover-facing "head".
     let mut head: BTreeMap<&str, &Loaded> = BTreeMap::new();
-    for l in loaded {
-        if l.status != "active" || l.abi.is_none() || !l.has_bytecode {
+    for release in loaded {
+        let l = &release.circuit;
+        if release.status != "active" || l.abi.is_none() || !l.has_bytecode {
             continue;
         }
         head.entry(&l.module)
@@ -205,11 +264,11 @@ fn generate_circuit_modules(loaded: &[Loaded], proof_system: &str) -> String {
 }
 
 /// Verification registry over every non-revoked frozen version.
-fn generate_circuit_registry(loaded: &[Loaded], proof_system: &str) -> String {
+fn generate_circuit_registry(loaded: &[Release], proof_system: &str) -> String {
     // The in-code registry over every entry (all versions). VK-only view.
     let mut registry = String::from(
-        "/// Append-only registry of every frozen circuit version (see `circuits/manifest.toml`).\n\
-         pub const CIRCUIT_REGISTRY: &[crate::RegistryEntry] = &[\n",
+        "/// Every non-revoked frozen L1 circuit version (see `circuits/manifest.toml`).\n\
+         pub static CIRCUIT_REGISTRY: &[crate::RegistryEntry] = &[\n",
     );
     for l in loaded {
         registry.push_str(&generate_registry_entry(l, proof_system));
@@ -218,85 +277,172 @@ fn generate_circuit_registry(loaded: &[Loaded], proof_system: &str) -> String {
     registry
 }
 
-/// Resolve explicit L2 bindings, never the moving latest-active circuit head.
-fn generate_l2_registry(manifest: &toml::Value, loaded: &[Loaded]) -> String {
+/// Load each L2 package once, checking every chain-version pin against its VK.
+fn load_l2_circuits(manifest: &toml::Value, manifest_dir: &Path, l1: &[Release]) -> L2Registry {
     let chains = manifest.get("l2_chain").map_or(&[][..], |value| {
         value
             .as_array()
             .expect("manifest: l2_chain must be an array of tables")
             .as_slice()
     });
-    let mut bindings = BTreeMap::new();
+    let mut registry = L2Registry {
+        packages: Vec::new(),
+        versions: BTreeMap::new(),
+    };
+    let mut chain_ids = BTreeSet::new();
+    let mut package_indices = BTreeMap::<String, usize>::new();
+    let mut modules: BTreeMap<String, String> = l1
+        .iter()
+        .map(|release| {
+            (
+                release.circuit.module.clone(),
+                release.circuit.artifacts.clone(),
+            )
+        })
+        .collect();
     for chain in chains {
         let chain_id = chain
             .get("chain_id")
             .and_then(|value| value.as_integer())
             .and_then(|id| u64::try_from(id).ok())
             .expect("l2_chain.chain_id must be a non-negative integer");
-        let circuits = chain
-            .get("circuits")
+        assert!(chain_ids.insert(chain_id), "duplicate L2 chain {chain_id}");
+        let versions = chain
+            .get("versions")
             .and_then(|value| value.as_array())
-            .expect("l2_chain.circuits must be an array");
-        let mut versions = BTreeMap::new();
-        for circuit in circuits {
-            let version = circuit
+            .expect("l2_chain.versions must be an array");
+        for version in versions {
+            let name = version
                 .get("version")
                 .and_then(|value| value.as_str())
-                .filter(|version| !version.trim().is_empty())
-                .expect("l2_chain.circuits.version must be a non-empty string");
-            let module = circuit
-                .get("module")
-                .and_then(|value| value.as_str())
-                .expect("l2_chain.circuits.module must be a string");
-            let target = loaded
-                .iter()
-                .find(|entry| entry.module == module && entry.version == version)
-                .unwrap_or_else(|| {
-                    panic!(
-                        "L2 chain {chain_id} version {version:?}: \
-                         unknown or revoked circuit {module}@{version}"
-                    )
-                });
+                .filter(|name| !name.trim().is_empty())
+                .expect("l2_chain.versions.version must be a non-empty string");
+            let key = (chain_id, name.to_string());
             assert!(
-                versions.insert(target.version.as_str(), target).is_none(),
-                "L2 chain {chain_id}: duplicate version {version:?}"
+                !registry.versions.contains_key(&key),
+                "L2 chain {chain_id}: duplicate version {name:?}"
             );
+            version
+                .get("stable")
+                .and_then(|value| value.as_bool())
+                .expect("l2_chain.versions.stable must be a boolean");
+            let circuits = version
+                .get("circuits")
+                .and_then(|value| value.as_array())
+                .expect("l2_chain.versions.circuits must be an array");
+            let mut paths = BTreeSet::new();
+            let mut indices = Vec::with_capacity(circuits.len());
+            for circuit in circuits {
+                let path = circuit
+                    .get("path")
+                    .and_then(|value| value.as_str())
+                    .expect("L2 circuit.path must be a string");
+                assert!(
+                    !path.contains(['\\', ':'])
+                        && path.split('/').all(|part| !part.is_empty() && part != "." && part != ".."),
+                    "L2 chain {chain_id}: package path {path:?} must be relative and cannot escape its chain"
+                );
+                assert!(
+                    paths.insert(path),
+                    "L2 chain {chain_id} version {name:?}: duplicate package path {path:?}"
+                );
+                let pin = circuit
+                    .get("vk_hash")
+                    .and_then(|value| value.as_str())
+                    .expect("L2 circuit.vk_hash must be a string");
+                assert!(
+                    pin.len() == 64 && pin.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+                    "L2 chain {chain_id} package {path:?}: vk_hash must be 64 lowercase hex characters"
+                );
+                let vk_hash = hex_to_32(pin);
+                let artifacts = format!("l2/{chain_id}/{path}");
+                let index = if let Some(&index) = package_indices.get(&artifacts) {
+                    let package = &mut registry.packages[index];
+                    assert_eq!(
+                        package.circuit.vk_hash, vk_hash,
+                        "L2 package {artifacts}: conflicting vk_hash pins"
+                    );
+                    if version_key(name) > version_key(&package.circuit.version) {
+                        package.circuit.version = name.to_string();
+                    }
+                    index
+                } else {
+                    let chain_root = manifest_dir.join(format!("l2/{chain_id}"));
+                    let chain_root = fs::canonicalize(&chain_root)
+                        .unwrap_or_else(|e| panic!("resolve {}: {e}", chain_root.display()));
+                    let root = manifest_dir.join(&artifacts);
+                    let resolved = fs::canonicalize(&root)
+                        .unwrap_or_else(|e| panic!("resolve {}: {e}", root.display()));
+                    assert!(
+                        resolved.starts_with(&chain_root) && resolved != chain_root,
+                        "L2 package {artifacts}: path escapes its chain"
+                    );
+                    let nargo_path = root.join("Nargo.toml");
+                    println!("cargo:rerun-if-changed={}", nargo_path.display());
+                    let nargo: toml::Value = toml::from_str(
+                        &fs::read_to_string(&nargo_path)
+                            .unwrap_or_else(|e| panic!("read {}: {e}", nargo_path.display())),
+                    )
+                    .unwrap_or_else(|e| panic!("parse {}: {e}", nargo_path.display()));
+                    let module = nargo["package"]["name"]
+                        .as_str()
+                        .expect("Nargo package.name");
+                    if let Some(previous) = modules.insert(module.to_string(), artifacts.clone()) {
+                        panic!("duplicate circuit module {module:?}: {previous} and {artifacts}");
+                    }
+                    let label = module.replace('_', ".");
+                    let loaded =
+                        load_artifacts(module, &label, name, &artifacts, None, manifest_dir);
+                    assert!(
+                        loaded.has_bytecode && loaded.abi.is_some(),
+                        "L2 package {artifacts}: bytecode.b64 and abi.json are required"
+                    );
+                    assert_eq!(
+                        loaded.vk_hash, vk_hash,
+                        "L2 package {artifacts}: stored circuit.vk does not match pinned vk_hash"
+                    );
+                    let index = registry.packages.len();
+                    registry.packages.push(L2Package {
+                        path: path.to_string(),
+                        circuit: loaded,
+                    });
+                    package_indices.insert(artifacts, index);
+                    index
+                };
+                indices.push(index);
+            }
+            registry.versions.insert(key, indices);
         }
-        assert!(
-            bindings.insert(chain_id, versions).is_none(),
-            "duplicate L2 chain {chain_id}"
-        );
     }
+    registry
+}
 
-    let mut generated = String::from(
-        "/// Enabled circuit versions per L2 chain, sorted by chain ID.\n\
-         /// Declared in `[[l2_chain]]` in `circuits/manifest.toml`.\n\
-         pub const L2_CIRCUITS_REGISTRY: &[crate::L2ChainEntry] = &[\n",
-    );
-    for (chain_id, versions) in bindings {
-        generated.push_str(&generate_l2_chain_entry(chain_id, &versions));
+/// Private address-stable package descriptors, shared by exact chain-version selections.
+fn generate_l2_registry(registry: &L2Registry) -> String {
+    let mut generated = String::new();
+    for (index, package) in registry.packages.iter().enumerate() {
+        let vk_path = format!("/{}/circuit.vk", package.circuit.artifacts);
+        generated.push_str(&format!(
+            "static L2_PACKAGE_{index}: crate::L2Circuit = crate::L2Circuit {{\n\
+             \x20   path: {path:?},\n\
+             \x20   vk_hash: {vk_hash},\n\
+             \x20   vk_bytes: include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {vk_path:?})),\n\
+             }};\n",
+            path = package.path,
+            vk_hash = hex_lit(&package.circuit.vk_hash),
+        ));
+    }
+    generated
+        .push_str("pub(super) static L2_CHAIN_INDEX: &[(u64, &str, &[&crate::L2Circuit])] = &[\n");
+    for ((chain_id, version), indices) in &registry.versions {
+        generated.push_str(&format!("    ({chain_id}, {version:?}, &[\n"));
+        for index in indices {
+            generated.push_str(&format!("        &L2_PACKAGE_{index},\n"));
+        }
+        generated.push_str("    ]),\n");
     }
     generated.push_str("];\n");
     generated
-}
-
-/// One L2 chain entry with its explicitly enabled versions.
-fn generate_l2_chain_entry(chain_id: u64, versions: &BTreeMap<&str, &Loaded>) -> String {
-    let mut generated = format!("    crate::L2ChainEntry {{ chain_id: {chain_id}, circuits: &[\n");
-    for (version, target) in versions {
-        generated.push_str(&generate_l2_circuit_version(version, target));
-    }
-    generated.push_str("    ] },\n");
-    generated
-}
-
-/// One enabled circuit version within an L2 chain entry.
-fn generate_l2_circuit_version(version: &str, target: &Loaded) -> String {
-    format!(
-        "        crate::L2CircuitVersion {{ version: {version:?}, circuit_hash: {}, vk_hash: {} }},\n",
-        hex_lit(&target.circuit_hash),
-        hex_lit(&target.vk_hash)
-    )
 }
 
 /// keccak256 (Ethereum variant), used for both `circuit_hash` and `vk_hash`.
@@ -360,14 +506,16 @@ fn marker_ident(module: &str) -> String {
 }
 
 /// One `crate::RegistryEntry { … }` literal (verification view: VK only).
-fn generate_registry_entry(l: &Loaded, proof_system: &str) -> String {
-    let status = match l.status.as_str() {
+fn generate_registry_entry(release: &Release, proof_system: &str) -> String {
+    let l = &release.circuit;
+    let status = match release.status.as_str() {
         "active" => "Active",
         "deprecated" => "Deprecated",
         "revoked" => "Revoked",
         other => panic!("{}: unknown status {other:?}", l.module),
     };
-    let (m, v) = (&l.module, &l.version);
+    let v = &l.version;
+    let vk_path = format!("/{}/circuit.vk", l.artifacts);
     format!(
         "    crate::RegistryEntry {{\n\
          \x20       label: {label:?},\n\
@@ -376,7 +524,7 @@ fn generate_registry_entry(l: &Loaded, proof_system: &str) -> String {
          \x20       proof_system: {proof_system:?},\n\
          \x20       circuit_hash: {ch},\n\
          \x20       vk_hash: {vh},\n\
-         \x20       vk_bytes: include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/circuits/{m}/{v}/circuit.vk\")),\n\
+         \x20       vk_bytes: include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {vk_path:?})),\n\
          \x20   }},\n",
         label = l.label,
         ch = hex_lit(&l.circuit_hash),
@@ -427,7 +575,8 @@ fn generate_circuit_imports(params: &[Value], module: &str) -> String {
 
 /// Proof layout and frozen circuit identity constants.
 fn generate_circuit_constants(l: &Loaded, params: &[Value], proof_system: &str) -> String {
-    let module = &l.module;
+    let b64_path = format!("/{}/bytecode.b64", l.artifacts);
+    let vk_path = format!("/{}/circuit.vk", l.artifacts);
     let version = &l.version;
     let mut generated = String::new();
     let public_input_count: usize = params
@@ -449,18 +598,19 @@ fn generate_circuit_constants(l: &Loaded, params: &[Value], proof_system: &str) 
     generated.push_str(&format!("    pub const LABEL: &str = {:?};\n", l.label));
     generated.push_str("    /// Semver-style version string. Not authoritative.\n");
     generated.push_str(&format!("    pub const VERSION: &str = {version:?};\n"));
-    generated.push_str("    /// `keccak256(base64_decode(bytecode))` — authoritative identity.\n");
+    generated
+        .push_str("    /// `keccak256(base64_decode(bytecode))` — proving bytecode identity.\n");
     generated.push_str(&format!(
         "    pub const CIRCUIT_HASH: [u8; 32] = {};\n",
         hex_lit(&l.circuit_hash)
     ));
     generated.push_str("    /// Base64-encoded ACIR bytecode (frozen; the proving artifact).\n");
     generated.push_str(&format!(
-        "    pub const BYTECODE_B64: &str = include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/circuits/{module}/{version}/bytecode.b64\"));\n"
+        "    pub const BYTECODE_B64: &str = include_str!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {b64_path:?}));\n"
     ));
     generated.push_str("    /// UltraHonkKeccak verification key (frozen).\n");
     generated.push_str(&format!(
-        "    pub const VK_BYTES: &[u8] = include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), \"/resources/circuits/{module}/{version}/circuit.vk\"));\n"
+        "    pub const VK_BYTES: &[u8] = include_bytes!(concat!(env!(\"CARGO_MANIFEST_DIR\"), {vk_path:?}));\n"
     ));
     generated.push_str("    /// `keccak256(VK_BYTES)`.\n");
     generated.push_str(&format!(
