@@ -9,6 +9,18 @@ All notable changes to this project will be documented in this file. See [conven
 - Add read-only `cargo xtask freeze-circuits --check` with pinned-toolchain checks and bytecode, ABI, and verification-key reproduction for all five active circuits. CI now relies on this command's exit status instead of Git-diff and untracked-file checks.
 
 - - -
+## v0.26.0 - 2026-09-30
+#### Features
+- replace `owner` with `context` in Paynote circuit (#33) - (39b130e) - latexstone
+- Paynote merge circuit (#32) - (3de7af5) - latexstone
+#### Refactoring
+- remove trait suit generalization (#31) - (db9ae9c) - outvld
+#### Miscellaneous Chores
+- Add xtask for check without changing files. (#30) - (1e5b210) - outvld
+- disable crates.io publishing and update release workflow documentation (#29) - (d7a1d6d) - latexstone
+
+- - -
+
 ## v0.25.0 - 2026-09-22
 #### Features
 - add niflheim tribute circuit (#28) - (9c1bd5a) - outvld
