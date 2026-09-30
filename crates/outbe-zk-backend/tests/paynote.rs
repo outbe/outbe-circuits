@@ -54,7 +54,7 @@ fn single_leaf_path(chain_id: u64) -> AuthPath {
 fn paynote_partial_spend_prove_verify_round_trip() {
     let chain_id = 31_337u64;
     let asset = address([0xa0; 20]);
-    let owner = address([0x33; 20]);
+    let context = Fr::from(1u64);
     let spend_key = Fr::from(17u64);
 
     // Above the old u128 ceiling: upper limbs must survive the commitment,
@@ -102,7 +102,7 @@ fn paynote_partial_spend_prove_verify_round_trip() {
         root,
         nullifier: spent_nullifier,
         asset,
-        owner,
+        context,
         spend_amount,
         change_commitment,
     };
@@ -131,12 +131,12 @@ fn paynote_partial_spend_prove_verify_round_trip() {
                     ..public.clone()
                 },
             ),
-            // Binding `owner` is what stops a mempool observer lifting the
-            // proof and redirecting the payment.
+            // A substituted context is a different public statement, so the
+            // proof does not verify for it.
             (
-                "a different owner",
+                "a different context",
                 PublicInputs {
-                    owner: address([0x44; 20]),
+                    context: Fr::from(2u64),
                     ..public.clone()
                 },
             ),
@@ -186,7 +186,7 @@ fn oversized_asset_is_rejected() {
         root,
         nullifier: nullifier(commitment, spend_key),
         asset,
-        owner: address([0x33; 20]),
+        context: Fr::from(1u64),
         spend_amount: u256_limbs_be(&U256::from(100).to_be_bytes()),
         change_commitment: Fr::from(0u64),
     };
@@ -220,7 +220,7 @@ fn modulus_encoded_amount_is_rejected() {
         root,
         nullifier: nullifier(commitment, spend_key),
         asset,
-        owner: address([0x33; 20]),
+        context: Fr::from(1u64),
         spend_amount: amount,
         change_commitment: Fr::from(0u64),
     };

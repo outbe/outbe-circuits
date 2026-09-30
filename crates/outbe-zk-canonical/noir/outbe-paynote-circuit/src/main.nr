@@ -5,6 +5,10 @@
 // partial spend -- the commitment of the change note. Amounts are 256-bit
 // (`bignum::U256`, three 120-bit little-endian limbs). The note is a bearer
 // instrument: spend authority is knowledge of `note_spend_key`.
+//
+// `context` is an opaque public commitment. The circuit authenticates it and
+// rejects zero. It does not interpret the preimage, and the nullifier does
+// not depend on it.
 
 mod tests;
 
@@ -15,14 +19,12 @@ use outbe_circuit_core::merkle_tree::DEPTH;
 use outbe_circuit_core::types::EthAddress;
 use paynote_lib::{change_key, merkle_root, note_commitment, note_sn, note_nullifier};
 
-// TODO consider implementing ownership verification?
-
 fn main(
     chain_id: pub u64,
     root: pub Field,
     nullifier: pub Field,
     asset: pub EthAddress,
-    owner: pub EthAddress,
+    context: pub Field,
     spend_amount: pub U256,
     change_commitment: pub Field,
     note_amount: U256,
@@ -41,8 +43,7 @@ fn main(
     assert(nullifier != 0);
     assert(note_spend_key != 0);
     asset.validate();
-    owner.validate();
-    assert(owner.to_field() != 0);
+    assert(context != 0);
 
     let serial = note_sn(note_spend_key);
     let commitment = note_commitment(chain_id, serial, asset, note_amount);

@@ -93,7 +93,7 @@ fn merged_note_uses_ordinary_settlement_and_binds_every_public_word() {
         root: tree.root(),
         nullifier,
         asset: p.asset,
-        owner: Fr::from(123),
+        context: Fr::from(123),
         spend_amount: [20, 0, 0],
         change_commitment: note_commitment(
             p.chain_id,

@@ -421,22 +421,22 @@ fn l2_niflheim_enables_its_frozen_tribute() {
     assert!(l2_circuits(9_900_502).is_empty());
 }
 
-/// Paynote's descriptor and ABI layout. Mirrors the Emit mint case: the two
-/// addresses cross as `EthAddress` newtypes, so each is a single packed field
-/// rather than 20 byte leaves.
+/// Paynote's descriptor and ABI layout. `asset` crosses as an `EthAddress`
+/// newtype, so it is one packed field rather than 20 byte leaves. `context`
+/// is a raw field.
 #[test]
 fn paynote_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::paynote as pay;
 
     assert_eq!(pay::Paynote::LABEL, "outbe.paynote");
-    assert_eq!(pay::Paynote::VERSION, "1.2.0");
+    assert_eq!(pay::Paynote::VERSION, "1.3.0");
     assert!(!pay::Paynote::BYTECODE_B64.is_empty());
     assert_ne!(pay::Paynote::CIRCUIT_HASH, [0u8; 32]);
     assert!(!pay::Paynote::VK_BYTES.is_empty());
     assert_ne!(pay::Paynote::VK_HASH, [0u8; 32]);
 
     let asset = Fr::from_be_bytes_mod_order(&[0xa0; 20]);
-    let owner = Fr::from_be_bytes_mod_order(&[0x33; 20]);
+    let context = Fr::from(9u64);
     let spend_amount = [(1u128 << 100) + 40, 0xf << 8, 0];
     let note_amount = [(1u128 << 100) + 100, 0xf << 8, 0];
     let public = pay::PublicInputs {
@@ -444,7 +444,7 @@ fn paynote_descriptor_and_abi_layout() {
         root: Fr::from(2u64),
         nullifier: Fr::from(3u64),
         asset,
-        owner,
+        context,
         spend_amount,
         change_commitment: Fr::from(4u64),
     };
@@ -458,11 +458,11 @@ fn paynote_descriptor_and_abi_layout() {
         flat[3], asset,
         "asset is one big-endian-packed field, not 20 byte leaves"
     );
-    assert_eq!(flat[4], owner, "owner likewise");
+    assert_eq!(flat[4], context, "context is one raw field");
     assert_eq!(
         &flat[5..8],
         spend_amount.map(Fr::from).as_slice(),
-        "u256 spend_amount follows owner as three little-endian 120-bit limbs"
+        "u256 spend_amount follows context as three little-endian 120-bit limbs"
     );
     assert_eq!(flat[8], Fr::from(4u64), "change_commitment is last");
 
