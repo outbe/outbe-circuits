@@ -9,9 +9,9 @@ Concrete canonical circuit, witness, and verifier-wire types for the Outbe
 protocol (ownership, Demo Tribute, Emit mint, Paynote, and Niflheim Tribute),
 built on the generic seams and marshaling helpers in `outbe-protocol`.
 The `demo_tribute`, `emit_mint`, and `paynote` modules own their circuit-specific
-combined-proof layouts and public-input decoders. This crate is also the
-**in-code, versioned circuit registry**: the authoritative, append-only record
-of every released circuit version and its on-chain identity.
+combined-proof layouts and public-input decoders. This crate also holds the
+**append-only L1 release registry** and **VK-pinned L2 chain-version selections**,
+with stable or explicitly mutable package identities.
 
 Alloy support is optional and disabled by default. Enable `features = ["alloy"]`
 to use the Emit mint and Paynote `PublicInputs` and `decode_public_inputs` APIs
@@ -175,89 +175,113 @@ missed:
 `nargo`/`bb`. It reads the committed frozen artifacts and emits, into
 `outbe_zk_canonical::noir`:
 
-- `pub mod <module> { … }` for the **latest active** version of each circuit —
-  `Witness` / `PublicInputs` types, the `Circuit` + `CircuitId` impls on a
-  marker, and identity consts (`LABEL`, `VERSION`, `CIRCUIT_HASH`, `BYTECODE_B64`,
-  `VK_BYTES`, `VK_HASH`). This is the prover-facing API.
-- `pub const CIRCUIT_REGISTRY: &[RegistryEntry]` over **every** version (the
-  verification view — VK + hashes, no bytecode). A verifier dispatches on this:
-  match a submission's `circuit_id` (`vk_hash` / `label@version`), check `status`,
-  verify against `vk_bytes`. Old + new versions coexist here, so a chain can accept
-  both during a rollout.
-- `pub const L2_CIRCUITS_REGISTRY: &[L2ChainEntry]` groups explicitly enabled
-  `(version, circuit_hash, vk_hash)` bindings by external L2 chain ID. Use
-  `outbe_zk_canonical::l2_circuits(chain_id)` for allocation-free lookup.
-
-So: **registry = all versions; codegen = latest active**.
+- Circuit-specific proving modules with `Witness` / `PublicInputs`, `Circuit` /
+  `CircuitId` implementations, and frozen identity/codec constants. L1 modules
+  describe the latest active release. L2 modules use the package's Nargo name;
+  their descriptive `VERSION` is the latest registered chain version selecting
+  that package, not an independent package release.
+- `pub static CIRCUIT_REGISTRY` contains every non-revoked **L1** release once,
+  with its version, lifecycle status, hashes, and verification key.
+- Private L2 package descriptors are shared across chain-version selections.
+  `outbe_zk_canonical::l2_circuits(chain_id, version)` returns references to their
+  package paths, pinned VK hashes, and raw verification keys. There are no
+  per-chain Rust modules or duplicate L2 declarations in the L1 catalog.
 
 ## Layout
 
+```text
+circuits/manifest.toml                      # L1 releases + L2 chain-version arrays
+noir/<module>/                             # conventional L1 source packages
+noir/outbe-circuit-core/                    # shared Noir library
+resources/circuits/<module>/<version>/      # frozen L1 artifacts
+l2/<chain_id>/<package>/                    # one L2 source/key package
+    Nargo.toml
+    src/main.nr
+    abi.json
+    bytecode.b64
+    circuit.vk
+    target/<nargo-name>.json                # compiler output, not the registry
 ```
-circuits/manifest.toml                       # append-only registry index
-resources/circuits/<module>/<version>/       # frozen, immutable artifacts
-    bytecode.b64   # ACIR — proving artifact (active only)
-    abi.json       # drives the Rust witness types (active only)
-    circuit.vk     # UltraHonkKeccak VK — verification (kept while not revoked)
-noir/                                        # the .nr sources = the "head" (next version)
+
+`manifest.toml` declares the global `proof_system` and shared `libraries`.
+Each L1 `[[circuit]]` has only `module`, `label`, and nested
+`[[circuit.versions]]` records. Source and artifact paths follow the conventions
+above; they are not repeated in the manifest.
+
+```toml
+[[circuit]]
+module = "paynote"
+label = "outbe.paynote"
+
+[[circuit.versions]]
+version = "1.2.0"
+status = "active"
 ```
 
-`manifest.toml` is the source of truth: a global `proof_system` (the bb pin) plus
-one `[[circuit]]` per `(module, version)` with `label`, `status`, and — once the
-bytecode is dropped — the preserved `circuit_hash`.
+L1 release records retain `circuit_hash` after their bytecode is dropped.
+Both `build.rs` and `xtask` use this catalog without another hardcoded circuit
+list. Circuit-specific Rust paths remain, such as `noir::niflheim_tribute`.
+Nargo package names must be unique among generated modules; versioned package
+directories may use corresponding distinct names.
 
-### Enabling circuit versions for an L2 chain
+### L2 chain versions
 
-Add one `[[l2_chain]]` table per chain to `circuits/manifest.toml`. Each entry in
-`circuits` enables an exact frozen `(module, version)`. For example, a local
-development chain could enable both Demo Tribute releases:
+A **chain version selects an array of packages**. It is not a circuit artifact
+version, and a directory suffix does not determine it. Each `path` is relative
+to `l2/<chain_id>/`; `tribute`, `tribute-1`, and `tribute-2` are valid names.
+The package owns one flat set of frozen artifacts, without a nested release
+history or a separate global circuit declaration.
 
 ```toml
 [[l2_chain]]
-chain_id = 31337
+chain_id = 9900501
+
+[[l2_chain.versions]]
+version = "1.0.0"
+stable = true
 circuits = [
-  { module = "demo_tribute", version = "1.0.0" },
-  { module = "demo_tribute", version = "1.1.0" },
+  { path = "tribute", vk_hash = "7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9" },
 ]
 ```
 
-Niflheim (`9900501`) is pinned to `niflheim_tribute@1.0.0` for Tribute proofs.
-Its self-contained source lives in
-[`noir/niflheim-tribute/`](noir/niflheim-tribute), separate from the evolving canonical
-Demo Tribute source. `cargo xtask freeze-circuits` regenerates its tracked
-`target/niflheim_tribute.json` and freezes its bytecode, ABI, and verification key
-under `resources/circuits/niflheim_tribute/<version>/`.
-The initial release has the same circuit hash and key as `demo_tribute@1.0.0`,
-but owns its source and frozen artifacts. The manifest format is unchanged.
-
-`version` is the circuit's frozen semver; there is no separate deployment version.
-Hashes are derived from the frozen artifacts (or preserved manifest identity for
-deprecated circuits), never entered by hand:
+Another `[[l2_chain.versions]]` under that chain can select a different array.
+Shared package paths reuse the same descriptor and must agree on their pin.
+The verifier selects an exact version; it does not silently accept the latest.
 
 ```rust
 use outbe_zk_canonical::l2_circuits;
 
-let enabled = l2_circuits(31337); // &'static [L2CircuitVersion]
-let v1_1 = enabled.iter().find(|entry| entry.version == "1.1.0");
-let circuit_hash = v1_1.map(|entry| entry.circuit_hash);
+let circuits = l2_circuits(9_900_501, "1.0.0"); // &'static [&'static L2Circuit]
+let tribute = circuits.iter().find(|entry| entry.path == "tribute");
+let vk_bytes = tribute.map(|entry| entry.vk_bytes);
 ```
 
-The hash is `circuit_hash = keccak256(ACIR)`, not `vk_hash`; it resolves to the
-verification metadata in `noir::CIRCUIT_REGISTRY`. The generated registry is a
-static slice sorted by chain ID, with binary-search lookup and no runtime map
-allocation. Versions are sorted lexically, not by release precedence; there is
-no implicit "latest" selection. Unknown chains return an empty slice.
+Lookup preserves the declared array order, allocates nothing, and returns an
+empty slice for unknown chains or versions. Each descriptor exposes `path`,
+`vk_hash`, and `vk_bytes`; there is no second hash lookup and no L1 lifecycle
+status attached to an L2 package.
 
-Only declared bindings are enabled. Remove an entry to disable a circuit version;
-freezing a new circuit does not move existing bindings. Active and deprecated
-circuits may be bound, but revoked or unknown targets fail the build. Duplicate
-chain IDs and duplicate versions within one chain also fail the build. The same
-version string may be used independently on different chains.
+`vk_hash = keccak256(circuit.vk)` pins the actual verification identity. A normal
+build checks the committed key against every pin. Tooling recompiles the source
+with the pinned Noir/barretenberg versions and checks the resulting key too.
+Duplicate chain IDs, duplicate versions, duplicate paths within a selection,
+conflicting pins for a shared path, and paths escaping their chain are rejected.
 
-Chain `0xdead` is a test example, not a production deployment binding. Add more entries
-to enable additional circuit versions. Changing bindings requires only a normal
-Cargo rebuild, not a freeze.
+- **Stable chain version:** the verification key cannot change in place.
+  Comments, refactoring, and ABI field renames are allowed when the key stays
+  identical. This is not a source-byte or ABI-name freeze.
+- **Mutable chain version:** an explicit freeze can refresh its package
+  artifacts and VK pin without changing the chain version.
+- **Shared package:** any stable reference protects its key, even if another
+  version referencing the same package is mutable.
 
-## Lifecycle & storage policy
+Demo (`57005`, `0xdead`) is devnet/testnet-only: it stays on chain version
+`1.0.0`, with `stable = false`, selecting [`l2/57005/tribute/`](l2/57005/tribute).
+Its former independent artifact-release history is no longer a registry model.
+Niflheim (`9900501`) uses stable chain version `1.0.0`, selecting
+[`l2/9900501/tribute/`](l2/9900501/tribute) with its existing key unchanged.
+
+## L1 lifecycle & storage policy
 
 | status | accepts proofs? | bytecode + abi | vk | in `CIRCUIT_REGISTRY`? |
 |---|---|---|---|---|
@@ -265,13 +289,11 @@ Cargo rebuild, not a freeze.
 | `deprecated` | verifies in-flight only | **dropped** | kept | yes (VK-only) |
 | `revoked` | no | dropped | **dropped** | **no** (manifest keeps the record) |
 
-Rationale: bytecode is a *proving* artifact (a retired prover ships its own);
-verification needs only the VK. So a superseded version keeps its VK to keep
-verifying in-flight proofs, and a fully-obsolete one drops everything. The
-chain-side versioning/rollout design is in
-[`../docs/circuit-versioning.md`](../docs/circuit-versioning.md).
+Bytecode is a proving artifact: superseded L1 releases keep their VK for
+verification while retired provers carry their own bytecode. L2 packages instead
+follow their chain version's stability policy and retain flat proving artifacts.
 
-## Evolving a circuit
+## Evolving L1 circuits
 
 Editing the `.nr` sources does **not** change anything by itself — released
 versions are frozen. Minting a new version is a deliberate step:
@@ -280,7 +302,7 @@ versions are frozen. Minting a new version is a deliberate step:
 cargo xtask freeze-circuits          # mint versions and write frozen artifacts
 ```
 
-For each circuit whose ACIR or ABI changed it mints a new frozen version:
+For each L1 circuit whose ACIR or ABI changed it mints a new frozen version:
 
 - **unchanged ACIR and ABI** → skipped (the freeze detects true ACIR equivalence — even a
   source edit that the noir optimizer removes is a no-op here).
@@ -294,14 +316,33 @@ The new artifacts + manifest land in a **PR** — that review is the audit gate 
 admitting a circuit. Status transitions (active → deprecated → revoked) are edits
 to `manifest.toml`; the next `freeze-circuits` reconciles the on-disk artifacts.
 
+## Evolving L2 packages
+
+Use the same `cargo xtask freeze-circuits` command. It never invents or bumps
+chain versions. For a mutable version it refreshes flat package artifacts and
+the manifest pin. For a stable version it first requires the derived VK to match
+the existing pin; unchanged-key ABI/bytecode updates may then be refreshed.
+All L2 keys are validated before any L2 artifacts are replaced.
+
+A stable key change requires a new package path and an explicitly added chain
+version selecting it. Keep the old package for versions still referencing it.
+Create the new package with its source and `Nargo.toml`, without copied frozen
+artifacts. Its new manifest entry may initially omit `vk_hash`; normal freezing
+derives the key, writes the flat artifacts, and fills the pin. Removing a pin
+from an already-frozen stable package does not authorize changing its key.
+Normal Cargo builds and read-only checks require completed pins.
+
+## Read-only verification
+
 For a read-only reproducibility check, run `cargo xtask freeze-circuits --check`
 or `mise run freeze-circuits:check`. This requires the exact `nargo`/`bb` pins
-from `mise.toml`, compiles all five circuits in a temporary copy under `target/`,
-and compares each active version's decoded bytecode, structural ABI, and freshly
-derived VK. Unlike a normal freeze, it re-derives the VK even when bytecode and
-ABI match. Any mismatch fails without minting versions, reconciling retired
-artifacts, or changing tracked compiler output; scratch files are removed on
-success or failure. CI uses this check.
+from `mise.toml` and compiles the registered packages in a temporary tree under
+`target/`. L1 checks compare decoded ACIR, structural ABI, and freshly derived VK.
+L2 checks compare the committed and freshly derived VKs against each manifest
+pin, regardless of `stable`; source spelling and ABI-only changes do not fail
+when the VK is unchanged. The check never refreshes artifacts, updates pins,
+bumps versions, or changes tracked compiler output. Scratch files are removed
+on success or failure. CI uses this check.
 
 ## Publishability
 

@@ -1,52 +1,24 @@
-# Circuit registry — append-only.
-#
-# Each [[circuit]] is a frozen, released circuit version; its artifacts live at
-# `resources/circuits/<module>/<version>/{bytecode.b64, circuit.vk, abi.json}`
-# and are immutable once committed. `build.rs` reads this file and emits the
-# in-code registry (`CIRCUIT_REGISTRY`) plus the per-circuit types for the latest
-# active version of each module. Mint new versions with
-# `cargo xtask freeze-circuits` (the only step that runs nargo/bb); status
-# transitions (active → deprecated → revoked) are edits here, reviewed in a PR.
+# L1 releases use conventional paths; L2 chain versions select package arrays.
+# L1: noir/<module>/ and resources/circuits/<module>/<version>/.
+# L2 package paths are relative to l2/<chain_id>/; frozen files live in the package.
+# stable = true pins verification identity, not source spelling or ABI names.
 
-# Logical proof system these VKs verify under (the bb pin). A bb bump that
-# changes the wire format gets a new proof_system + re-frozen circuits.
 proof_system = "bb-keccak-v1"
-
-# L2 enablement is explicit and separate from circuit releases. Add one
-# [[l2_chain]] per chain, with any number of enabled circuit versions.
-# `module` + `version` pin a frozen circuit. Hashes are derived by build.rs,
-# not copied here. Active and deprecated
-# circuits can be bound; remove bindings before revoking their target.
-# Chain 0xDEAD is a test example, not a production deployment binding.
-
-[[l2_chain]]
-chain_id = 57005 # 0xDEAD - test chain
-circuits = [
-  { module = "demo_tribute", version = "1.1.0" },
-]
-
-[[l2_chain]]
-chain_id = 9900501 # Niflheim
-circuits = [
-  { module = "niflheim_tribute", version = "1.0.0" },
-]
+libraries = ["noir/outbe-circuit-core", "noir/outbe-paynote-lib"]
 
 [[circuit]]
 module = "ownership_proof"
 label = "outbe.ownership"
+
+[[circuit.versions]]
 version = "1.0.0"
 status = "active"
 
 [[circuit]]
-module = "demo_tribute"
-label = "demo.tribute"
-version = "1.0.0"
-status = "deprecated"
-circuit_hash = "f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"
-
-[[circuit]]
 module = "commitment_nullifier_proof"
 label = "outbe.commitment_nullifier"
+
+[[circuit.versions]]
 version = "1.0.0"
 status = "revoked"
 circuit_hash = "7bbba35502d9a78699316096d1955c720b52e04e0be5e0d3aa6a24d022029c08"
@@ -54,106 +26,93 @@ circuit_hash = "7bbba35502d9a78699316096d1955c720b52e04e0be5e0d3aa6a24d022029c08
 [[circuit]]
 module = "emit_mint"
 label = "outbe.emit.mint"
+
+[[circuit.versions]]
 version = "1.0.0"
 status = "deprecated"
 circuit_hash = "f41d5933969dacd80409a6501cd0de2b5efa877961f20b90af0814e786eadc45"
 
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.1.0"
 status = "deprecated"
 circuit_hash = "b3708b87579e41438ea070d6c1cfa8f60a4c00a4480f3b1b8a15e412d7e29766"
 
-[[circuit]]
-module = "demo_tribute"
-label = "demo.tribute"
-version = "1.1.0"
-status = "deprecated"
-circuit_hash = "aebb21f5f4c12129c278849321c8414db0ee4a24f94882bf27c873f3c7690484"
-
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.2.0"
 status = "deprecated"
 circuit_hash = "a533b2c39163dc386c91d0cdd78a32c16e6bc44e731667d3b6a7b87244f29cf6"
 
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.2.1"
 status = "deprecated"
 circuit_hash = "660241ad71ce858076910b3ee574344cdd387c76da00aca9f7d6eef0eaecae5e"
 
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.3.0"
 status = "deprecated"
 circuit_hash = "50301cde55ecb04fd579b61ca1c68bbbf7b4379075edc7e0a1c176e082c2fe05"
 
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.4.0"
 status = "deprecated"
 circuit_hash = "1c7d2bf7f8f98ff0c9db8dcdca7c4906792cb5413e868c3c97842ef583264a21"
 
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.4.1"
 status = "deprecated"
 circuit_hash = "373839906d1be64ea45407d74ca5681426aef630c2ddc5baa980ad21394f737b"
 
-[[circuit]]
-module = "paynote"
-label = "outbe.paynote"
-version = "1.0.0"
-status = "deprecated"
-circuit_hash = "966df28e971781674bd7ed54ebe96afeeac5897a10e7445807ed495f53b5d38f"
-
-[[circuit]]
-module = "emit_mint"
-label = "outbe.emit.mint"
+[[circuit.versions]]
 version = "1.5.0"
 status = "active"
 
 [[circuit]]
 module = "paynote"
 label = "outbe.paynote"
+
+[[circuit.versions]]
+version = "1.0.0"
+status = "deprecated"
+circuit_hash = "966df28e971781674bd7ed54ebe96afeeac5897a10e7445807ed495f53b5d38f"
+
+[[circuit.versions]]
 version = "1.1.0"
 status = "deprecated"
 circuit_hash = "3154da6976ca8ee5f00b228fe821ce0868b189ff73cefb1a9a562d2768a9f9cc"
 
-[[circuit]]
-module = "paynote"
-label = "outbe.paynote"
+[[circuit.versions]]
 version = "1.2.0"
 status = "deprecated"
 circuit_hash = "3154da6976ca8ee5f00b228fe821ce0868b189ff73cefb1a9a562d2768a9f9cc"
 
-[[circuit]]
-module = "demo_tribute"
-label = "demo.tribute"
-version = "1.2.0"
-status = "active"
-
-[[circuit]]
-module = "niflheim_tribute"
-label = "niflheim.tribute"
-version = "1.0.0"
+[[circuit.versions]]
+version = "1.3.0"
 status = "active"
 
 [[circuit]]
 module = "paynote_merge"
 label = "outbe.paynote.merge"
+
+[[circuit.versions]]
 version = "1.0.0"
 status = "active"
 
-[[circuit]]
-module = "paynote"
-label = "outbe.paynote"
-version = "1.3.0"
-status = "active"
+[[l2_chain]]
+chain_id = 57005
+
+[[l2_chain.versions]]
+version = "1.0.0"
+stable = false
+circuits = [
+  { path = "tribute", vk_hash = "4f1e294540876d22e858ef46f62918a46fed2913898cc5cbe097b8abe3921e21" },
+]
+
+[[l2_chain]]
+chain_id = 9900501
+
+[[l2_chain.versions]]
+version = "1.0.0"
+stable = true
+circuits = [
+  { path = "tribute", vk_hash = "7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9" },
+]

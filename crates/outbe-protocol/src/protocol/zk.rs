@@ -43,16 +43,16 @@ pub trait Circuit {
     fn witness_inputs(witness: &Self::Witness, public: &Self::PublicInputs) -> Vec<Fr>;
 }
 
-/// The canonical on-chain identity of a circuit, derived from its content.
-/// Mirrors `outbe-zk-canonical`'s `CircuitDescriptor`. Implemented
-/// (build-generated) by every circuit marker.
+/// Content-derived proving artifacts and descriptive version metadata.
+/// Implemented (build-generated) by canonical circuit markers; verifier routing
+/// chooses the appropriate identity for its registry.
 pub trait CircuitId {
     /// Canonical dotted label, e.g. `outbe.ownership` / `demo.tribute`.
     const LABEL: &'static str;
     /// Semver-style version string ("1.0.0"). Not authoritative.
     const VERSION: &'static str;
-    /// `keccak256(base64_decode(bytecode))` — the authoritative on-chain
-    /// identity the `zk_verify` precompile matches against.
+    /// `keccak256(base64_decode(bytecode))` — compiled circuit identity.
+    /// L2 chain registrations pin [`CircuitId::VK_HASH`] instead.
     const CIRCUIT_HASH: [u8; 32];
     /// Base64-encoded ACIR bytecode (the preimage of [`CircuitId::CIRCUIT_HASH`]).
     const BYTECODE_B64: &'static str;

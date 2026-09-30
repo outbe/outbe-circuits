@@ -63,6 +63,7 @@ jobs:
           filters: |
             l1:
               - 'crates/outbe-zk-canonical/noir/**'
+              - 'crates/outbe-zk-canonical/l2/**'
               - 'crates/outbe-zk-canonical/resources/circuits/**'
               - 'crates/outbe-zk-canonical/circuits/manifest.toml'
               - 'mise.toml'

@@ -7,7 +7,7 @@ The canonical registry is frozen and committed; `crates/outbe-zk-canonical/build
 
 ## Level 1 — registry consistency (fast, no toolchain)
 
-Run `cargo build -p outbe-zk-canonical`. `build.rs` reads `circuits/manifest.toml` + `resources/circuits/` and **panics** on any inconsistency (a missing `circuit.vk`, bytecode dropped without a preserved `circuit_hash`, malformed base64, a bad ABI, etc.).
+Run `cargo build -p outbe-zk-canonical`. `build.rs` reads L1 releases at conventional `resources/circuits/<module>/<version>/` paths and L2 flat packages under `l2/<chain_id>/<path>/`. It fails on missing/malformed artifacts, conflicting registrations, or a committed L2 VK that disagrees with its manifest `vk_hash`.
 
 - **Clean build** → the committed registry is internally consistent. Stop.
 - **Build panic** → the manifest and the frozen artifacts disagree; report the panic message (it names the offending `<module>@<version>`).
@@ -16,7 +16,7 @@ Run `cargo build -p outbe-zk-canonical`. `build.rs` reads `circuits/manifest.tom
 
 Use when sources, frozen artifacts, or toolchain pins changed, or to reproduce the CI circuit check. Install the pins with `mise install nargo bb`, then run `cargo xtask freeze-circuits --check` (or `mise run freeze-circuits:check`).
 
-- **`all active circuits reproduce.`** → all five active circuits' decoded bytecode, structural ABI, and freshly derived VK match the committed artifacts.
-- **Nonzero exit** → report the failing circuit and artifact or toolchain diagnostic. If a source change was intentional, use `/freeze-circuits` to mint and commit its new version.
+- **`all active circuits reproduce.`** → active L1 ACIR/ABI/VKs reproduce, and all registered L2 packages' committed and freshly derived VKs match their pins.
+- **Nonzero exit** → report the named failure. L1 changes use versioned freezing; stable L2 key changes need a new package and explicit chain version. Mutable L2 pins can be refreshed without a chain-version bump.
 
-The check asserts the exact `mise.toml` nargo/bb versions and compiles a per-process scratch copy under `target/`, cleaned on success or failure. It never mints versions, reconciles retired artifacts, or modifies the manifest, frozen artifacts, or tracked Noir compiler output. A normal freeze can skip unchanged ACIR/ABI without checking the VK; `--check` always re-derives it. Do not combine `--check` with `--abi-change` or `--semantic`.
+The check asserts exact tool versions and uses a scratch tree cleaned on success/failure. It never modifies committed files. L2 stability is verification-identity-only: source spelling and ABI-only changes pass if the derived VK is unchanged. L1 still compares complete ACIR/ABI/VK. Do not combine `--check` with `--abi-change` or `--semantic`.

@@ -384,41 +384,42 @@ fn emit_mint_descriptor_and_abi_layout() {
 }
 
 #[test]
-fn l2_test_chain_enables_demo_tribute() {
-    use outbe_zk_canonical::{l2_circuits, noir, L2CircuitVersion};
+fn l2_demo_chain_version_keeps_its_registered_key() {
+    use hex_literal::hex;
+    use outbe_zk_canonical::l2_circuits;
 
-    let release = noir::CIRCUIT_REGISTRY
-        .iter()
-        .find(|entry| entry.label == "demo.tribute" && entry.version == "1.1.0")
-        .expect("the example's pinned Demo Tribute release must remain registered");
+    // Demo's mutable chain registration is 1.0.0, not its former artifact release.
+    let enabled = l2_circuits(0xdead, "1.0.0");
+    assert_eq!(enabled.len(), 1);
+    let pinned = enabled[0];
+    assert_eq!(pinned.path, "tribute");
     assert_eq!(
-        l2_circuits(0xdead),
-        &[L2CircuitVersion {
-            version: "1.1.0",
-            circuit_hash: release.circuit_hash,
-            vk_hash: release.vk_hash,
-        }]
+        pinned.vk_hash,
+        hex!("4f1e294540876d22e858ef46f62918a46fed2913898cc5cbe097b8abe3921e21")
     );
-    assert!(l2_circuits(0).is_empty());
-    assert!(l2_circuits(u64::MAX).is_empty());
+    assert!(l2_circuits(0xdead, "1.1.0").is_empty());
+    assert!(l2_circuits(0xdead, "").is_empty());
+    assert!(l2_circuits(0, "1.0.0").is_empty());
+    assert!(l2_circuits(u64::MAX, "1.0.0").is_empty());
 }
 
 #[test]
 fn l2_niflheim_enables_its_frozen_tribute() {
     use hex_literal::hex;
-    use outbe_zk_canonical::{l2_circuits, L2CircuitVersion};
+    use outbe_zk_canonical::l2_circuits;
 
-    // Niflheim's frozen identity must survive local circuit and module renames.
+    let enabled = l2_circuits(9_900_501, "1.0.0");
+    assert_eq!(enabled.len(), 1);
+    let pinned = enabled[0];
+    assert_eq!(pinned.path, "tribute");
+    // Niflheim's stable registration keeps its frozen verification identity.
     assert_eq!(
-        l2_circuits(9_900_501),
-        &[L2CircuitVersion {
-            version: "1.0.0",
-            circuit_hash: hex!("f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"),
-            vk_hash: hex!("7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9"),
-        }]
+        pinned.vk_hash,
+        hex!("7ec39936f08a1f5bb5675249be8c2ee3a31811a604e2785ab31b670eaaa2e7f9")
     );
-    assert!(l2_circuits(9_900_500).is_empty());
-    assert!(l2_circuits(9_900_502).is_empty());
+    assert!(l2_circuits(9_900_501, "1.0.1").is_empty());
+    assert!(l2_circuits(9_900_500, "1.0.0").is_empty());
+    assert!(l2_circuits(9_900_502, "1.0.0").is_empty());
 }
 
 /// Paynote's descriptor and ABI layout. `asset` crosses as an `EthAddress`

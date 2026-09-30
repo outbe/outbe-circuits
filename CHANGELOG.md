@@ -5,8 +5,10 @@ All notable changes to this project will be documented in this file. See [conven
 #### Breaking changes
 - Remove `Suite`, `CircuitSuite`, `OutbeV1`, and primitive-selection traits while preserving crate names and module paths. Protocol types and field encoding now use concrete BN254/Grumpkin crypto; formulas and codecs are module-level functions, and prover/verifier traits retain only the circuit parameter.
 - Preserve hash preimages, both chain IDs in binding, entity `id_seed`/`id_body` roles, remote signer issuance, Merkle frontier/append APIs, and all frozen circuit identities and proof layouts.
+- Replace L2 artifact-release bindings with chain-version package arrays. `l2_circuits(chain_id, version)` returns shared `L2Circuit` descriptors (`path`, `vk_hash`, `vk_bytes`); L1 retains `RegistryEntry` and its lifecycle. Keep circuit-specific Rust modules without per-chain modules.
 #### Features
-- Add read-only `cargo xtask freeze-circuits --check` with pinned-toolchain checks and bytecode, ABI, and verification-key reproduction for all five active circuits. CI now relies on this command's exit status instead of Git-diff and untracked-file checks.
+- Add read-only `cargo xtask freeze-circuits --check` with pinned-toolchain checks: complete L1 artifact reproduction and L2 VK-pin reproduction. CI relies on its exit status, without Git-diff or untracked-file guards.
+- Derive L1 source/artifact paths by convention and place L2 frozen artifacts directly in their packages. Stable chain versions prohibit key changes but permit unchanged-key source/ABI edits; mutable Demo stays on chain version `1.0.0` and refreshes its key explicitly. Chain versions never auto-bump, and a stable reference protects a package shared with mutable versions.
 
 - - -
 ## v0.26.0 - 2026-09-30
