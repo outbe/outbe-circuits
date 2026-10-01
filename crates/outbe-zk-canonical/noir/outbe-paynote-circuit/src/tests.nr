@@ -1,11 +1,10 @@
 use super::main;
-use paynote_lib::{
-    change_key, empty_leaf, merkle_root, note_commitment, note_nullifier, note_sn,
-    PAYNOTE_DOMAIN,
-};
 use bignum::{BigNum, U256};
 use outbe_circuit_core::{hash, merkle_tree::{DEPTH, merkle_root_from_indices}};
 use outbe_circuit_core::types::EthAddress;
+use paynote_lib::{
+    change_key, empty_leaf, merkle_root, note_commitment, note_nullifier, note_sn, PAYNOTE_DOMAIN,
+};
 
 global CHAIN_ID: u64 = 31337;
 global KEY: Field = 17;
@@ -22,7 +21,6 @@ fn other_asset() -> EthAddress {
 }
 
 global CONTEXT: Field = 1;
-
 
 fn single_leaf_path(chain_id: u64) -> [Field; DEPTH] {
     let mut path = [0; DEPTH];
@@ -268,7 +266,19 @@ fn wrong_tree_domain_fails_membership() {
 #[test(should_fail)]
 fn zero_key_fails() {
     let path = single_leaf_path(CHAIN_ID);
-    main(CHAIN_ID, 1, 1, asset(), CONTEXT, U256::from(1), 0, U256::from(1), 0, 0, path);
+    main(
+        CHAIN_ID,
+        1,
+        1,
+        asset(),
+        CONTEXT,
+        U256::from(1),
+        0,
+        U256::from(1),
+        0,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]
@@ -456,7 +466,19 @@ fn u256_max_amounts_full_and_partial_spend() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), CONTEXT, max, 0, max, KEY, 0, path);
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        CONTEXT,
+        max,
+        0,
+        max,
+        KEY,
+        0,
+        path,
+    );
 
     let next_key = change_key(KEY, n);
     let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), max - U256::from(1));
@@ -485,11 +507,35 @@ fn amounts_above_u128_full_and_partial_spend() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), CONTEXT, note, 0, note, KEY, 0, path);
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        CONTEXT,
+        note,
+        0,
+        note,
+        KEY,
+        0,
+        path,
+    );
 
     let next_key = change_key(KEY, n);
     let change = note_commitment(CHAIN_ID, note_sn(next_key), asset(), remaining);
-    main(CHAIN_ID, root, n, asset(), CONTEXT, spend, change, note, KEY, 0, path);
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        CONTEXT,
+        spend,
+        change,
+        note,
+        KEY,
+        0,
+        path,
+    );
 }
 
 /// Limb hashing must distinguish values that folding into one `Field` aliases.
@@ -502,7 +548,7 @@ fn field_modulus_offset_amounts_have_distinct_commitments() {
     ]);
     assert(
         note_commitment(CHAIN_ID, KEY, asset(), U256::zero())
-            != note_commitment(CHAIN_ID, KEY, asset(), modulus_offset)
+            != note_commitment(CHAIN_ID, KEY, asset(), modulus_offset),
     );
 }
 
@@ -513,7 +559,19 @@ fn non_canonical_amount_limb_fails() {
     let path = single_leaf_path(CHAIN_ID);
     let root = merkle_root(commitment, 0, path);
     let n = note_nullifier(commitment, KEY);
-    main(CHAIN_ID, root, n, asset(), CONTEXT, bad, 0, bad, KEY, 0, path);
+    main(
+        CHAIN_ID,
+        root,
+        n,
+        asset(),
+        CONTEXT,
+        bad,
+        0,
+        bad,
+        KEY,
+        0,
+        path,
+    );
 }
 
 #[test(should_fail)]

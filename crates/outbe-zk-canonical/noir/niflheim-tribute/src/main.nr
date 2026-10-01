@@ -37,10 +37,7 @@ pub fn main(
     // Part 2: Merkle inclusion of `nft_hash` against `merkle_root`.
     let computed_merkle_root =
         compute_merkle_root(nft_hash, merkle_path_siblings, merkle_path_indices);
-    assert(
-        computed_merkle_root == merkle_root,
-        "merkle_root mismatch: inclusion proof failed",
-    );
+    assert(computed_merkle_root == merkle_root, "merkle_root mismatch: inclusion proof failed");
 }
 
 // ---- pso_circuit_core::hash2 ------------------------------------------------
@@ -70,11 +67,7 @@ fn compute_ownership(pk: EmbeddedCurvePoint, nonce: Field) -> Field {
 }
 
 /// Grumpkin Schnorr over `message`; the signature is `s || e`, 64 bytes.
-fn verify_schnorr_grumpkin(
-    pk: EmbeddedCurvePoint,
-    signature: [u8; 64],
-    message: [u8; 32],
-) -> bool {
+fn verify_schnorr_grumpkin(pk: EmbeddedCurvePoint, signature: [u8; 64], message: [u8; 32]) -> bool {
     schnorr::verify_signature(pk, signature, message)
 }
 
@@ -97,17 +90,11 @@ fn verify_ownership_per_su(
     //     witness. Grumpkin's affine equation is `y^2 = x^3 - 17`.
     assert(!pk.is_infinite(), "pk is the Grumpkin identity point");
     let x_cubed = pk.x * pk.x * pk.x;
-    assert(
-        pk.y * pk.y == x_cubed - 17,
-        "pk is not on the Grumpkin curve (y^2 != x^3 - 17)",
-    );
+    assert(pk.y * pk.y == x_cubed - 17, "pk is not on the Grumpkin curve (y^2 != x^3 - 17)");
 
     // (1) Owner commitment.
     let computed_owner = compute_ownership(pk, nonce);
-    assert(
-        computed_owner == owner,
-        "owner mismatch: Poseidon3(pk, nonce) != public owner",
-    );
+    assert(computed_owner == owner, "owner mismatch: Poseidon3(pk, nonce) != public owner");
 
     // (2) Signature binding over Poseidon3(nft_hash, nonce, binding_hash).
     let pre_hash_fr: Field = hash_3([nft_hash, nonce, binding_hash]);

@@ -30,7 +30,6 @@ pub fn paynote_tag(base: Field) -> Field {
     tag(PAYNOTE_DOMAIN, base)
 }
 
-
 /// Note serial -- a hiding commitment to the spend key. Chain-, asset- and
 /// amount-independent, so the pool contract can accept one at deposit time and
 /// build the leaf around it.
