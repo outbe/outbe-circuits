@@ -1,60 +1,75 @@
 use bignum::{BigNum, U256};
-use outbe_circuit_core::{hash::hash_multi, merkle_tree, tags::tag};
+use outbe_circuit_core::{
+    hash::{ascii_field, hash_multi}, merkle_tree, merkle_tree::DEPTH, tags::tag,
+};
 use outbe_circuit_core::types::EthAddress;
 
-pub global PLEDGE_DOMAIN: Field = 0x4f555442455f504c45444745;
+pub global PLEDGE_DOMAIN: Field = ascii_field("OUTBE_PLEDGE");
 
-pub fn owner_serial(owner: EthAddress, secret: Field) -> Field {
+pub global TAG_NOTE_SN: Field = ascii_field("owner-serial");
+pub global TAG_COMMITMENT: Field = ascii_field("pledge-note");
+pub global TAG_NULLIFIER: Field = ascii_field("pledge-nullifier");
+pub global TAG_CHANGE_KEY: Field = ascii_field("change-key");
+pub global TAG_RETURN_KEY: Field = ascii_field("return-key");
+pub global TAG_RECEIPT_CONTEXT: Field = ascii_field("return-receipt");
+pub global TAG_EMPTY: Field = ascii_field("empty");
+
+pub fn note_sn(owner: EthAddress, note_spend_key: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, 0x6f776e65722d73657269616c),
-        [owner.to_field(), secret],
+        tag(PLEDGE_DOMAIN, TAG_NOTE_SN),
+        [owner.to_field(), note_spend_key],
     )
 }
-pub fn note_commitment(chain_id: u64, serial: Field, amount: U256, receipt: Field) -> Field {
-    let limbs = amount.get_limbs();
+pub fn note_commitment(
+    chain_id: u64,
+    serial: Field,
+    note_amount: U256,
+    receipt_context: Field,
+) -> Field {
+    let limbs = note_amount.get_limbs();
     hash_multi(
-        tag(PLEDGE_DOMAIN, 0x706c656467652d6e6f7465),
+        tag(PLEDGE_DOMAIN, TAG_COMMITMENT),
         [
             chain_id as Field,
             serial,
             limbs[0] as Field,
             limbs[1] as Field,
             limbs[2] as Field,
-            receipt,
+            receipt_context,
         ],
     )
 }
-pub fn note_nullifier(commitment: Field, secret: Field) -> Field {
+pub fn note_nullifier(commitment: Field, note_spend_key: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, 0x706c656467652d6e756c6c6966696572),
-        [commitment, secret],
+        tag(PLEDGE_DOMAIN, TAG_NULLIFIER),
+        [commitment, note_spend_key],
     )
 }
-pub fn change_key(secret: Field, nullifier: Field) -> Field {
+pub fn change_key(note_spend_key: Field, spent_nullifier: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, 0x6368616e67652d6b6579),
-        [secret, nullifier],
+        tag(PLEDGE_DOMAIN, TAG_CHANGE_KEY),
+        [note_spend_key, spent_nullifier],
     )
 }
-pub fn return_key(secret: Field, nullifier: Field, context: Field) -> Field {
+pub fn return_key(note_spend_key: Field, nullifier: Field, context: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, 0x72657475726e2d6b6579),
-        [secret, nullifier, context],
+        tag(PLEDGE_DOMAIN, TAG_RETURN_KEY),
+        [note_spend_key, nullifier, context],
     )
 }
 pub fn receipt_context(position: U256, released_total: U256) -> Field {
     let p = position.get_limbs();
     let a = released_total.get_limbs();
     hash_multi(
-        tag(PLEDGE_DOMAIN, 0x72657475726e2d72656365697074),
+        tag(PLEDGE_DOMAIN, TAG_RECEIPT_CONTEXT),
         [p[0] as Field, p[1] as Field, p[2] as Field, a[0] as Field, a[1] as Field, a[2] as Field],
     )
 }
 pub fn empty_leaf(chain_id: u64) -> Field {
-    hash_multi(tag(PLEDGE_DOMAIN, 0x656d707479), [chain_id as Field])
+    hash_multi(tag(PLEDGE_DOMAIN, TAG_EMPTY), [chain_id as Field])
 }
-pub fn merkle_root(leaf: Field, index: u32, path: [Field; 32]) -> Field {
-    merkle_tree::merkle_root(PLEDGE_DOMAIN, leaf, index as Field, path)
+pub fn merkle_root(leaf: Field, leaf_index: u32, auth_path: [Field; DEPTH]) -> Field {
+    merkle_tree::merkle_root(PLEDGE_DOMAIN, leaf, leaf_index as Field, auth_path)
 }
 
 // Both profiles share exactly one commitment formula and one nullifier formula.
@@ -63,49 +78,49 @@ pub fn spend(
     root: Field,
     nullifier: Field,
     context: Field,
-    amount: U256,
-    change: Field,
+    spend_amount: U256,
+    change_commitment: Field,
     owner: EthAddress,
-    secret: Field,
+    note_spend_key: Field,
     note_amount: U256,
-    receipt: Field,
-    index: u32,
-    path: [Field; 32],
+    receipt_context: Field,
+    leaf_index: u32,
+    auth_path: [Field; DEPTH],
 ) {
     owner.validate();
     assert(owner.to_field() != 0);
-    assert(secret != 0);
+    assert(note_spend_key != 0);
     assert(context != 0);
-    amount.validate_in_field();
+    spend_amount.validate_in_field();
     note_amount.validate_in_field();
-    amount.assert_is_not_zero();
+    spend_amount.assert_is_not_zero();
     note_amount.assert_is_not_zero();
-    assert(amount <= note_amount);
-    let serial = owner_serial(owner, secret);
-    let commitment = note_commitment(chain_id, serial, note_amount, receipt);
+    assert(spend_amount <= note_amount);
+    let serial = note_sn(owner, note_spend_key);
+    let commitment = note_commitment(chain_id, serial, note_amount, receipt_context);
     assert(serial != 0);
     assert(commitment != 0);
     assert(nullifier != 0);
-    assert_eq(note_nullifier(commitment, secret), nullifier);
-    assert_eq(merkle_root(commitment, index, path), root);
-    let remaining = note_amount - amount;
-    let partial = !remaining.is_zero_integer();
-    assert((change != 0) == partial);
-    if partial {
-        let key = change_key(secret, nullifier);
-        let next_serial = owner_serial(owner, key);
+    assert_eq(note_nullifier(commitment, note_spend_key), nullifier);
+    assert_eq(merkle_root(commitment, leaf_index, auth_path), root);
+    let remaining = note_amount - spend_amount;
+    let creates_change = !remaining.is_zero_integer();
+    assert((change_commitment != 0) == creates_change);
+    if creates_change {
+        let key = change_key(note_spend_key, nullifier);
+        let next_serial = note_sn(owner, key);
         assert(key != 0);
         assert(next_serial != 0);
-        assert_eq(change, note_commitment(chain_id, next_serial, remaining, 0));
-        assert(note_nullifier(change, key) != 0);
+        assert_eq(change_commitment, note_commitment(chain_id, next_serial, remaining, 0));
+        assert(note_nullifier(change_commitment, key) != 0);
     }
 }
 
 #[test]
 fn ownership_receipts_and_contexts() {
     let owner = EthAddress::from_field(7);
-    let serial = owner_serial(owner, 17);
-    assert(serial != owner_serial(EthAddress::from_field(8), 17));
+    let serial = note_sn(owner, 17);
+    assert(serial != note_sn(EthAddress::from_field(8), 17));
     let a = note_commitment(
         31337,
         serial,
@@ -122,4 +137,31 @@ fn ownership_receipts_and_contexts() {
     assert(note_nullifier(a, 17) != note_nullifier(b, 17));
     let nullifier = note_nullifier(a, 17);
     assert(return_key(17, nullifier, 1) != return_key(17, nullifier, 2));
+}
+
+#[test]
+fn full_and_partial_spends() {
+    let owner = EthAddress::from_field(7);
+    let note_spend_key = 17;
+    let note_amount = U256::from(100);
+    let commitment = note_commitment(31337, note_sn(owner, note_spend_key), note_amount, 0);
+    let nullifier = note_nullifier(commitment, note_spend_key);
+    let auth_path = [0; DEPTH];
+    let root = merkle_root(commitment, 0, auth_path);
+    let next_key = change_key(note_spend_key, nullifier);
+    let change_commitment = note_commitment(31337, note_sn(owner, next_key), U256::from(60), 0);
+    spend(31337, root, nullifier, 1, U256::from(40), change_commitment,
+        owner, note_spend_key, note_amount, 0, 0, auth_path);
+    spend(31337, root, nullifier, 1, note_amount, 0,
+        owner, note_spend_key, note_amount, 0, 0, auth_path);
+}
+
+#[test(should_fail)]
+fn spend_rejects_wrong_owner() {
+    let note_amount = U256::from(100);
+    let commitment = note_commitment(31337, note_sn(EthAddress::from_field(7), 17), note_amount, 0);
+    let nullifier = note_nullifier(commitment, 17);
+    let auth_path = [0; DEPTH];
+    spend(31337, merkle_root(commitment, 0, auth_path), nullifier, 1, note_amount, 0,
+        EthAddress::from_field(8), 17, note_amount, 0, 0, auth_path);
 }

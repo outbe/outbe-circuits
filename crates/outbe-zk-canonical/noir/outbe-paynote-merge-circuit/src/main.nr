@@ -6,7 +6,9 @@ use bignum::{BigNum, U256};
 use outbe_circuit_core::{merkle_tree::DEPTH, types::EthAddress};
 use paynote_lib::{merkle_root, note_commitment, note_nullifier, note_sn};
 
+global MIN_MERGE_INPUTS: u32 = 2;
 global MAX_MERGE_INPUTS: u32 = 4;
+global PAYNOTE_POOL_ADDRESS: Field = 0x1019;
 
 fn main(
     chain_id: pub u64,
@@ -22,9 +24,9 @@ fn main(
     auth_paths: [[Field; DEPTH]; MAX_MERGE_INPUTS],
     output_spend_key: Field,
 ) {
-    assert(input_count >= 2 & input_count <= MAX_MERGE_INPUTS);
+    assert(input_count >= MIN_MERGE_INPUTS & input_count <= MAX_MERGE_INPUTS);
     pool.validate();
-    assert_eq(pool.to_field(), 0x1019);
+    assert_eq(pool.to_field(), PAYNOTE_POOL_ADDRESS);
     asset.validate();
     assert(asset.to_field() != 0);
     assert(output_spend_key != 0);

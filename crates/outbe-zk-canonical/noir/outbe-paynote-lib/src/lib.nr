@@ -15,7 +15,7 @@
 //! depositor fund a note in a cheap token and spend it as an expensive one.
 
 use bignum::{BigNum, U256};
-use outbe_circuit_core::hash::hash_multi;
+use outbe_circuit_core::hash::{ascii_field, hash_multi};
 use outbe_circuit_core::merkle_tree;
 use outbe_circuit_core::tags::{
     tag, TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
@@ -23,7 +23,7 @@ use outbe_circuit_core::tags::{
 use outbe_circuit_core::types::EthAddress;
 
 /// Big-endian ASCII tree domain: every Paynote tag and Merkle node hangs off it.
-pub global PAYNOTE_DOMAIN: Field = 0x4f555442455f5041594e4f5445; // "OUTBE_PAYNOTE"
+pub global PAYNOTE_DOMAIN: Field = ascii_field("OUTBE_PAYNOTE");
 
 /// Paynote's instance of a shared base tag.
 pub fn paynote_tag(base: Field) -> Field {
@@ -87,9 +87,9 @@ pub fn empty_leaf(chain_id: u64) -> Field {
 pub fn merkle_root<let DEPTH: u32>(
     leaf: Field,
     leaf_index: u32,
-    path_siblings: [Field; DEPTH],
+    auth_path: [Field; DEPTH],
 ) -> Field {
-    merkle_tree::merkle_root(PAYNOTE_DOMAIN, leaf, leaf_index as Field, path_siblings)
+    merkle_tree::merkle_root(PAYNOTE_DOMAIN, leaf, leaf_index as Field, auth_path)
 }
 
 #[test]

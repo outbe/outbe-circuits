@@ -16,30 +16,30 @@ fn tagged(purpose: &str, values: &[Field]) -> Result<Field, Error> {
     Pool::hash_multi(Pool::tag(domain(), hash::ascii_field(purpose))?, values)
 }
 #[cfg(feature = "alloy")]
-pub fn owner_serial(owner: Address, secret: Field) -> Result<Field, Error> {
-    tagged("owner-serial", &[owner.to_field()?, secret])
+pub fn note_sn(owner: Address, note_spend_key: Field) -> Result<Field, Error> {
+    tagged("owner-serial", &[owner.to_field()?, note_spend_key])
 }
 #[cfg(feature = "alloy")]
 pub fn note_commitment(
     chain_id: u64,
     serial: Field,
-    amount: U256,
-    receipt: Field,
+    note_amount: U256,
+    receipt_context: Field,
 ) -> Result<Field, Error> {
-    let [lo, mid, hi] = codec::fields_from_u256(&amount)?;
+    let [lo, mid, hi] = codec::fields_from_u256(&note_amount)?;
     tagged(
         "pledge-note",
-        &[Field::from(chain_id), serial, lo, mid, hi, receipt],
+        &[Field::from(chain_id), serial, lo, mid, hi, receipt_context],
     )
 }
-pub fn note_nullifier(commitment: Field, secret: Field) -> Result<Field, Error> {
-    tagged("pledge-nullifier", &[commitment, secret])
+pub fn note_nullifier(commitment: Field, note_spend_key: Field) -> Result<Field, Error> {
+    tagged("pledge-nullifier", &[commitment, note_spend_key])
 }
-pub fn change_key(secret: Field, nullifier: Field) -> Result<Field, Error> {
-    tagged("change-key", &[secret, nullifier])
+pub fn change_key(note_spend_key: Field, nullifier: Field) -> Result<Field, Error> {
+    tagged("change-key", &[note_spend_key, nullifier])
 }
-pub fn return_key(secret: Field, nullifier: Field, context: Field) -> Result<Field, Error> {
-    tagged("return-key", &[secret, nullifier, context])
+pub fn return_key(note_spend_key: Field, nullifier: Field, context: Field) -> Result<Field, Error> {
+    tagged("return-key", &[note_spend_key, nullifier, context])
 }
 #[cfg(feature = "alloy")]
 pub fn receipt_context(position: U256, released_total: U256) -> Result<Field, Error> {

@@ -1,5 +1,5 @@
 use bignum::U256;
-use outbe_circuit_core::types::EthAddress;
+use outbe_circuit_core::{merkle_tree::DEPTH, types::EthAddress};
 fn main(
     chain_id: pub u64,
     root: pub Field,
@@ -8,12 +8,12 @@ fn main(
     spend_amount: pub U256,
     change_commitment: pub Field,
     return_note_serial: pub Field,
-    source: EthAddress,
-    note_secret: Field,
+    owner: EthAddress,
+    note_spend_key: Field,
     note_amount: U256,
     receipt_context: Field,
     leaf_index: u32,
-    auth_path: [Field; 32],
+    auth_path: [Field; DEPTH],
 ) {
     pledge_lib::spend(
         chain_id,
@@ -22,15 +22,15 @@ fn main(
         context,
         spend_amount,
         change_commitment,
-        source,
-        note_secret,
+        owner,
+        note_spend_key,
         note_amount,
         receipt_context,
         leaf_index,
         auth_path,
     );
-    let key = pledge_lib::return_key(note_secret, nullifier, context);
+    let key = pledge_lib::return_key(note_spend_key, nullifier, context);
     assert(key != 0);
     assert(return_note_serial != 0);
-    assert_eq(return_note_serial, pledge_lib::owner_serial(source, key));
+    assert_eq(return_note_serial, pledge_lib::note_sn(owner, key));
 }
