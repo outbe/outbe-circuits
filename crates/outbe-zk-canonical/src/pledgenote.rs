@@ -9,7 +9,7 @@ use {
 
 pub type Field = Fr;
 pub type Tree = outbe_protocol::protocol::imt::Imt;
-// Keep the original hash domain to preserve existing notes and circuit identities.
+// Keep the original note and tree hash domain.
 pub fn domain() -> Field {
     hash::ascii_field("OUTBE_PLEDGE")
 }
@@ -41,7 +41,7 @@ pub fn change_key(note_spend_key: Field, nullifier: Field) -> Result<Field, Erro
 }
 pub fn return_key(note_spend_key: Field, nullifier: Field, context: Field) -> Result<Field, Error> {
     tagged(
-        hash::ascii_field("return-key"),
+        hash::ascii_field("RETURN_KEY"),
         &[note_spend_key, nullifier, context],
     )
 }
@@ -50,7 +50,7 @@ pub fn receipt_context(position: U256, released_total: U256) -> Result<Field, Er
     let p = codec::fields_from_u256(&position)?;
     let a = codec::fields_from_u256(&released_total)?;
     tagged(
-        hash::ascii_field("return-receipt"),
+        hash::ascii_field("RETURN_RECEIPT"),
         &[p[0], p[1], p[2], a[0], a[1], a[2]],
     )
 }
@@ -62,4 +62,29 @@ pub fn merkle_node(left: Field, right: Field) -> Result<Field, Error> {
 }
 pub fn empty_subtrees(chain_id: u64, depth: usize) -> Result<Vec<Field>, Error> {
     Tree::empty_roots(domain(), empty_leaf(chain_id)?, depth)
+}
+
+#[cfg(all(test, feature = "alloy"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn return_tags_match_noir() {
+        assert_eq!(
+            return_key(Field::from(17u64), Field::from(23u64), Field::from(1u64)).unwrap(),
+            tagged(
+                Field::from(0x52455455524e5f4b4559u128),
+                &[Field::from(17u64), Field::from(23u64), Field::from(1u64)],
+            )
+            .unwrap(),
+        );
+        assert_eq!(
+            receipt_context(U256::from(1), U256::from(40)).unwrap(),
+            tagged(
+                Field::from(0x52455455524e5f52454345495054u128),
+                &[1u64, 0, 0, 40, 0, 0].map(Field::from),
+            )
+            .unwrap(),
+        );
+    }
 }

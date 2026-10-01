@@ -203,10 +203,17 @@ status = "active"
 module = "pledgenote_issue"
 label = "outbe.pledgenote.issue"
 version = "1.1.1"
-status = "active"
+status = "deprecated"
+circuit_hash = "b2ffaf99129bce60408c9ec339f0be1a88f36dfbcb7f9bc17c3911b1c3e324de"
 
 [[circuit]]
 module = "pledgenote_unpledge"
 label = "outbe.pledgenote.unpledge"
 version = "1.1.1"
+status = "active"
+
+[[circuit]]
+module = "pledgenote_issue"
+label = "outbe.pledgenote.issue"
+version = "1.1.2"
 status = "active"

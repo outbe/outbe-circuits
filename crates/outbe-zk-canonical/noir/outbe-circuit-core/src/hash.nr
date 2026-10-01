@@ -44,7 +44,7 @@ pub fn ascii_field<let N: u32>(value: str<N>) -> Field {
 fn ascii_field_matches_big_endian_tags() {
     assert_eq(ascii_field(""), 0);
     assert_eq(ascii_field("OUTBE_PAYNOTE"), 0x4f555442455f5041594e4f5445);
-    assert_eq(ascii_field("owner-serial"), 0x6f776e65722d73657269616c);
+    assert_eq(ascii_field("OWNER_SERIAL"), 0x4f574e45525f53455249414c);
 }
 
 #[test(should_fail)]

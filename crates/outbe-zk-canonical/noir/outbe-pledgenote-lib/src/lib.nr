@@ -5,11 +5,11 @@ use outbe_circuit_core::tags::{
 };
 use outbe_circuit_core::types::EthAddress;
 
-// Keep the original hash domain to preserve existing notes and circuit identities.
+// Keep the original note and tree hash domain.
 pub global PLEDGENOTE_DOMAIN: Field = ascii_field("OUTBE_PLEDGE");
 
-pub global TAG_RETURN_KEY: Field = ascii_field("return-key");
-pub global TAG_RECEIPT_CONTEXT: Field = ascii_field("return-receipt");
+pub global TAG_RETURN_KEY: Field = ascii_field("RETURN_KEY");
+pub global TAG_RECEIPT_CONTEXT: Field = ascii_field("RETURN_RECEIPT");
 
 pub fn note_sn(owner: EthAddress, note_spend_key: Field) -> Field {
     hash_multi(
@@ -115,6 +115,8 @@ pub fn spend(
 
 #[test]
 fn ownership_receipts_and_contexts() {
+    assert_eq(TAG_RETURN_KEY, 0x52455455524e5f4b4559);
+    assert_eq(TAG_RECEIPT_CONTEXT, 0x52455455524e5f52454345495054);
     let owner = EthAddress::from_field(7);
     let serial = note_sn(owner, 17);
     assert(serial != note_sn(EthAddress::from_field(8), 17));
