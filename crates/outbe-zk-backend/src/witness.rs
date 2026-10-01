@@ -45,7 +45,7 @@ where
 /// Decode a circuit's committed ACIR bytecode into a runnable [`Program`].
 fn program<C: CircuitId>() -> Result<Program<FieldElement>, Error> {
     let bytes = base64::engine::general_purpose::STANDARD
-        .decode(C::BYTECODE_B64)
+        .decode(C::BYTECODE_B64.trim())
         .map_err(|e| Error::Proof(format!("acir bytecode base64: {e}")))?;
     Program::deserialize_program(&bytes).map_err(|e| Error::Proof(format!("acir deserialize: {e}")))
 }
