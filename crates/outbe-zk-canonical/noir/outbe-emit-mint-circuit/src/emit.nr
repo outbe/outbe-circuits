@@ -21,7 +21,6 @@ pub fn emit_tag(base: Field) -> Field {
     tag(EMIT_DOMAIN, base)
 }
 
-
 /// Value commitment for an Emit note: `(chain_id, serial, amount)` with the
 /// amount carried as its three canonical `U256` limbs (little-endian,
 /// radix 2^120). Limbs are hashed separately -- folding them into a single

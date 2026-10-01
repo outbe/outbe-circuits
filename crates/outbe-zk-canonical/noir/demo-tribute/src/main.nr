@@ -41,8 +41,5 @@ pub fn main(
         merkle_path_siblings,
         merkle_path_indices,
     );
-    assert(
-        computed_merkle_root == merkle_root,
-        "merkle_root mismatch: inclusion proof failed",
-    );
+    assert(computed_merkle_root == merkle_root, "merkle_root mismatch: inclusion proof failed");
 }

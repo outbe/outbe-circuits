@@ -51,10 +51,10 @@ run = "cargo run -p xtask -- freeze-circuits --abi-change"
 
 # Convenience: Rust checks and Noir tests.
 [tasks.check]
-description = "fmt + clippy + test across the workspace, then the circuit tests (part of the CI `check` job: not its stable+beta matrix, not its explicit alloy test run; the last line needs nargo)"
+description = "Rust + Noir fmt-check, clippy + test across the workspace, then the circuit tests (part of the CI `check` job: not its stable+beta matrix, not its explicit alloy test run; formatting and circuit tests need nargo)"
+depends = ["fmt-check"]
 run = '''
 set -euo pipefail
-cargo fmt --all -- --check
 cargo clippy --all-targets --all-features -- \
   -D warnings \
   -D clippy::dbg_macro \
@@ -71,8 +71,24 @@ cargo xtask test-circuits
 '''
 
 [tasks.fmt]
-description = "format code"
-run = "cargo fmt --all"
+description = "Format Rust and all Noir packages"
+run = '''
+set -euo pipefail
+cargo fmt --all
+for manifest in crates/outbe-zk-canonical/noir/*/Nargo.toml; do
+  (cd "$(dirname "$manifest")" && nargo fmt)
+done
+'''
+
+[tasks.fmt-check]
+description = "Check formatting of Rust and all Noir packages"
+run = '''
+set -euo pipefail
+cargo fmt --all -- --check
+for manifest in crates/outbe-zk-canonical/noir/*/Nargo.toml; do
+  (cd "$(dirname "$manifest")" && nargo fmt --check)
+done
+'''
 
 [tasks.build]
 description = "build the workspace"

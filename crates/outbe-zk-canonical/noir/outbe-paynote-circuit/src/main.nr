@@ -17,7 +17,7 @@ mod tests;
 use bignum::{BigNum, U256};
 use outbe_circuit_core::merkle_tree::DEPTH;
 use outbe_circuit_core::types::EthAddress;
-use paynote_lib::{change_key, merkle_root, note_commitment, note_sn, note_nullifier};
+use paynote_lib::{change_key, merkle_root, note_commitment, note_nullifier, note_sn};
 
 fn main(
     chain_id: pub u64,

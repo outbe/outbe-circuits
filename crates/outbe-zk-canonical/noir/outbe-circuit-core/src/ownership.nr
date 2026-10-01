@@ -105,19 +105,13 @@ pub fn verify_ownership_per_su(
     //     equation is `y^2 = x^3 - 17`.
     assert(!pk.is_infinite(), "pk is the Grumpkin identity point");
     let x_cubed = pk.x * pk.x * pk.x;
-    assert(
-        pk.y * pk.y == x_cubed - 17,
-        "pk is not on the Grumpkin curve (y^2 != x^3 - 17)",
-    );
+    assert(pk.y * pk.y == x_cubed - 17, "pk is not on the Grumpkin curve (y^2 != x^3 - 17)");
 
     // (1) Owner commitment. Binds `pk`+`nonce` to the SU's stored
     //     `derivedOwner`; deliberately independent of `binding_hash`
     //     (the owner is fixed at SU mint, before any TD exists).
     let computed_owner = compute_ownership(pk, nonce);
-    assert(
-        computed_owner == owner,
-        "owner mismatch: Poseidon3(pk, nonce) != public owner",
-    );
+    assert(computed_owner == owner, "owner mismatch: Poseidon3(pk, nonce) != public owner");
 
     // (2) Signature binding: Schnorr/Grumpkin over Poseidon3(nft_hash,
     //     nonce, binding_hash).to_be_bytes(). The pre-hash binds the

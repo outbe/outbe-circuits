@@ -1,12 +1,12 @@
 use super::{
     emit::{
-        change_key, emit_tag, empty_leaf, merkle_root, note_commitment, note_sn, nullifier,
-        EMIT_DOMAIN,
+        change_key, EMIT_DOMAIN, emit_tag, empty_leaf, merkle_root, note_commitment, note_sn,
+        nullifier,
     },
     main,
 };
 use bignum::{BigNum, U256};
-use outbe_circuit_core::{hash, merkle_tree::{merkle_root_from_indices, DEPTH}};
+use outbe_circuit_core::{hash, merkle_tree::{DEPTH, merkle_root_from_indices}};
 use outbe_circuit_core::tags::{
     TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
 };
@@ -368,11 +368,7 @@ fn zero_mint_units_fails() {
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
-    let equal_value_change = note_commitment(
-        chain_id,
-        note_sn(owner, next_key),
-        U256::from(100),
-    );
+    let equal_value_change = note_commitment(chain_id, note_sn(owner, next_key), U256::from(100));
     main(
         chain_id,
         root,
@@ -524,7 +520,8 @@ fn partial_mint_rejects_change_for_another_owner() {
     let root = merkle_root(commitment, 0, path);
     let n = nullifier(commitment, key);
     let next_key = change_key(key, n);
-    let redirected_change = note_commitment(chain_id, note_sn(other_owner, next_key), U256::from(60));
+    let redirected_change =
+        note_commitment(chain_id, note_sn(other_owner, next_key), U256::from(60));
     main(
         chain_id,
         root,
@@ -893,7 +890,7 @@ fn field_modulus_offset_amounts_have_distinct_commitments() {
     assert(modulus_offset != U256::zero());
     assert(
         note_commitment(chain_id, serial, U256::zero())
-            != note_commitment(chain_id, serial, modulus_offset)
+            != note_commitment(chain_id, serial, modulus_offset),
     );
 }
 
