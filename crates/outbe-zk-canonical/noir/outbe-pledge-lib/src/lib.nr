@@ -1,7 +1,5 @@
 use bignum::{BigNum, U256};
-use outbe_circuit_core::{
-    hash::{ascii_field, hash_multi}, merkle_tree, merkle_tree::DEPTH, tags::tag,
-};
+use outbe_circuit_core::{hash::{ascii_field, hash_multi}, merkle_tree::{self, DEPTH}, tags::tag};
 use outbe_circuit_core::types::EthAddress;
 
 pub global PLEDGE_DOMAIN: Field = ascii_field("OUTBE_PLEDGE");
@@ -150,18 +148,59 @@ fn full_and_partial_spends() {
     let root = merkle_root(commitment, 0, auth_path);
     let next_key = change_key(note_spend_key, nullifier);
     let change_commitment = note_commitment(31337, note_sn(owner, next_key), U256::from(60), 0);
-    spend(31337, root, nullifier, 1, U256::from(40), change_commitment,
-        owner, note_spend_key, note_amount, 0, 0, auth_path);
-    spend(31337, root, nullifier, 1, note_amount, 0,
-        owner, note_spend_key, note_amount, 0, 0, auth_path);
+    spend(
+        31337,
+        root,
+        nullifier,
+        1,
+        U256::from(40),
+        change_commitment,
+        owner,
+        note_spend_key,
+        note_amount,
+        0,
+        0,
+        auth_path,
+    );
+    spend(
+        31337,
+        root,
+        nullifier,
+        1,
+        note_amount,
+        0,
+        owner,
+        note_spend_key,
+        note_amount,
+        0,
+        0,
+        auth_path,
+    );
 }
 
 #[test(should_fail)]
 fn spend_rejects_wrong_owner() {
     let note_amount = U256::from(100);
-    let commitment = note_commitment(31337, note_sn(EthAddress::from_field(7), 17), note_amount, 0);
+    let commitment = note_commitment(
+        31337,
+        note_sn(EthAddress::from_field(7), 17),
+        note_amount,
+        0,
+    );
     let nullifier = note_nullifier(commitment, 17);
     let auth_path = [0; DEPTH];
-    spend(31337, merkle_root(commitment, 0, auth_path), nullifier, 1, note_amount, 0,
-        EthAddress::from_field(8), 17, note_amount, 0, 0, auth_path);
+    spend(
+        31337,
+        merkle_root(commitment, 0, auth_path),
+        nullifier,
+        1,
+        note_amount,
+        0,
+        EthAddress::from_field(8),
+        17,
+        note_amount,
+        0,
+        0,
+        auth_path,
+    );
 }
