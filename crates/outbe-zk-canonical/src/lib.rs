@@ -26,7 +26,7 @@ pub mod emit_mint;
 pub mod ownership;
 pub mod paynote;
 pub mod paynote_merge;
-pub mod pledge;
+pub mod pledgenote;
 
 /// The circuit seams live in the core (`outbe-protocol`), so a noir backend can be
 /// generic over circuits without depending on this crate. Re-exported here for

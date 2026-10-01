@@ -5,14 +5,15 @@ use outbe_circuit_core::tags::{
 };
 use outbe_circuit_core::types::EthAddress;
 
-pub global PLEDGE_DOMAIN: Field = ascii_field("OUTBE_PLEDGE");
+// Keep the original hash domain to preserve existing notes and circuit identities.
+pub global PLEDGENOTE_DOMAIN: Field = ascii_field("OUTBE_PLEDGE");
 
 pub global TAG_RETURN_KEY: Field = ascii_field("return-key");
 pub global TAG_RECEIPT_CONTEXT: Field = ascii_field("return-receipt");
 
 pub fn note_sn(owner: EthAddress, note_spend_key: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, TAG_NOTE_SN),
+        tag(PLEDGENOTE_DOMAIN, TAG_NOTE_SN),
         [owner.to_field(), note_spend_key],
     )
 }
@@ -24,7 +25,7 @@ pub fn note_commitment(
 ) -> Field {
     let limbs = note_amount.get_limbs();
     hash_multi(
-        tag(PLEDGE_DOMAIN, TAG_COMMITMENT),
+        tag(PLEDGENOTE_DOMAIN, TAG_COMMITMENT),
         [
             chain_id as Field,
             serial,
@@ -37,19 +38,19 @@ pub fn note_commitment(
 }
 pub fn note_nullifier(commitment: Field, note_spend_key: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, TAG_NULLIFIER),
+        tag(PLEDGENOTE_DOMAIN, TAG_NULLIFIER),
         [commitment, note_spend_key],
     )
 }
 pub fn change_key(note_spend_key: Field, spent_nullifier: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, TAG_CHANGE_KEY),
+        tag(PLEDGENOTE_DOMAIN, TAG_CHANGE_KEY),
         [note_spend_key, spent_nullifier],
     )
 }
 pub fn return_key(note_spend_key: Field, nullifier: Field, context: Field) -> Field {
     hash_multi(
-        tag(PLEDGE_DOMAIN, TAG_RETURN_KEY),
+        tag(PLEDGENOTE_DOMAIN, TAG_RETURN_KEY),
         [note_spend_key, nullifier, context],
     )
 }
@@ -57,15 +58,15 @@ pub fn receipt_context(position: U256, released_total: U256) -> Field {
     let p = position.get_limbs();
     let a = released_total.get_limbs();
     hash_multi(
-        tag(PLEDGE_DOMAIN, TAG_RECEIPT_CONTEXT),
+        tag(PLEDGENOTE_DOMAIN, TAG_RECEIPT_CONTEXT),
         [p[0] as Field, p[1] as Field, p[2] as Field, a[0] as Field, a[1] as Field, a[2] as Field],
     )
 }
 pub fn empty_leaf(chain_id: u64) -> Field {
-    hash_multi(tag(PLEDGE_DOMAIN, TAG_EMPTY), [chain_id as Field])
+    hash_multi(tag(PLEDGENOTE_DOMAIN, TAG_EMPTY), [chain_id as Field])
 }
 pub fn merkle_root(leaf: Field, leaf_index: u32, auth_path: [Field; DEPTH]) -> Field {
-    merkle_tree::merkle_root(PLEDGE_DOMAIN, leaf, leaf_index as Field, auth_path)
+    merkle_tree::merkle_root(PLEDGENOTE_DOMAIN, leaf, leaf_index as Field, auth_path)
 }
 
 // Both profiles share exactly one commitment formula and one nullifier formula.

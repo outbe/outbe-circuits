@@ -9,6 +9,7 @@ use {
 
 pub type Field = Fr;
 pub type Tree = outbe_protocol::protocol::imt::Imt;
+// Keep the original hash domain to preserve existing notes and circuit identities.
 pub fn domain() -> Field {
     hash::ascii_field("OUTBE_PLEDGE")
 }

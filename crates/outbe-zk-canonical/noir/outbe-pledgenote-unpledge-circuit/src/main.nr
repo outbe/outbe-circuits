@@ -7,15 +7,14 @@ fn main(
     context: pub Field,
     spend_amount: pub U256,
     change_commitment: pub Field,
-    return_note_serial: pub Field,
-    owner: EthAddress,
+    owner: pub EthAddress,
     note_spend_key: Field,
     note_amount: U256,
     receipt_context: Field,
     leaf_index: u32,
     auth_path: [Field; DEPTH],
 ) {
-    pledge_lib::spend(
+    pledgenote_lib::spend(
         chain_id,
         root,
         nullifier,
@@ -29,8 +28,4 @@ fn main(
         leaf_index,
         auth_path,
     );
-    let key = pledge_lib::return_key(note_spend_key, nullifier, context);
-    assert(key != 0);
-    assert(return_note_serial != 0);
-    assert_eq(return_note_serial, pledge_lib::note_sn(owner, key));
 }
