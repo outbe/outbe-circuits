@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file. See [conven
 - Add read-only `cargo xtask freeze-circuits --check` with pinned-toolchain checks and bytecode, ABI, and verification-key reproduction for all five active circuits. CI now relies on this command's exit status instead of Git-diff and untracked-file checks.
 
 - - -
+## v0.27.0 - 2026-10-01
+#### Features
+- add pledge circuits, refactor asserts, and enhance test coverage (#35) - (9db928d) - latexstone
+#### Miscellaneous Chores
+- fmt project (#36) - (4ff0cb0) - latexstone
+
+- - -
+
 ## v0.26.0 - 2026-09-30
 #### Features
 - replace `owner` with `context` in Paynote circuit (#33) - (39b130e) - latexstone

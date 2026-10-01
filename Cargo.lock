@@ -1784,7 +1784,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-protocol"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
@@ -1802,7 +1802,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-protocol-derive"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1811,7 +1811,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-backend"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "acir",
  "acvm",
@@ -1832,7 +1832,7 @@ dependencies = [
 
 [[package]]
 name = "outbe-zk-canonical"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "alloy-primitives",
  "ark-bn254",
