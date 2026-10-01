@@ -12,8 +12,6 @@
 
 mod tests;
 
-// `nullifier` is deliberately NOT imported: the public parameter of the same
-// name would shadow it. It is called path-qualified as `paynote::nullifier`.
 use bignum::{BigNum, U256};
 use outbe_circuit_core::merkle_tree::DEPTH;
 use outbe_circuit_core::types::EthAddress;

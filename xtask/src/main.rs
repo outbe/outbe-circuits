@@ -38,6 +38,8 @@ const CIRCUITS: &[(&str, &str)] = &[
     ("demo-tribute", "demo_tribute"),
     ("outbe-emit-mint-circuit", "emit_mint"),
     ("outbe-paynote-circuit", "paynote"),
+    ("outbe-pledgenote-issue-circuit", "pledgenote_issue"),
+    ("outbe-pledgenote-unpledge-circuit", "pledgenote_unpledge"),
     ("outbe-paynote-merge-circuit", "paynote_merge"),
     ("niflheim-tribute", "niflheim_tribute"),
 ];
@@ -71,6 +73,7 @@ fn test_circuits() {
     let packages = [
         ("outbe-circuit-core", "outbe_circuit_core"),
         ("outbe-paynote-lib", "paynote_lib"),
+        ("outbe-pledgenote-lib", "pledgenote_lib"),
     ]
     .into_iter()
     .chain(CIRCUITS.iter().copied());
@@ -507,6 +510,8 @@ fn label(module: &str) -> String {
         "demo_tribute" => "demo.tribute".to_string(),
         "emit_mint" => "outbe.emit.mint".to_string(),
         "paynote" => "outbe.paynote".to_string(),
+        "pledgenote_issue" => "outbe.pledgenote.issue".to_string(),
+        "pledgenote_unpledge" => "outbe.pledgenote.unpledge".to_string(),
         "paynote_merge" => "outbe.paynote.merge".to_string(),
         "niflheim_tribute" => "niflheim.tribute".to_string(),
         _ => panic!("unknown module: {module}"),

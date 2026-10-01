@@ -9,14 +9,14 @@
 //! let commitment = hash_multi(tag, [...]);
 //! ```
 
-use crate::hash::hash_2;
+use crate::hash::{ascii_field, hash_2};
 
 // Big-endian ASCII purpose tags.
-pub global TAG_COMMITMENT: Field = 0x434f4d4d49544d454e54; // "COMMITMENT"
-pub global TAG_NULLIFIER: Field = 0x4e554c4c4946494552; // "NULLIFIER"
-pub global TAG_NOTE_SN: Field = 0x4e4f54455f534e; // "NOTE_SN"
-pub global TAG_CHANGE_KEY: Field = 0x4348414e47455f4b4559; // "CHANGE_KEY"
-pub global TAG_EMPTY: Field = 0x454d505459; // "EMPTY"
+pub global TAG_COMMITMENT: Field = ascii_field("COMMITMENT");
+pub global TAG_NULLIFIER: Field = ascii_field("NULLIFIER");
+pub global TAG_NOTE_SN: Field = ascii_field("NOTE_SN");
+pub global TAG_CHANGE_KEY: Field = ascii_field("CHANGE_KEY");
+pub global TAG_EMPTY: Field = ascii_field("EMPTY");
 
 /// Domain-separated tag: `Poseidon2(domain, base_tag)`.
 pub fn tag(domain: Field, base: Field) -> Field {

@@ -150,10 +150,29 @@ status = "active"
 module = "paynote_merge"
 label = "outbe.paynote.merge"
 version = "1.0.0"
+status = "deprecated"
+circuit_hash = "2536a6813a5d9f5468cedc74376497d4c06bc6492aabfb69cd1783dda0b29722"
+
+[[circuit]]
+module = "pledgenote_issue"
+label = "outbe.pledgenote.issue"
+version = "1.0.0"
+status = "active"
+
+[[circuit]]
+module = "pledgenote_unpledge"
+label = "outbe.pledgenote.unpledge"
+version = "1.0.0"
 status = "active"
 
 [[circuit]]
 module = "paynote"
 label = "outbe.paynote"
 version = "1.3.0"
+status = "active"
+
+[[circuit]]
+module = "paynote_merge"
+label = "outbe.paynote.merge"
+version = "1.0.1"
 status = "active"

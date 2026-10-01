@@ -134,7 +134,7 @@ fn configure_memory(enabled: bool, max_storage_usage: Option<u64>) {
 /// buffer bb's FFI consumes.
 fn acir_buffer_uncompressed<C: CircuitId>() -> Result<Vec<u8>, Error> {
     let compressed = base64::engine::general_purpose::STANDARD
-        .decode(C::BYTECODE_B64)
+        .decode(C::BYTECODE_B64.trim())
         .map_err(|e| Error::Proof(format!("acir bytecode base64: {e}")))?;
     let mut raw = Vec::new();
     GzDecoder::new(compressed.as_slice())

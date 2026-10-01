@@ -1,0 +1,10 @@
+[package]
+name = "pledgenote_unpledge"
+type = "bin"
+authors = ["outbe"]
+compiler_version = ">=1.0.0"
+
+[dependencies]
+outbe_circuit_core = { path = "../outbe-circuit-core" }
+bignum = { tag = "v0.10.0", git = "https://github.com/noir-lang/noir-bignum" }
+pledgenote_lib = { path = "../outbe-pledgenote-lib" }

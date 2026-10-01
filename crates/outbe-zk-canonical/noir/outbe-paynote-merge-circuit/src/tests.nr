@@ -1,4 +1,4 @@
-use super::main;
+use super::{main, MAX_MERGE_INPUTS, PAYNOTE_POOL_ADDRESS};
 use bignum::{BigNum, U256};
 use outbe_circuit_core::{hash::hash_3, merkle_tree::DEPTH, types::EthAddress};
 use paynote_lib::{
@@ -11,34 +11,34 @@ struct Fixture {
     root: Field,
     count: u32,
     asset: EthAddress,
-    nullifiers: [Field; 4],
+    nullifiers: [Field; MAX_MERGE_INPUTS],
     output: Field,
-    amounts: [U256; 4],
-    keys: [Field; 4],
-    indices: [u32; 4],
-    paths: [[Field; DEPTH]; 4],
+    amounts: [U256; MAX_MERGE_INPUTS],
+    keys: [Field; MAX_MERGE_INPUTS],
+    indices: [u32; MAX_MERGE_INPUTS],
+    paths: [[Field; DEPTH]; MAX_MERGE_INPUTS],
     output_key: Field,
 }
 
-fn fixture(count: u32, amounts: [U256; 4]) -> Fixture {
+fn fixture(count: u32, amounts: [U256; MAX_MERGE_INPUTS]) -> Fixture {
     let asset = EthAddress::from_field(123);
-    let mut leaves = [empty_leaf(31337); 4];
+    let mut leaves = [empty_leaf(31337); MAX_MERGE_INPUTS];
     let mut f = Fixture {
         chain_id: 31337,
-        pool: EthAddress::from_field(0x1019),
+        pool: EthAddress::from_field(PAYNOTE_POOL_ADDRESS),
         root: 0,
         count,
         asset,
-        nullifiers: [0; 4],
+        nullifiers: [0; MAX_MERGE_INPUTS],
         output: 0,
         amounts,
-        keys: [0; 4],
-        indices: [0; 4],
-        paths: [[0; DEPTH]; 4],
+        keys: [0; MAX_MERGE_INPUTS],
+        indices: [0; MAX_MERGE_INPUTS],
+        paths: [[0; DEPTH]; MAX_MERGE_INPUTS],
         output_key: 99,
     };
     let mut total = U256::zero();
-    for i in 0..4 {
+    for i in 0..MAX_MERGE_INPUTS {
         if i < count {
             f.keys[i] = (i + 17) as Field;
             leaves[i] = note_commitment(31337, note_sn(f.keys[i]), asset, amounts[i]);
@@ -54,7 +54,7 @@ fn fixture(count: u32, amounts: [U256; 4]) -> Fixture {
     for i in 1..DEPTH {
         zeros[i] = hash_3([PAYNOTE_DOMAIN, zeros[i - 1], zeros[i - 1]]);
     }
-    for i in 0..4 {
+    for i in 0..MAX_MERGE_INPUTS {
         if i < count {
             f.indices[i] = i;
             f.paths[i] = zeros;
@@ -68,9 +68,9 @@ fn fixture(count: u32, amounts: [U256; 4]) -> Fixture {
 }
 
 fn normal(count: u32) -> Fixture {
-    let mut amounts = [U256::zero(); 4];
+    let mut amounts = [U256::zero(); MAX_MERGE_INPUTS];
     let values = [12, 8, 5, 7];
-    for i in 0..4 {
+    for i in 0..MAX_MERGE_INPUTS {
         if i < count {
             amounts[i] = U256::from(values[i]);
         }
