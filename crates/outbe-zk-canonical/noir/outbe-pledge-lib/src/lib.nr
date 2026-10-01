@@ -1,16 +1,14 @@
 use bignum::{BigNum, U256};
-use outbe_circuit_core::{hash::{ascii_field, hash_multi}, merkle_tree::{self, DEPTH}, tags::tag};
+use outbe_circuit_core::{hash::{ascii_field, hash_multi}, merkle_tree::{self, DEPTH}};
+use outbe_circuit_core::tags::{
+    tag, TAG_CHANGE_KEY, TAG_COMMITMENT, TAG_EMPTY, TAG_NOTE_SN, TAG_NULLIFIER,
+};
 use outbe_circuit_core::types::EthAddress;
 
 pub global PLEDGE_DOMAIN: Field = ascii_field("OUTBE_PLEDGE");
 
-pub global TAG_NOTE_SN: Field = ascii_field("owner-serial");
-pub global TAG_COMMITMENT: Field = ascii_field("pledge-note");
-pub global TAG_NULLIFIER: Field = ascii_field("pledge-nullifier");
-pub global TAG_CHANGE_KEY: Field = ascii_field("change-key");
 pub global TAG_RETURN_KEY: Field = ascii_field("return-key");
 pub global TAG_RECEIPT_CONTEXT: Field = ascii_field("return-receipt");
-pub global TAG_EMPTY: Field = ascii_field("empty");
 
 pub fn note_sn(owner: EthAddress, note_spend_key: Field) -> Field {
     hash_multi(

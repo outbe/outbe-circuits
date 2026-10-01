@@ -183,16 +183,30 @@ status = "active"
 module = "pledge_issue"
 label = "outbe.pledge.issue"
 version = "1.1.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "729036d9c01ac00822c17df4226a0656efc71319dc3fd0d4a237f5e83b45f9e0"
 
 [[circuit]]
 module = "pledge_unpledge"
 label = "outbe.pledge.unpledge"
 version = "1.1.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "05480033838f4d9d7235e255db874a73da288f1c66a82a22b4a8ad402d8f2ef0"
 
 [[circuit]]
 module = "paynote_merge"
 label = "outbe.paynote.merge"
 version = "1.0.1"
+status = "active"
+
+[[circuit]]
+module = "pledge_issue"
+label = "outbe.pledge.issue"
+version = "1.1.1"
+status = "active"
+
+[[circuit]]
+module = "pledge_unpledge"
+label = "outbe.pledge.unpledge"
+version = "1.1.1"
 status = "active"
