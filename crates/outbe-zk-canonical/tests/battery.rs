@@ -155,7 +155,7 @@ fn ownership_signatures_and_owner_validation() {
     let td = sample_nft(&mut rng, owner);
 
     assert_eq!(OwnershipProof::LABEL, "outbe.ownership");
-    assert_eq!(OwnershipProof::VERSION, "1.0.0");
+    assert_eq!(OwnershipProof::VERSION, "1.1.0");
 
     // Ownership signatures: valid witness, tampered nonce, and mismatched owner.
     let signer = Signer::from_secret(NftSecret::new(sk), nonce).unwrap();
@@ -312,7 +312,7 @@ fn emit_mint_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::emit_mint as emit;
 
     assert_eq!(emit::EmitMint::LABEL, "outbe.emit.mint");
-    assert_eq!(emit::EmitMint::VERSION, "1.5.0");
+    assert_eq!(emit::EmitMint::VERSION, "1.6.0");
     assert!(!emit::EmitMint::BYTECODE_B64.is_empty());
     assert_ne!(emit::EmitMint::CIRCUIT_HASH, [0u8; 32]);
     assert!(!emit::EmitMint::VK_BYTES.is_empty());
@@ -429,7 +429,7 @@ fn paynote_descriptor_and_abi_layout() {
     use outbe_zk_canonical::noir::paynote as pay;
 
     assert_eq!(pay::Paynote::LABEL, "outbe.paynote");
-    assert_eq!(pay::Paynote::VERSION, "1.3.0");
+    assert_eq!(pay::Paynote::VERSION, "1.4.0");
     assert!(!pay::Paynote::BYTECODE_B64.is_empty());
     assert_ne!(pay::Paynote::CIRCUIT_HASH, [0u8; 32]);
     assert!(!pay::Paynote::VK_BYTES.is_empty());

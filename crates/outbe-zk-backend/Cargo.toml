@@ -18,9 +18,9 @@ flate2 = { workspace = true }
 
 # noir ACIR/ACVM core — pinned to the release the circuits are compiled with.
 # Git deps (not on crates.io) stay inline with their tag, by design.
-acir = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "acir" }
-acvm = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "acvm" }
-bn254_blackbox_solver = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0-beta.22", package = "bn254_blackbox_solver" }
+acir = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0", package = "acir" }
+acvm = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0", package = "acvm" }
+bn254_blackbox_solver = { git = "https://github.com/noir-lang/noir.git", tag = "v1.0.0", package = "bn254_blackbox_solver" }
 
 # barretenberg via FFI (static libbb-external, on-device capable).
 barretenberg-rs = { workspace = true }

@@ -14,7 +14,7 @@
 //! produces the ACVM-solved witness, this hands it to `circuit_prove` with the
 //! circuit's committed bytecode + VK ([`CircuitId`]);
 //! verification re-derives the public inputs from the claim and calls
-//! `circuit_verify`. Pinned to `barretenberg-rs` =5.0.0-nightly.20260522,
+//! `circuit_verify`. Pinned to `barretenberg-rs` =6.0.0,
 //! matching the `bb` that writes the committed VKs (`-t evm-no-zk`).
 
 use std::io::Read;

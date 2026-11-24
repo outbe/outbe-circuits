@@ -5,7 +5,7 @@ description: Run the circuit-freeze workflow when Noir sources under crates/outb
 
 Use this skill when `.nr` sources under `crates/outbe-zk-canonical/noir/` have been edited and the user wants to mint the new frozen circuit version(s) before committing.
 
-Prereq: the pinned Noir toolchain must be installed — `mise install nargo bb` (nargo 1.0.0-beta.22 + bb 5.0.0-nightly.20260522). The xtask locates them via `$NARGO`/`$BB`, then `~/.nargo/bin/nargo` and `~/.bb/bb`, then PATH.
+Prereq: the pinned Noir toolchain must be installed — `mise install nargo bb` (nargo 1.0.0 + bb 6.0.0). The xtask locates them via `$NARGO`/`$BB`, then `~/.nargo/bin/nargo` and `~/.bb/bb`, then PATH.
 
 If the user only wants verification, use `cargo xtask freeze-circuits --check` instead of minting. It checks the tool versions and reproduces all active ACIR, ABI and VK in a scratch copy under `target/`, without changing committed files.
 

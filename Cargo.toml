@@ -58,7 +58,7 @@ sha2          = { version = "0.10", default-features = false }
 
 # barretenberg via FFI; the bb CLI used by `xtask freeze-circuits` must match
 # this exact version (see mise `install:bb`).
-barretenberg-rs = { version = "=5.0.0-nightly.20260522", default-features = false, features = ["ffi"] }
+barretenberg-rs = { version = "=6.0.0", default-features = false, features = ["ffi"] }
 # SRS download fallback (Aztec CRS) — only pulled by outbe-zk-backend's
 # `with-network-srs` feature.
 reqwest       = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
