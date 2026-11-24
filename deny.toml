@@ -4,7 +4,7 @@
 #
 # outbe-circuits consumes Noir's Rust FFI surface (acir / acvm /
 # bn254_blackbox_solver, pulled directly from the noir-lang upstream as
-# git deps pinned to v1.0.0-beta.22 in `outbe-zk-backend`) on top of a
+# git deps pinned to v1.0.0 in `outbe-zk-backend`) on top of a
 # heavy transitive tree. The only git source is `noir-lang/noir`.
 # That tree forces (a) two extra licenses,
 # (b) a sizeable [bans.skip] list, and (c) the workspace-path wildcard
@@ -88,7 +88,7 @@ skip = [
     { crate = "crypto-common" },
     { crate = "block-buffer" },
     { crate = "cpufeatures" },
-    # blake2 0.10 (outbe-protocol) vs 0.11-rc (noir beta.22 bn254_blackbox_solver).
+    # blake2 0.10 (outbe-protocol) vs 0.11-rc (noir v1.0.0 bn254_blackbox_solver).
     { crate = "blake2" },
     # thiserror 1.x (noir, some older deps) vs 2.x (rest of the tree).
     { crate = "thiserror" },
@@ -100,6 +100,12 @@ skip = [
     { crate = "winnow" },
     # UEFI guard pulled in by getrandom 0.3 alongside the older copy.
     { crate = "r-efi" },
+    # noir v1.0.0 acir / acvm / msgpack_tagged_derive moved to newer lines
+    # than the ark-* 0.6 and hyper/rustls trees.
+    { crate = "base64" },
+    { crate = "itertools" },
+    { crate = "num-bigint" },
+    { crate = "syn" },
 ]
 
 [sources]
@@ -108,7 +114,7 @@ unknown-git = "deny"
 allow-git = [
     # noir-lang upstream — acir / acvm / bn254_blackbox_solver (and
     # their noirc_* transitive deps) are consumed via this single git
-    # origin, pinned per-rev in Cargo.lock to the v1.0.0-beta.22 tag
+    # origin, pinned per-rev in Cargo.lock to the v1.0.0 tag
     # referenced inline in `outbe-zk-backend`.
     "https://github.com/noir-lang/noir",
 ]

@@ -41,8 +41,8 @@ fn main(
     leaf_index: u32,
     auth_path: [Field; DEPTH],
 ) {
-    // The ABI crosses amounts as three raw `u128` limbs with no range check,
-    // and bignum v0.10.0's `from_limbs` does not constrain them either, but
+    // The ABI crosses amounts as three raw `u128` limbs with no range check
+    // (ABI decoding bypasses bignum's range-checking `from_limbs`), but
     // every `U256` limb-wise operation below (ordering, subtraction, the
     // commitment limb preimage) assumes canonical limbs: < 2^120 each, top
     // limb < 2^17. `validate_in_range` is the canonicality gate, exactly
@@ -52,7 +52,7 @@ fn main(
 
     // Canonical limbs are non-negative and below the field modulus, so a
     // limb-sum of zero identifies exactly the zero amount.
-    mint_units.assert_is_not_zero_integer();
+    mint_units.unsafe_assert_is_not_zero_integer();
     assert(mint_units <= note_amount);
     assert(nullifier != 0);
     assert(note_spend_key != 0);
@@ -71,7 +71,7 @@ fn main(
     // Exact integer subtraction: the `<=` above is what rules out the
     // mod-2^256 wrap `U256` subtraction would otherwise apply silently.
     let remaining = note_amount - mint_units;
-    let creates_change = !remaining.is_zero_integer();
+    let creates_change = !remaining.unsafe_is_zero_integer();
     assert((change_commitment != 0) == creates_change);
     if creates_change {
         let next_key = change_key(note_spend_key, computed_nullifier);

@@ -101,7 +101,7 @@ pub fn spend(
     assert_eq(note_nullifier(commitment, note_spend_key), nullifier);
     assert_eq(merkle_root(commitment, leaf_index, auth_path), root);
     let remaining = note_amount - spend_amount;
-    let creates_change = !remaining.is_zero_integer();
+    let creates_change = !remaining.unsafe_is_zero_integer();
     assert((change_commitment != 0) == creates_change);
     if creates_change {
         let key = change_key(note_spend_key, nullifier);

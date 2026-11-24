@@ -44,7 +44,7 @@ Released circuit versions are **frozen** and committed under `crates/outbe-zk-ca
 The Noir toolchain is needed only to evolve circuits or check their reproducibility, pinned via `mise`:
 
 ```bash
-mise install nargo bb    # nargo 1.0.0-beta.22 + bb 5.0.0-nightly.20260522
+mise install nargo bb    # nargo 1.0.0 + bb 6.0.0
 ```
 
 `cargo xtask` is aliased in `.cargo/config.toml`.

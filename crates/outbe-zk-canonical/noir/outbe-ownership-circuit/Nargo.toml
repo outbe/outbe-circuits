@@ -2,7 +2,7 @@
 name = "ownership_proof"
 type = "bin"
 authors = ["outbe"]
-compiler_version = ">=0.34.0"
+compiler_version = ">=1.0.0"
 
 [dependencies]
 outbe_circuit_core = { path = "../outbe-circuit-core" }

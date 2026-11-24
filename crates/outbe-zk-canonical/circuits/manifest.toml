@@ -35,7 +35,8 @@ circuits = [
 module = "ownership_proof"
 label = "outbe.ownership"
 version = "1.0.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "941cf3ace96614a68952b971f907288dcaedc7eca2871acb908f2c513ac2c3f1"
 
 [[circuit]]
 module = "demo_tribute"
@@ -118,7 +119,8 @@ circuit_hash = "966df28e971781674bd7ed54ebe96afeeac5897a10e7445807ed495f53b5d38f
 module = "emit_mint"
 label = "outbe.emit.mint"
 version = "1.5.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "812dd945e0c817fd0730c84886cf1a6a702360b09896c61ca1755fafacf31e19"
 
 [[circuit]]
 module = "paynote"
@@ -138,13 +140,15 @@ circuit_hash = "3154da6976ca8ee5f00b228fe821ce0868b189ff73cefb1a9a562d2768a9f9cc
 module = "demo_tribute"
 label = "demo.tribute"
 version = "1.2.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "aebb21f5f4c12129c278849321c8414db0ee4a24f94882bf27c873f3c7690484"
 
 [[circuit]]
 module = "niflheim_tribute"
 label = "niflheim.tribute"
 version = "1.0.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "f106c4863f8018bab673d6d229d7983d3491cc8912de328904c6126492d15e7b"
 
 [[circuit]]
 module = "paynote_merge"
@@ -157,22 +161,74 @@ circuit_hash = "2536a6813a5d9f5468cedc74376497d4c06bc6492aabfb69cd1783dda0b29722
 module = "pledgenote_issue"
 label = "outbe.pledgenote.issue"
 version = "1.0.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "50f583eec500b3cee0c7f3c9d9bdc82aa760888a0136a43e87170ec3e4f2974c"
 
 [[circuit]]
 module = "pledgenote_unpledge"
 label = "outbe.pledgenote.unpledge"
 version = "1.0.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "c992894dc57ba71160d77454558cc68215fd8707a0636f4d41221f3779eae21c"
 
 [[circuit]]
 module = "paynote"
 label = "outbe.paynote"
 version = "1.3.0"
-status = "active"
+status = "deprecated"
+circuit_hash = "0f2fbbc17ec830fb42c8206f216cde1b2452e8b8bc276bbe27a07e87ba1263a4"
 
 [[circuit]]
 module = "paynote_merge"
 label = "outbe.paynote.merge"
 version = "1.0.1"
+status = "deprecated"
+circuit_hash = "ae7946ee03305d92f06957c9abbb877eaed1d29667c23a8ba413d70224d67fe2"
+
+[[circuit]]
+module = "ownership_proof"
+label = "outbe.ownership"
+version = "1.1.0"
+status = "active"
+
+[[circuit]]
+module = "demo_tribute"
+label = "demo.tribute"
+version = "1.3.0"
+status = "active"
+
+[[circuit]]
+module = "emit_mint"
+label = "outbe.emit.mint"
+version = "1.6.0"
+status = "active"
+
+[[circuit]]
+module = "paynote"
+label = "outbe.paynote"
+version = "1.4.0"
+status = "active"
+
+[[circuit]]
+module = "pledgenote_issue"
+label = "outbe.pledgenote.issue"
+version = "1.1.0"
+status = "active"
+
+[[circuit]]
+module = "pledgenote_unpledge"
+label = "outbe.pledgenote.unpledge"
+version = "1.1.0"
+status = "active"
+
+[[circuit]]
+module = "paynote_merge"
+label = "outbe.paynote.merge"
+version = "1.1.0"
+status = "active"
+
+[[circuit]]
+module = "niflheim_tribute"
+label = "niflheim.tribute"
+version = "1.1.0"
 status = "active"

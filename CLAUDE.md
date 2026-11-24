@@ -30,11 +30,11 @@ Sibling Nargo packages (each its own `Nargo.toml`):
 | `outbe-circuit-core/` | `outbe_circuit_core` | lib | Shared `ownership`, `merkle_tree`, `hash`, `tags` (base purpose tags, combined with a per-circuit domain via `tags::tag`), and `types` modules. Depends on `noir-lang/schnorr` v0.2.0; Poseidon2 uses the stdlib permutation. |
 | `outbe-ownership-circuit/` | `ownership_proof` | bin | Single-NFT ownership proof. |
 | `demo-tribute/` | `demo_tribute` | bin | Demo Tribute ownership + depth-32 Merkle inclusion. |
-| `outbe-emit-mint-circuit/` | `emit_mint` | bin | Contains all Emit-specific formulas plus mint, nullifier, membership, and optional change constraints. Amounts are 256-bit (`noir-lang/noir-bignum` `U256`, tag `v0.10.0`). |
+| `outbe-emit-mint-circuit/` | `emit_mint` | bin | Contains all Emit-specific formulas plus mint, nullifier, membership, and optional change constraints. Amounts are 256-bit (`noir-lang/noir-bignum` `U256`, tag `v0.11.0`). |
 | `outbe-paynote-circuit/` | `paynote` | bin | Private ERC20 payment note: bearer spend authority by key knowledge, 256-bit `noir-lang/noir-bignum` amounts, asset-bound commitment, nullifier, membership, and optional change. |
 | `niflheim-tribute/` | `niflheim_tribute` | bin | Self-contained Niflheim Tribute ownership and depth-32 Merkle inclusion proof. |
 
-The ownership / Demo Tribute bins pull shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time. Niflheim Tribute keeps its ownership and inclusion helpers in its own source. Emit owns its protocol formulas locally and imports only generic hashing and Merkle inclusion from the core. `nargo` is pinned to **1.0.0-beta.22** and `bb` to **5.0.0-nightly.20260522** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
+The ownership / Demo Tribute bins pull shared logic from `outbe_circuit_core` via a relative path dep, so editing the lib forces a recompile of those bins at freeze time. Niflheim Tribute keeps its ownership and inclusion helpers in its own source. Emit owns its protocol formulas locally and imports only generic hashing and Merkle inclusion from the core. `nargo` is pinned to **1.0.0** and `bb` to **6.0.0** (see `mise.toml`); these must match the noir git tag in `outbe-zk-backend` and the `barretenberg-rs` pin, or freeze-derived VKs won't match the FFI verifier.
 
 ## Build commands
 
@@ -57,7 +57,7 @@ For read-only verification, run `cargo xtask freeze-circuits --check` (also `mis
 
 ## Dependency pinning
 
-The noir git deps (`acir` / `acvm` / `bn254_blackbox_solver`, tag `v1.0.0-beta.22`) stay **inline** in `outbe-zk-backend`, not in `[workspace.dependencies]`. `barretenberg-rs` is exact-pinned (`=5.0.0-nightly.20260522`). `outbe-poseidon` is a tagged git dep until published. Bump the noir tag, the bb pin, and the version in mise.toml together. `deny.toml` allows exactly two git origins: `noir-lang/noir` and `outbe/outbe-poseidon`.
+The noir git deps (`acir` / `acvm` / `bn254_blackbox_solver`, tag `v1.0.0`) stay **inline** in `outbe-zk-backend`, not in `[workspace.dependencies]`. `barretenberg-rs` is exact-pinned (`=6.0.0`). `outbe-poseidon` is a tagged git dep until published. Bump the noir tag, the bb pin, and the version in mise.toml together. `deny.toml` allows exactly two git origins: `noir-lang/noir` and `outbe/outbe-poseidon`.
 
 ## Profiles and test gotchas
 
